@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "entries": {
+    "79a93d4a2f8f50b95f852280616242fee1855dc99a3c75211917f55e72e95fae": {
+      "last_emitted_at_ms": 1781444647245,
+      "message": "Use parallel execution for independent tasks. Use run_in_background for long operations (npm install, builds, tests)."
+    },
+    "445ed27a3872b681d98190bae61ccb84954e1bc4e140df5370be958dee776b3a": {
+      "last_emitted_at_ms": 1781443884496,
+      "message": "Verify changes work after editing. Test functionality before marking complete."
+    },
+    "28b1fb7a907449f6ab4374f4d989c0ae0ab18c569390631334cd21bf2db7f4d4": {
+      "last_emitted_at_ms": 1781443659964,
+      "message": "Spawning agent: oh-my-claudecode:designer (inherit) | Task: 태블릿 시험 화면 구현"
+    },
+    "defbd3fd4b176fa44eb075e5065844afd1c9fedee5650354a0d01e8b38f603bc": {
+      "last_emitted_at_ms": 1781443584211,
+      "message": "Spawning agent: oh-my-claudecode:designer (inherit) | Task: 관리자 전체 SPA 구현"
+    },
+    "466399dafa2d20f60587180bad0a07358eb7f2bce724df0ff682f038ad33f5ad": {
+      "last_emitted_at_ms": 1781443447130,
+      "message": "Read multiple files in parallel when possible for faster analysis."
+    },
+    "6bae7fa3a7df3d41023e1d14e563dfeea00cde182c14b32d12abc154fb1af405": {
+      "last_emitted_at_ms": 1781442397847,
+      "message": "Spawning agent: oh-my-claudecode:designer (inherit) | Task: OJT 관리자 대시보드 HTML 생성"
+    }
+  },
+  "updated_at": "2026-06-14T13:44:07.245Z"
+}
