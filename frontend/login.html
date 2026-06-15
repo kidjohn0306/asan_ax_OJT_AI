@@ -23,74 +23,58 @@
       align-items: center;
       justify-content: center;
     }
-    .login-wrap {
-      width: 100%;
-      max-width: 420px;
-      padding: 16px;
-    }
-    .logo-area {
-      text-align: center;
-      margin-bottom: 32px;
-    }
+    .login-wrap { width: 100%; max-width: 420px; padding: 16px; }
+    .logo-area { text-align: center; margin-bottom: 32px; }
     .logo-area .company { font-size: 22px; font-weight: 700; color: var(--primary); }
     .logo-area .system  { font-size: 14px; color: var(--sub); margin-top: 4px; }
     .card {
-      background: white;
-      border-radius: 12px;
+      background: white; border-radius: 12px;
       padding: 36px 32px;
       box-shadow: 0 4px 24px rgba(0,0,0,0.08);
     }
     .card h2 { font-size: 18px; font-weight: 700; color: var(--text); margin-bottom: 24px; }
     label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
     input[type="text"], input[type="password"] {
-      width: 100%;
-      padding: 10px 14px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      font-size: 14px;
-      color: var(--text);
-      outline: none;
-      transition: border-color 0.2s;
+      width: 100%; padding: 10px 14px;
+      border: 1px solid var(--border); border-radius: 8px;
+      font-size: 14px; color: var(--text);
+      outline: none; transition: border-color 0.2s;
       margin-bottom: 16px;
     }
     input:focus { border-color: var(--accent); }
     .btn-login {
-      width: 100%;
-      padding: 12px;
-      background: var(--accent);
-      color: white;
-      border: none;
-      border-radius: 8px;
-      font-size: 15px;
-      font-weight: 600;
-      cursor: pointer;
-      margin-top: 8px;
-      transition: background 0.2s;
+      width: 100%; padding: 12px;
+      background: var(--accent); color: white;
+      border: none; border-radius: 8px;
+      font-size: 15px; font-weight: 600;
+      cursor: pointer; margin-top: 8px;
+      transition: background 0.2s, opacity 0.2s;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
     }
-    .btn-login:hover { background: #2563eb; }
+    .btn-login:hover:not(:disabled) { background: #2563eb; }
+    .btn-login:disabled { opacity: 0.6; cursor: not-allowed; }
     .notice {
-      margin-top: 20px;
-      padding: 12px 16px;
-      background: #eff6ff;
-      border-radius: 8px;
+      margin-top: 20px; padding: 12px 16px;
+      background: #eff6ff; border-radius: 8px;
       border-left: 3px solid var(--accent);
-      font-size: 12px;
-      color: var(--sub);
-      line-height: 1.6;
+      font-size: 12px; color: var(--sub); line-height: 1.6;
     }
     .error-msg {
-      font-size: 12px;
-      color: var(--danger);
-      margin-top: -12px;
-      margin-bottom: 12px;
+      font-size: 12px; color: var(--danger);
+      margin-top: -12px; margin-bottom: 12px;
+      display: none; padding: 8px 12px;
+      background: #fee2e2; border-radius: 6px;
+    }
+    .footer-note { text-align: center; margin-top: 24px; font-size: 12px; color: var(--sub); }
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.4);
+      border-top-color: white;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
       display: none;
     }
-    .footer-note {
-      text-align: center;
-      margin-top: 24px;
-      font-size: 12px;
-      color: var(--sub);
-    }
+    @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -106,8 +90,11 @@
         <input type="text" id="emp-id" placeholder="사원번호를 입력하세요" autocomplete="off">
         <label>비밀번호</label>
         <input type="password" id="password" placeholder="비밀번호를 입력하세요">
-        <p class="error-msg" id="error-msg">승인되지 않은 계정이거나 비밀번호가 올바르지 않습니다.</p>
-        <button type="submit" class="btn-login">로그인</button>
+        <p class="error-msg" id="error-msg"></p>
+        <button type="submit" class="btn-login" id="login-btn">
+          <span class="spinner" id="spinner"></span>
+          <span id="btn-text">로그인</span>
+        </button>
       </form>
       <div class="notice">
         ※ 관리자가 사전 승인한 신입사원만 응시 가능합니다.<br>
@@ -117,21 +104,65 @@
     </div>
     <div class="footer-note">보안 문의: 인사팀 내선 000</div>
   </div>
+
   <script>
-    function handleLogin(e) {
+    const API = '';
+
+    function showError(msg) {
+      const el = document.getElementById('error-msg');
+      el.textContent = msg;
+      el.style.display = 'block';
+    }
+
+    function setLoading(on) {
+      document.getElementById('login-btn').disabled = on;
+      document.getElementById('spinner').style.display = on ? 'block' : 'none';
+      document.getElementById('btn-text').textContent = on ? '로그인 중...' : '로그인';
+    }
+
+    async function handleLogin(e) {
       e.preventDefault();
+      document.getElementById('error-msg').style.display = 'none';
+
       const id = document.getElementById('emp-id').value.trim();
       const pw = document.getElementById('password').value;
-      if (!id || !pw) {
-        document.getElementById('error-msg').style.display = 'block';
-        return;
-      }
-      // TODO: POST /api/auth/login 연동
-      // mock: admin 계정이면 admin.html, 그 외 exam.html로 이동
-      if (id === 'admin001') {
-        window.location.href = 'admin.html';
-      } else {
-        window.location.href = 'exam.html?emp=' + encodeURIComponent(id);
+      if (!id || !pw) { showError('사원번호와 비밀번호를 입력해주세요.'); return; }
+
+      setLoading(true);
+      try {
+        const res = await fetch(`${API}/api/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ employee_id: id, password: pw }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          showError(err.detail || '로그인에 실패했습니다.');
+          return;
+        }
+
+        const data = await res.json();
+        sessionStorage.setItem('token', data.token);
+        sessionStorage.setItem('name', data.name);
+        sessionStorage.setItem('team', data.team || '');
+        sessionStorage.setItem('role', data.role);
+        sessionStorage.setItem('emp_id', id);
+
+        if (data.role === 'admin') {
+          window.location.href = 'admin.html';
+        } else {
+          const params = new URLSearchParams({
+            emp: id,
+            name: data.name,
+            team: data.team || '',
+          });
+          window.location.href = `exam.html?${params}`;
+        }
+      } catch {
+        showError('서버에 연결할 수 없습니다. 백엔드 서버가 실행 중인지 확인하세요.');
+      } finally {
+        setLoading(false);
       }
     }
   </script>

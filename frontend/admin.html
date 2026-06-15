@@ -3,602 +3,220 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>(주)엑스티 OJT 평가 시스템</title>
+  <title>(주)엑스티 OJT 평가 시스템 — 관리자</title>
   <style>
-    /* ── CSS Reset & Variables ─────────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --primary:   #1e3a5f;
-      --primary-light: #264d7e;
-      --accent:    #3b82f6;
-      --accent-dark: #2563eb;
-      --success:   #10b981;
-      --warning:   #f59e0b;
-      --danger:    #ef4444;
-      --bg:        #f1f5f9;
-      --card:      #ffffff;
-      --border:    #e2e8f0;
-      --text:      #1e293b;
-      --text-muted:#64748b;
-      --text-light:#94a3b8;
-      --sidebar-w: 210px;
-      --header-h:  60px;
+      --primary:        #1e3a5f;
+      --primary-light:  #264d7e;
+      --accent:         #3b82f6;
+      --accent-dark:    #2563eb;
+      --success:        #10b981;
+      --warning:        #f59e0b;
+      --danger:         #ef4444;
+      --bg:             #f1f5f9;
+      --card:           #ffffff;
+      --border:         #e2e8f0;
+      --text:           #1e293b;
+      --text-muted:     #64748b;
+      --text-light:     #94a3b8;
+      --sidebar-w:      210px;
+      --header-h:       60px;
       --font: 'Malgun Gothic', 'Apple SD Gothic Neo', '맑은 고딕', sans-serif;
-      --radius:    10px;
-      --shadow:    0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
-      --shadow-md: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
+      --radius:         10px;
+      --shadow:         0 1px 3px rgba(0,0,0,.08), 0 1px 2px rgba(0,0,0,.06);
+      --shadow-md:      0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -1px rgba(0,0,0,.06);
     }
 
     html, body { height: 100%; overflow: hidden; }
+    body { font-family: var(--font); font-size: 13px; color: var(--text); background: var(--bg); display: flex; flex-direction: column; }
 
-    body {
-      font-family: var(--font);
-      font-size: 13px;
-      color: var(--text);
-      background: var(--bg);
-      display: flex;
-      flex-direction: column;
-    }
-
-    /* ── Header ────────────────────────────────────────────────────── */
+    /* ── Header ── */
     .header {
       position: fixed; top: 0; left: 0; right: 0; z-index: 100;
       height: var(--header-h);
-      background: var(--card);
-      border-bottom: 1px solid var(--border);
-      box-shadow: var(--shadow);
-      display: flex; align-items: center;
-      padding: 0 20px 0 0;
+      background: var(--card); border-bottom: 1px solid var(--border); box-shadow: var(--shadow);
+      display: flex; align-items: center; padding: 0 20px 0 0;
     }
-
     .header-logo {
-      width: var(--sidebar-w);
-      padding: 0 18px;
+      width: var(--sidebar-w); padding: 0 18px;
       display: flex; align-items: center; gap: 10px;
-      border-right: 1px solid var(--border);
-      height: 100%;
-      flex-shrink: 0;
+      border-right: 1px solid var(--border); height: 100%; flex-shrink: 0;
     }
-
-    .logo-icon {
-      width: 34px; height: 34px;
-      background: var(--primary);
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 16px; color: white; font-weight: 700;
-      flex-shrink: 0;
-    }
-
+    .logo-icon { width: 34px; height: 34px; background: var(--primary); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; color: white; font-weight: 700; flex-shrink: 0; }
     .logo-text { display: flex; flex-direction: column; }
     .logo-company { font-size: 13px; font-weight: 700; color: var(--primary); line-height: 1.2; }
     .logo-subtitle { font-size: 10px; color: var(--text-muted); line-height: 1.2; }
-
-    .header-main {
-      flex: 1;
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 0 20px;
-    }
-
-    .header-title {
-      font-size: 15px; font-weight: 700; color: var(--text);
-    }
-
+    .header-main { flex: 1; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; }
+    .header-title { font-size: 15px; font-weight: 700; color: var(--text); }
     .header-right { display: flex; align-items: center; gap: 16px; }
-
-    .notif-btn {
-      position: relative;
-      background: none; border: none; cursor: pointer;
-      width: 36px; height: 36px;
-      border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px;
-      color: var(--text-muted);
-      transition: background .15s;
-    }
+    .notif-btn { position: relative; background: none; border: none; cursor: pointer; width: 36px; height: 36px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; color: var(--text-muted); transition: background .15s; }
     .notif-btn:hover { background: var(--bg); }
-
-    .notif-badge {
-      position: absolute; top: 4px; right: 4px;
-      background: var(--danger);
-      color: white; font-size: 9px; font-weight: 700;
-      width: 16px; height: 16px;
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      border: 2px solid white;
-    }
-
-    .user-area {
-      display: flex; align-items: center; gap: 10px;
-      cursor: pointer;
-      padding: 6px 10px;
-      border-radius: 8px;
-      transition: background .15s;
-    }
+    .notif-badge { position: absolute; top: 4px; right: 4px; background: var(--danger); color: white; font-size: 9px; font-weight: 700; width: 16px; height: 16px; border-radius: 50%; display: flex; align-items: center; justify-content: center; border: 2px solid white; }
+    .user-area { display: flex; align-items: center; gap: 10px; cursor: pointer; padding: 6px 10px; border-radius: 8px; transition: background .15s; }
     .user-area:hover { background: var(--bg); }
-
-    .user-avatar {
-      width: 34px; height: 34px;
-      background: var(--accent);
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      color: white; font-size: 13px; font-weight: 700;
-      flex-shrink: 0;
-    }
-
+    .user-avatar { width: 34px; height: 34px; background: var(--accent); border-radius: 50%; display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; font-weight: 700; flex-shrink: 0; }
     .user-info { display: flex; flex-direction: column; }
     .user-name { font-size: 12px; font-weight: 700; color: var(--text); }
     .user-role { font-size: 10px; color: var(--text-muted); }
-
     .chevron { font-size: 10px; color: var(--text-muted); }
 
-    /* ── Layout shell ───────────────────────────────────────────────── */
-    .shell {
-      display: flex;
-      margin-top: var(--header-h);
-      height: calc(100vh - var(--header-h));
-      overflow: hidden;
-    }
+    /* ── Shell ── */
+    .shell { display: flex; margin-top: var(--header-h); height: calc(100vh - var(--header-h)); overflow: hidden; }
 
-    /* ── Sidebar ────────────────────────────────────────────────────── */
-    .sidebar {
-      width: var(--sidebar-w);
-      background: var(--primary);
-      flex-shrink: 0;
-      display: flex; flex-direction: column;
-      overflow-y: auto;
-      overflow-x: hidden;
-    }
-
+    /* ── Sidebar ── */
+    .sidebar { width: var(--sidebar-w); background: var(--primary); flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; overflow-x: hidden; }
     .sidebar::-webkit-scrollbar { width: 4px; }
     .sidebar::-webkit-scrollbar-thumb { background: rgba(255,255,255,.15); border-radius: 4px; }
-
     .nav-section { padding: 12px 0 4px; }
-    .nav-section-label {
-      padding: 0 18px 6px;
-      font-size: 9px; font-weight: 700;
-      letter-spacing: .08em;
-      color: rgba(255,255,255,.35);
-      text-transform: uppercase;
-    }
-
-    .nav-item {
-      display: flex; align-items: center; gap: 10px;
-      padding: 9px 18px;
-      color: rgba(255,255,255,.7);
-      cursor: pointer;
-      font-size: 13px;
-      border-left: 3px solid transparent;
-      transition: background .15s, color .15s, border-color .15s;
-      user-select: none;
-    }
-
+    .nav-section-label { padding: 0 18px 6px; font-size: 9px; font-weight: 700; letter-spacing: .08em; color: rgba(255,255,255,.35); text-transform: uppercase; }
+    .nav-item { display: flex; align-items: center; gap: 10px; padding: 9px 18px; color: rgba(255,255,255,.7); cursor: pointer; font-size: 13px; border-left: 3px solid transparent; transition: background .15s, color .15s, border-color .15s; user-select: none; }
     .nav-item:hover { background: rgba(255,255,255,.07); color: rgba(255,255,255,.95); }
-
-    .nav-item.active {
-      background: rgba(59,130,246,.18);
-      color: white;
-      border-left-color: var(--accent);
-    }
-
+    .nav-item.active { background: rgba(59,130,246,.18); color: white; border-left-color: var(--accent); }
     .nav-icon { font-size: 15px; flex-shrink: 0; width: 20px; text-align: center; }
-
-    .nav-expand { margin-left: auto; font-size: 10px; color: rgba(255,255,255,.4); }
-
-    .nav-sub {
-      background: rgba(0,0,0,.12);
-      display: none;
-    }
+    .nav-expand { margin-left: auto; font-size: 10px; color: rgba(255,255,255,.4); transition: transform .2s; }
+    .nav-expand.open { transform: rotate(90deg); }
+    .nav-sub { background: rgba(0,0,0,.12); display: none; }
     .nav-sub.open { display: block; }
-
-    .nav-sub-item {
-      display: flex; align-items: center; gap: 8px;
-      padding: 7px 18px 7px 44px;
-      color: rgba(255,255,255,.6);
-      cursor: pointer;
-      font-size: 12px;
-      border-left: 3px solid transparent;
-      transition: background .15s, color .15s;
-    }
-    .nav-sub-item::before {
-      content: '—';
-      font-size: 9px;
-      color: rgba(255,255,255,.25);
-    }
+    .nav-sub-item { display: flex; align-items: center; gap: 8px; padding: 7px 18px 7px 44px; color: rgba(255,255,255,.6); cursor: pointer; font-size: 12px; border-left: 3px solid transparent; transition: background .15s, color .15s; }
+    .nav-sub-item::before { content: '—'; font-size: 9px; color: rgba(255,255,255,.25); }
     .nav-sub-item:hover { background: rgba(255,255,255,.06); color: rgba(255,255,255,.9); }
-    .nav-sub-item.active {
-      color: var(--accent);
-      background: rgba(59,130,246,.1);
-      border-left-color: var(--accent);
-    }
+    .nav-sub-item.active { color: var(--accent); background: rgba(59,130,246,.1); border-left-color: var(--accent); }
+    .sidebar-footer { margin-top: auto; border-top: 1px solid rgba(255,255,255,.08); padding: 12px 0; }
 
-    .sidebar-footer {
-      margin-top: auto;
-      border-top: 1px solid rgba(255,255,255,.08);
-      padding: 12px 0;
-    }
+    /* ── Main + View System ── */
+    .main { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+    .breadcrumb-bar { padding: 10px 20px; display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-muted); border-bottom: 1px solid var(--border); background: var(--card); flex-shrink: 0; }
+    .breadcrumb-bar .sep { color: var(--text-light); }
+    .breadcrumb-bar .current { color: var(--text); font-weight: 600; }
+    .view-container { flex: 1; overflow: hidden; position: relative; }
+    .view { display: none; height: 100%; overflow-y: auto; padding: 20px; }
+    .view.active { display: block; }
+    .view::-webkit-scrollbar { width: 6px; }
+    .view::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-    /* ── Main area ──────────────────────────────────────────────────── */
-    .main {
-      flex: 1;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-    }
-
-    .breadcrumb-bar {
-      padding: 10px 20px;
-      display: flex; align-items: center; gap: 6px;
-      font-size: 11px; color: var(--text-muted);
-      border-bottom: 1px solid var(--border);
-      background: var(--card);
-      flex-shrink: 0;
-    }
-    .breadcrumb-bar span.sep { color: var(--text-light); }
-    .breadcrumb-bar span.current { color: var(--text); font-weight: 600; }
-
-    .columns-wrapper {
-      flex: 1;
-      overflow: hidden;
-      padding: 16px;
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 14px;
-    }
-
-    /* ── Column card ────────────────────────────────────────────────── */
-    .col-card {
-      background: var(--card);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      min-width: 0;
-    }
-
-    .col-header {
-      padding: 14px 16px 12px;
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-
-    .col-header-top {
-      display: flex; align-items: flex-start; gap: 10px;
-    }
-
-    .step-badge {
-      width: 28px; height: 28px;
-      border-radius: 50%;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 14px; font-weight: 700; color: white;
-      flex-shrink: 0;
-      margin-top: 1px;
-    }
-    .step-badge.s1 { background: var(--accent); }
-    .step-badge.s2 { background: var(--warning); }
-    .step-badge.s3 { background: var(--success); }
-
-    .col-header-text { flex: 1; min-width: 0; }
-    .col-title { font-size: 14px; font-weight: 700; color: var(--text); line-height: 1.3; }
-    .col-subtitle { font-size: 11px; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
-
-    .col-body {
-      flex: 1;
-      overflow-y: auto;
-      padding: 14px 16px;
-    }
-    .col-body::-webkit-scrollbar { width: 4px; }
-    .col-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
-
-    /* ── Shared components ─────────────────────────────────────────── */
-    .section-title {
-      font-size: 12px; font-weight: 700;
-      color: var(--text);
-      margin-bottom: 10px;
-      display: flex; align-items: center; gap: 6px;
-    }
-    .section-title .pill {
-      font-size: 9px; font-weight: 700; padding: 2px 7px;
-      border-radius: 20px; background: var(--bg); color: var(--text-muted);
-    }
-
-    .label-row {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 8px;
-    }
-    .field-label {
-      font-size: 11px; font-weight: 700; color: var(--text);
-    }
-    .link-btn {
-      font-size: 11px; color: var(--accent);
-      text-decoration: none; cursor: pointer; background: none; border: none;
-      padding: 0;
-      transition: color .15s;
-    }
-    .link-btn:hover { color: var(--accent-dark); text-decoration: underline; }
-
+    /* ── Shared Components ── */
+    .mock-banner { background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 16px; margin-bottom: 16px; font-size: 12px; color: #92400e; display: flex; align-items: center; gap: 8px; }
+    .fw-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 16px; overflow: hidden; }
+    .fw-card-header { padding: 14px 18px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 8px; }
+    .fw-card-title { font-size: 14px; font-weight: 700; color: var(--text); }
+    .fw-card-body { padding: 16px 18px; }
+    .page-grid { display: grid; gap: 14px; margin-bottom: 16px; }
+    .pg-2 { grid-template-columns: 1fr 1fr; }
+    .pg-4 { grid-template-columns: repeat(4, 1fr); }
+    .stat-card { background: var(--card); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; display: flex; align-items: center; gap: 14px; }
+    .stat-icon { width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0; }
+    .si-blue { background: #dbeafe; } .si-yellow { background: #fef3c7; } .si-green { background: #d1fae5; } .si-purple { background: #ede9fe; }
+    .stat-info { display: flex; flex-direction: column; }
+    .stat-label { font-size: 10px; color: var(--text-muted); }
+    .stat-val { font-size: 22px; font-weight: 800; color: var(--text); line-height: 1.2; }
+    .stat-unit { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+    .badge { font-size: 10px; font-weight: 700; padding: 3px 8px; border-radius: 20px; }
+    .badge-success { background: #d1fae5; color: #065f46; }
+    .badge-warning { background: #fef3c7; color: #92400e; }
+    .badge-danger  { background: #fee2e2; color: #991b1b; }
+    .badge-blue    { background: #dbeafe; color: #1d4ed8; }
+    .badge-gray    { background: #f1f5f9; color: #475569; }
+    .btn-primary { background: var(--accent); color: white; border: none; border-radius: 8px; padding: 10px 18px; font-family: var(--font); font-size: 13px; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: background .15s; }
+    .btn-primary:hover { background: var(--accent-dark); }
+    .btn-outline-sm { border: 1.5px solid var(--accent); background: white; color: var(--accent); border-radius: 7px; padding: 6px 12px; font-family: var(--font); font-size: 12px; cursor: pointer; font-weight: 600; transition: background .15s, color .15s; white-space: nowrap; }
+    .btn-outline-sm:hover { background: var(--accent); color: white; }
+    .btn-outline-gray { border: 1.5px solid var(--border); background: white; color: var(--text-muted); border-radius: 8px; padding: 8px 14px; font-family: var(--font); font-size: 12px; cursor: pointer; transition: border-color .15s, color .15s; }
+    .btn-outline-gray:hover { border-color: var(--accent); color: var(--accent); }
     .divider { height: 1px; background: var(--border); margin: 14px 0; }
+    .score { font-weight: 700; }
+    .pass { color: var(--success); font-weight: 700; font-size: 11px; }
+    .retrain { color: var(--danger); font-weight: 700; font-size: 11px; }
+    .date-cell { font-size: 11px; color: var(--text-muted); }
 
-    /* Toggle button group */
-    .toggle-group {
-      display: flex; gap: 6px;
-      margin-bottom: 12px;
-    }
+    /* ── Form ── */
+    .form-group { margin-bottom: 14px; }
+    .form-label { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 6px; display: block; }
+    .form-input { width: 100%; border: 1.5px solid var(--border); border-radius: 7px; padding: 9px 12px; font-family: var(--font); font-size: 13px; color: var(--text); background: white; transition: border-color .15s; }
+    .form-input:focus { outline: none; border-color: var(--accent); }
 
-    .toggle-btn {
-      flex: 1;
-      background: var(--bg);
-      border: 1.5px solid var(--border);
-      border-radius: 8px;
-      padding: 8px 4px;
-      cursor: pointer;
-      display: flex; flex-direction: column; align-items: center; gap: 4px;
-      font-family: var(--font);
-      font-size: 11px; color: var(--text-muted);
-      transition: border-color .15s, background .15s, color .15s;
-      line-height: 1.3; text-align: center;
-    }
+    /* ── Table ── */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th { font-size: 11px; font-weight: 700; color: var(--text-muted); text-align: left; padding: 8px 12px; border-bottom: 1.5px solid var(--border); background: var(--bg); }
+    .data-table td { font-size: 12px; padding: 9px 12px; border-bottom: 1px solid var(--border); color: var(--text); }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tr:hover td { background: var(--bg); }
+
+    /* ── Filter bar ── */
+    .filter-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .filter-select { border: 1.5px solid var(--border); border-radius: 7px; padding: 7px 10px; font-family: var(--font); font-size: 12px; color: var(--text); background: white; cursor: pointer; }
+    .filter-select:focus { outline: none; border-color: var(--accent); }
+    .search-input { border: 1.5px solid var(--border); border-radius: 7px; padding: 7px 10px 7px 30px; font-family: var(--font); font-size: 12px; color: var(--text); background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E") no-repeat 9px center; flex: 1; min-width: 160px; }
+    .search-input:focus { outline: none; border-color: var(--accent); }
+
+    /* ── Toggle groups (exam create) ── */
+    .toggle-group { display: flex; gap: 6px; margin-bottom: 12px; }
+    .toggle-btn { flex: 1; background: var(--bg); border: 1.5px solid var(--border); border-radius: 8px; padding: 8px 4px; cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 4px; font-family: var(--font); font-size: 11px; color: var(--text-muted); transition: border-color .15s, background .15s, color .15s; line-height: 1.3; text-align: center; }
     .toggle-btn .ti { font-size: 18px; }
     .toggle-btn:hover { border-color: var(--accent); color: var(--text); }
-    .toggle-btn.sel {
-      border-color: var(--accent);
-      background: #eff6ff;
-      color: var(--accent-dark);
-      font-weight: 700;
-    }
-    .toggle-btn .check {
-      font-size: 9px; color: var(--accent);
-      display: none;
-    }
+    .toggle-btn.sel { border-color: var(--accent); background: #eff6ff; color: var(--accent-dark); font-weight: 700; }
+    .toggle-btn .check { font-size: 9px; color: var(--accent); display: none; }
     .toggle-btn.sel .check { display: inline; }
-
-    .toggle-group.row { flex-direction: row; }
-    .toggle-group.row .toggle-btn { flex-direction: row; justify-content: center; gap: 6px; padding: 8px; }
-    .toggle-group.row .toggle-btn .ti { font-size: 14px; }
-
-    /* Flat toggles for difficulty/count */
-    .flat-toggle-group {
-      display: flex; border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden;
-      margin-bottom: 12px;
-    }
-    .flat-toggle {
-      flex: 1;
-      background: var(--bg);
-      border: none;
-      border-right: 1px solid var(--border);
-      padding: 8px 4px;
-      cursor: pointer;
-      font-family: var(--font);
-      font-size: 12px; color: var(--text-muted);
-      transition: background .15s, color .15s;
-    }
+    .flat-toggle-group { display: flex; border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+    .flat-toggle { flex: 1; background: var(--bg); border: none; border-right: 1px solid var(--border); padding: 8px 4px; cursor: pointer; font-family: var(--font); font-size: 12px; color: var(--text-muted); transition: background .15s, color .15s; }
     .flat-toggle:last-child { border-right: none; }
     .flat-toggle:hover { background: #dbeafe; color: var(--accent-dark); }
     .flat-toggle.sel { background: var(--accent); color: white; font-weight: 700; }
-
-    /* Dropdown + button combo */
     .select-row { display: flex; gap: 6px; margin-bottom: 12px; }
-    .select-row select {
-      flex: 1; border: 1.5px solid var(--border); border-radius: 7px;
-      padding: 7px 10px;
-      font-family: var(--font); font-size: 12px; color: var(--text);
-      background: white; cursor: pointer;
-      appearance: auto;
-    }
+    .select-row select { flex: 1; border: 1.5px solid var(--border); border-radius: 7px; padding: 7px 10px; font-family: var(--font); font-size: 12px; color: var(--text); background: white; }
     .select-row select:focus { outline: none; border-color: var(--accent); }
-    .btn-outline-sm {
-      border: 1.5px solid var(--accent); background: white; color: var(--accent);
-      border-radius: 7px; padding: 7px 10px; font-family: var(--font);
-      font-size: 12px; cursor: pointer; font-weight: 600;
-      transition: background .15s, color .15s;
-      white-space: nowrap;
-    }
-    .btn-outline-sm:hover { background: var(--accent); color: white; }
-
-    /* Big CTA button */
-    .btn-primary {
-      width: 100%; background: var(--accent); color: white; border: none;
-      border-radius: 8px; padding: 11px 16px;
-      font-family: var(--font); font-size: 13px; font-weight: 700;
-      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
-      transition: background .15s, transform .1s;
-      margin-bottom: 10px;
-    }
-    .btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); }
-    .btn-primary:active { transform: translateY(0); }
-
-    /* Preview result block */
-    .result-header {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 8px;
-    }
-    .result-count {
-      font-size: 11px; font-weight: 700; color: var(--success);
-      background: #ecfdf5; padding: 3px 8px; border-radius: 20px;
-    }
-
+    .btn-save { background: var(--primary); color: white; border: none; border-radius: 8px; padding: 9px 16px; font-family: var(--font); font-size: 12px; font-weight: 700; cursor: pointer; transition: background .15s; }
+    .btn-save:hover { background: var(--primary-light); }
+    .note-text { font-size: 10px; color: var(--warning); margin-top: 8px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; padding: 6px 8px; }
+    .field-label { font-size: 11px; font-weight: 700; color: var(--text); margin-bottom: 7px; }
+    .section-title { font-size: 12px; font-weight: 700; color: var(--text); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+    .result-count { font-size: 10px; font-weight: 700; color: var(--success); background: #ecfdf5; padding: 3px 8px; border-radius: 20px; }
     .q-list { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; }
-
-    .q-item {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      cursor: pointer;
-      transition: background .12s;
-    }
+    .q-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; cursor: pointer; transition: background .12s; }
     .q-item:hover { background: var(--bg); }
     .q-item-left { display: flex; flex-direction: column; gap: 2px; }
     .q-num { font-size: 10px; color: var(--text-muted); }
     .q-text { font-size: 11px; color: var(--text); font-weight: 500; line-height: 1.4; }
-    .q-type-badge {
-      font-size: 9px; padding: 2px 6px; border-radius: 4px;
-      background: #eff6ff; color: var(--accent); font-weight: 600;
-    }
-    .q-arrow { font-size: 10px; color: var(--text-light); }
-
-    .more-link {
-      text-align: center; font-size: 11px; color: var(--text-muted);
-      padding: 6px; cursor: pointer;
-    }
+    .q-type-badge { font-size: 9px; padding: 2px 6px; border-radius: 4px; background: #eff6ff; color: var(--accent); font-weight: 600; }
+    .more-link { text-align: center; font-size: 11px; color: var(--text-muted); padding: 6px; cursor: pointer; }
     .more-link:hover { color: var(--accent); }
 
-    .bottom-actions { display: flex; gap: 8px; }
-    .btn-outline-gray {
-      flex: 1; border: 1.5px solid var(--border); background: white; color: var(--text-muted);
-      border-radius: 8px; padding: 9px; font-family: var(--font); font-size: 12px;
-      cursor: pointer; transition: border-color .15s, color .15s;
-    }
-    .btn-outline-gray:hover { border-color: var(--accent); color: var(--accent); }
-    .btn-save {
-      flex: 1; background: var(--primary); color: white; border: none;
-      border-radius: 8px; padding: 9px; font-family: var(--font); font-size: 12px;
-      font-weight: 700; cursor: pointer; transition: background .15s;
-    }
-    .btn-save:hover { background: var(--primary-light); }
-
-    .note-text {
-      font-size: 10px; color: var(--warning); margin-top: 8px;
-      background: #fffbeb; border: 1px solid #fde68a;
-      border-radius: 6px; padding: 6px 8px;
-    }
-
-    /* ── Column 2 specific ─────────────────────────────────────────── */
-    .status-card {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      padding: 10px 12px;
-      margin-bottom: 12px;
-    }
-    .status-row {
-      display: flex; align-items: center; gap: 8px;
-      margin-bottom: 6px;
-    }
+    /* ── Review view ── */
+    .status-card { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+    .status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
     .status-label { font-size: 11px; color: var(--text-muted); }
-    .badge {
-      font-size: 10px; font-weight: 700; padding: 3px 8px;
-      border-radius: 20px;
-    }
-    .badge-warning { background: #fef3c7; color: #92400e; }
-    .badge-success { background: #d1fae5; color: #065f46; }
-    .badge-danger  { background: #fee2e2; color: #991b1b; }
-    .badge-gray    { background: #f1f5f9; color: #475569; }
-    .badge-blue    { background: #dbeafe; color: #1d4ed8; }
-
-    .status-meta {
-      display: flex; gap: 14px;
-    }
+    .status-meta { display: flex; gap: 14px; }
     .meta-item { display: flex; flex-direction: column; gap: 1px; }
     .meta-key { font-size: 9px; color: var(--text-light); }
     .meta-val { font-size: 11px; font-weight: 600; color: var(--text); }
-
-    /* Tabs */
-    .tabs {
-      display: flex; gap: 0; border-bottom: 1.5px solid var(--border); margin-bottom: 10px;
-    }
-    .tab {
-      padding: 7px 10px; font-size: 11px; cursor: pointer;
-      color: var(--text-muted); border-bottom: 2px solid transparent;
-      margin-bottom: -2px; transition: color .15s; white-space: nowrap;
-      font-weight: 500; background: none; border-top: none; border-left: none; border-right: none;
-      font-family: var(--font);
-    }
+    .tabs { display: flex; gap: 0; border-bottom: 1.5px solid var(--border); margin-bottom: 10px; }
+    .tab { padding: 7px 10px; font-size: 11px; cursor: pointer; color: var(--text-muted); border-bottom: 2px solid transparent; margin-bottom: -2px; transition: color .15s; white-space: nowrap; font-weight: 500; background: none; border-top: none; border-left: none; border-right: none; font-family: var(--font); }
     .tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 700; }
     .tab:hover { color: var(--text); }
-
-    /* Page nav */
-    .page-nav {
-      display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px;
-    }
-    .page-btn {
-      width: 26px; height: 26px;
-      border: 1.5px solid var(--border);
-      border-radius: 6px; background: white;
-      font-size: 11px; cursor: pointer;
-      display: flex; align-items: center; justify-content: center;
-      color: var(--text-muted); font-family: var(--font);
-      transition: background .12s, border-color .12s;
-    }
+    .page-nav { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 12px; }
+    .page-btn { width: 26px; height: 26px; border: 1.5px solid var(--border); border-radius: 6px; background: white; font-size: 11px; cursor: pointer; display: flex; align-items: center; justify-content: center; color: var(--text-muted); font-family: var(--font); transition: background .12s, border-color .12s; }
     .page-btn.active { background: var(--accent); border-color: var(--accent); color: white; font-weight: 700; }
     .page-btn:hover:not(.active) { border-color: var(--accent); color: var(--accent); }
-
-    /* Question card */
-    .q-card {
-      border: 1.5px solid var(--border);
-      border-radius: 8px;
-      overflow: hidden;
-      margin-bottom: 12px;
-    }
-    .q-card-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 12px;
-      background: var(--bg);
-      border-bottom: 1px solid var(--border);
-    }
+    .q-card { border: 1.5px solid var(--border); border-radius: 8px; overflow: hidden; margin-bottom: 12px; }
+    .q-card-header { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; background: var(--bg); border-bottom: 1px solid var(--border); }
     .q-card-num { font-size: 11px; font-weight: 700; color: var(--text); }
-
-    .badge-select {
-      position: relative; display: inline-flex; align-items: center; gap: 4px;
-    }
-    .badge-select .badge { cursor: pointer; }
-    .badge-arrow { font-size: 9px; }
-
     .q-card-body { padding: 10px 12px; }
     .q-question { font-size: 12px; font-weight: 600; color: var(--text); margin-bottom: 8px; line-height: 1.5; }
-    .q-label { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-bottom: 5px; }
-
     .choices { display: flex; flex-direction: column; gap: 4px; margin-bottom: 10px; }
-    .choice {
-      display: flex; align-items: center; gap: 6px;
-      font-size: 11px; color: var(--text);
-      padding: 5px 8px; border-radius: 5px; border: 1px solid var(--border);
-      background: white;
-    }
+    .choice { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text); padding: 5px 8px; border-radius: 5px; border: 1px solid var(--border); background: white; }
     .choice.correct { border-color: var(--success); background: #f0fdf4; color: #065f46; font-weight: 600; }
-    .choice-num {
-      width: 18px; height: 18px; border-radius: 50%;
-      background: var(--border); color: var(--text-muted);
-      font-size: 10px; font-weight: 700;
-      display: flex; align-items: center; justify-content: center;
-      flex-shrink: 0;
-    }
+    .choice-num { width: 18px; height: 18px; border-radius: 50%; background: var(--border); color: var(--text-muted); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
     .choice.correct .choice-num { background: var(--success); color: white; }
-
     .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 10px; }
-    .info-box {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 6px; padding: 8px 10px;
-    }
+    .info-box { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; }
     .info-box-label { font-size: 9px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; }
     .info-box-val { font-size: 11px; color: var(--text); font-weight: 600; }
-    .comment-box {
-      background: #f8fafc;
-      border: 1px solid var(--border);
-      border-radius: 6px; padding: 8px 10px;
-    }
-    .comment-text { font-size: 11px; color: var(--text); line-height: 1.5; margin-bottom: 4px; }
-    .comment-meta { font-size: 9px; color: var(--text-light); }
-
     .textarea-label { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-bottom: 4px; }
-    textarea {
-      width: 100%; border: 1.5px solid var(--border); border-radius: 6px;
-      padding: 8px 10px; font-family: var(--font); font-size: 11px; color: var(--text);
-      resize: vertical; min-height: 70px; line-height: 1.5;
-    }
+    textarea { width: 100%; border: 1.5px solid var(--border); border-radius: 6px; padding: 8px 10px; font-family: var(--font); font-size: 11px; color: var(--text); resize: vertical; min-height: 70px; line-height: 1.5; }
     textarea:focus { outline: none; border-color: var(--accent); }
-
-    .action-row {
-      display: flex; gap: 6px; padding: 10px 12px;
-      border-top: 1px solid var(--border); background: var(--bg);
-    }
-    .btn-sm {
-      flex: 1; border-radius: 6px; padding: 7px 6px;
-      font-family: var(--font); font-size: 11px; cursor: pointer;
-      font-weight: 600; transition: all .15s;
-    }
+    .action-row { display: flex; gap: 6px; padding: 10px 12px; border-top: 1px solid var(--border); background: var(--bg); }
+    .btn-sm { flex: 1; border-radius: 6px; padding: 7px 6px; font-family: var(--font); font-size: 11px; cursor: pointer; font-weight: 600; transition: all .15s; }
     .btn-sm-red { border: 1.5px solid var(--danger); background: white; color: var(--danger); }
     .btn-sm-red:hover { background: #fee2e2; }
     .btn-sm-gray { border: 1.5px solid var(--border); background: white; color: var(--text-muted); }
@@ -606,129 +224,69 @@
     .btn-sm-blue { border: none; background: var(--accent); color: white; }
     .btn-sm-blue:hover { background: var(--accent-dark); }
 
-    /* ── Column 3 specific ─────────────────────────────────────────── */
-    .col3-top {
-      display: flex; align-items: center; justify-content: space-between;
-      margin-bottom: 12px;
-    }
-    .col3-title { font-size: 13px; font-weight: 700; color: var(--text); }
-    .col3-right { display: flex; align-items: center; gap: 8px; }
-
-    .stat-grid {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px;
-    }
-    .stat-card {
-      background: var(--bg);
-      border: 1px solid var(--border);
-      border-radius: 8px; padding: 10px 12px;
-      display: flex; align-items: center; gap: 10px;
-    }
-    .stat-icon {
-      width: 36px; height: 36px; border-radius: 8px;
-      display: flex; align-items: center; justify-content: center;
-      font-size: 18px; flex-shrink: 0;
-    }
-    .si-blue { background: #dbeafe; }
-    .si-yellow { background: #fef3c7; }
-    .si-green { background: #d1fae5; }
-    .si-purple { background: #ede9fe; }
-
-    .stat-info { display: flex; flex-direction: column; }
-    .stat-label { font-size: 9px; color: var(--text-muted); }
-    .stat-val { font-size: 18px; font-weight: 800; color: var(--text); line-height: 1.2; }
-    .stat-unit { font-size: 11px; font-weight: 400; color: var(--text-muted); }
-
-    /* Search */
-    .search-row {
-      display: flex; gap: 6px; margin-bottom: 8px;
-    }
-    .search-input {
-      flex: 1; border: 1.5px solid var(--border); border-radius: 7px;
-      padding: 7px 10px 7px 30px; font-family: var(--font); font-size: 12px; color: var(--text);
-      background: white url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='M21 21l-4.35-4.35'/%3E%3C/svg%3E") no-repeat 10px center;
-    }
-    .search-input:focus { outline: none; border-color: var(--accent); }
-
-    /* Table */
-    .result-table { width: 100%; border-collapse: collapse; margin-bottom: 14px; }
-    .result-table th {
-      font-size: 10px; font-weight: 700; color: var(--text-muted);
-      text-align: left; padding: 7px 8px;
-      border-bottom: 1.5px solid var(--border); background: var(--bg);
-    }
-    .result-table td {
-      font-size: 11px; padding: 7px 8px;
-      border-bottom: 1px solid var(--border); color: var(--text);
-    }
-    .result-table tr:last-child td { border-bottom: none; }
-    .result-table tr:hover td { background: var(--bg); }
-    .score { font-weight: 700; }
-    .pass { color: var(--success); font-weight: 700; font-size: 10px; }
-    .retrain { color: var(--danger); font-weight: 700; font-size: 10px; }
-    .date-cell { font-size: 10px; color: var(--text-muted); }
-    .more-row td { text-align: center; font-size: 11px; color: var(--text-muted); }
-
-    /* Charts area */
-    .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
-    .chart-card {
-      border: 1px solid var(--border); border-radius: 8px; padding: 10px;
-    }
-    .chart-title { font-size: 10px; font-weight: 700; color: var(--text-muted); margin-bottom: 8px; }
-
-    /* Bar chart CSS */
-    .bar-chart { display: flex; flex-direction: column; gap: 5px; }
-    .bar-row { display: flex; align-items: center; gap: 6px; }
-    .bar-label { font-size: 10px; color: var(--text-muted); width: 32px; flex-shrink: 0; text-align: right; }
-    .bar-track {
-      flex: 1; height: 14px; background: var(--bg); border-radius: 4px; overflow: hidden;
-      position: relative;
-    }
-    .bar-fill {
-      height: 100%; border-radius: 4px;
-      transition: width .4s ease;
-    }
-    .bar-val { font-size: 10px; font-weight: 700; color: var(--text); width: 26px; }
-
-    /* Donut chart SVG */
-    .donut-wrap {
-      display: flex; align-items: center; gap: 10px;
-    }
-    .donut-svg { flex-shrink: 0; }
-    .donut-legend { display: flex; flex-direction: column; gap: 4px; }
+    /* ── Results view ── */
+    .charts-row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+    .chart-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--card); }
+    .chart-title { font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 10px; }
+    .bar-chart { display: flex; flex-direction: column; gap: 6px; }
+    .bar-row { display: flex; align-items: center; gap: 8px; }
+    .bar-label { font-size: 10px; color: var(--text-muted); width: 36px; flex-shrink: 0; text-align: right; }
+    .bar-track { flex: 1; height: 14px; background: var(--bg); border-radius: 4px; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 4px; transition: width .4s ease; }
+    .bar-val { font-size: 10px; font-weight: 700; color: var(--text); width: 28px; }
+    .donut-wrap { display: flex; align-items: center; gap: 12px; }
+    .donut-legend { display: flex; flex-direction: column; gap: 5px; }
     .legend-item { display: flex; align-items: center; gap: 5px; font-size: 10px; color: var(--text); }
     .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-
-    /* AI analysis card */
-    .ai-card {
-      background: #eff6ff;
-      border: 1px solid #bfdbfe;
-      border-radius: 8px; padding: 12px;
-      margin-bottom: 12px;
-    }
-    .ai-card-header {
-      display: flex; align-items: center; gap: 8px;
-      margin-bottom: 8px;
-    }
-    .ai-icon {
-      width: 28px; height: 28px; background: var(--accent);
-      border-radius: 6px; display: flex; align-items: center; justify-content: center;
-      font-size: 14px; color: white;
-    }
+    .ai-card { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+    .ai-card-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+    .ai-icon { width: 28px; height: 28px; background: var(--accent); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 14px; color: white; }
     .ai-card-title { font-size: 12px; font-weight: 700; color: var(--accent-dark); }
     .ai-bullets { display: flex; flex-direction: column; gap: 5px; }
-    .ai-bullet {
-      display: flex; gap: 7px; font-size: 11px; color: #1e40af; line-height: 1.45;
-    }
+    .ai-bullet { display: flex; gap: 7px; font-size: 11px; color: #1e40af; line-height: 1.45; }
     .ai-bullet::before { content: '•'; color: var(--accent); font-weight: 700; flex-shrink: 0; }
-
-    .btn-report {
-      width: 100%; border: 1.5px solid var(--accent); background: white; color: var(--accent);
-      border-radius: 8px; padding: 10px; font-family: var(--font); font-size: 12px;
-      font-weight: 700; cursor: pointer; transition: all .15s;
-    }
+    .btn-report { width: 100%; border: 1.5px solid var(--accent); background: white; color: var(--accent); border-radius: 8px; padding: 10px; font-family: var(--font); font-size: 12px; font-weight: 700; cursor: pointer; transition: all .15s; }
     .btn-report:hover { background: var(--accent); color: white; }
 
-    /* ── Responsive adjustments ─────────────────────────────────────── */
+    /* ── Difficulty select in question list ── */
+    .diff-select { border: 1.5px solid var(--border); border-radius: 6px; padding: 4px 8px; font-family: var(--font); font-size: 11px; cursor: pointer; background: white; }
+    .diff-select:focus { outline: none; border-color: var(--accent); }
+
+    /* ── Quick actions (dashboard) ── */
+    .quick-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+    .qa-btn { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border: 1.5px solid var(--border); border-radius: 8px; background: white; font-family: var(--font); font-size: 12px; font-weight: 700; color: var(--text); cursor: pointer; transition: all .15s; }
+    .qa-btn:hover { border-color: var(--accent); color: var(--accent); background: #eff6ff; }
+    .qa-icon { font-size: 16px; }
+
+    /* ── Activity list ── */
+    .activity-list { display: flex; flex-direction: column; }
+    .activity-item { display: flex; align-items: center; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .activity-item:last-child { border-bottom: none; }
+    .activity-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+    .activity-text { flex: 1; font-size: 12px; color: var(--text); }
+    .activity-time { font-size: 11px; color: var(--text-muted); }
+
+    /* ── Settings ── */
+    .settings-group { margin-bottom: 24px; }
+    .settings-group-title { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+    .settings-item { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+    .settings-item:last-child { border-bottom: none; }
+    .settings-label { font-size: 12px; color: var(--text); font-weight: 600; }
+    .settings-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+    .settings-val { font-size: 12px; font-weight: 700; }
+    .sv-mock { color: var(--warning); }
+    .sv-live { color: var(--success); }
+    .todo-list { display: flex; flex-direction: column; gap: 6px; }
+    .todo-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-muted); }
+    .todo-item::before { content: '☐'; font-size: 14px; }
+
+    /* ── Toast ── */
+    .toast { position: fixed; top: 16px; right: 16px; padding: 10px 18px; border-radius: 8px; font-size: 12px; font-weight: 700; z-index: 9999; box-shadow: var(--shadow-md); animation: fadeIn .2s ease; }
+    .toast-success { background: var(--success); color: white; }
+    .toast-error   { background: var(--danger);  color: white; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+
+    /* ── Responsive ── */
     @media (max-width: 1200px) {
       :root { --sidebar-w: 56px; }
       .nav-item span:not(.nav-icon) { display: none; }
@@ -737,14 +295,18 @@
       .nav-section-label { display: none; }
       .logo-text { display: none; }
       .header-logo { padding: 0 11px; justify-content: center; }
-      .user-info { display: none; }
-      .chevron { display: none; }
+      .user-info, .chevron { display: none; }
+      .pg-4 { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 900px) {
+      .pg-2 { grid-template-columns: 1fr; }
+      .charts-row { grid-template-columns: 1fr; }
     }
   </style>
 </head>
 <body>
 
-<!-- ═══════════════════ HEADER ═══════════════════ -->
+<!-- ═══ HEADER ═══ -->
 <header class="header">
   <div class="header-logo">
     <div class="logo-icon">엑</div>
@@ -754,12 +316,9 @@
     </div>
   </div>
   <div class="header-main">
-    <span class="header-title">OJT 기초고사 관리</span>
+    <span class="header-title" id="header-title">관리자 대시보드</span>
     <div class="header-right">
-      <button class="notif-btn" title="알림">
-        🔔
-        <span class="notif-badge">3</span>
-      </button>
+      <button class="notif-btn" title="알림">🔔<span class="notif-badge">3</span></button>
       <div class="user-area">
         <div class="user-avatar">김</div>
         <div class="user-info">
@@ -772,7 +331,7 @@
   </div>
 </header>
 
-<!-- ═══════════════════ SHELL ═══════════════════ -->
+<!-- ═══ SHELL ═══ -->
 <div class="shell">
 
   <!-- ─── SIDEBAR ─── -->
@@ -780,615 +339,794 @@
     <div class="nav-section">
       <div class="nav-section-label">메뉴</div>
 
-      <div class="nav-item" onclick="setActive(this)">
-        <span class="nav-icon">🏠</span>
-        <span>대시보드</span>
+      <div class="nav-item active" data-view="dashboard" onclick="navigate('dashboard', this)">
+        <span class="nav-icon">🏠</span><span>대시보드</span>
       </div>
 
-      <div class="nav-item active" id="nav-exam" onclick="toggleSub('sub-exam', this)">
-        <span class="nav-icon">📋</span>
-        <span>시험 관리</span>
-        <span class="nav-expand" id="expand-exam">▾</span>
+      <div class="nav-item" id="nav-exam" onclick="toggleSub('sub-exam', this)">
+        <span class="nav-icon">📋</span><span>시험 관리</span>
+        <span class="nav-expand" id="expand-exam">›</span>
       </div>
-      <div class="nav-sub open" id="sub-exam">
-        <div class="nav-sub-item active">시험 생성</div>
-        <div class="nav-sub-item">시험 목록</div>
-        <div class="nav-sub-item">시험 검토</div>
+      <div class="nav-sub" id="sub-exam">
+        <div class="nav-sub-item" data-view="exam-create" onclick="navigate('exam-create', this)">시험 생성</div>
+        <div class="nav-sub-item" data-view="exam-review" onclick="navigate('exam-review', this)">검토 · 수정</div>
       </div>
 
-      <div class="nav-item" onclick="setActive(this)">
-        <span class="nav-icon">📚</span>
-        <span>문제 관리</span>
+      <div class="nav-item" data-view="history" onclick="navigate('history', this)">
+        <span class="nav-icon">📊</span><span>응시 이력</span>
       </div>
 
-      <div class="nav-item" onclick="setActive(this)">
-        <span class="nav-icon">👥</span>
-        <span>응시 관리</span>
+      <div class="nav-item" data-view="questions" onclick="navigate('questions', this)">
+        <span class="nav-icon">📚</span><span>문제 관리</span>
       </div>
 
-      <div class="nav-item" onclick="setActive(this)">
-        <span class="nav-icon">📊</span>
-        <span>결과 분석</span>
+      <div class="nav-item" data-view="users" onclick="navigate('users', this)">
+        <span class="nav-icon">👥</span><span>사용자 승인</span>
       </div>
 
-      <div class="nav-item" onclick="setActive(this)">
-        <span class="nav-icon">🗂️</span>
-        <span>문제 은행</span>
+      <div class="nav-item" data-view="results" onclick="navigate('results', this)">
+        <span class="nav-icon">📈</span><span>결과 분석</span>
       </div>
     </div>
 
     <div class="nav-section">
       <div class="nav-section-label">시스템</div>
-      <div class="nav-item" onclick="setActive(this)">
-        <span class="nav-icon">⚙️</span>
-        <span>설정</span>
-      </div>
-      <div class="nav-item" onclick="setActive(this)">
-        <span class="nav-icon">💬</span>
-        <span>고객지원</span>
+      <div class="nav-item" data-view="settings" onclick="navigate('settings', this)">
+        <span class="nav-icon">⚙️</span><span>설정</span>
       </div>
     </div>
 
     <div class="sidebar-footer">
-      <div class="nav-item" style="font-size:11px; color:rgba(255,255,255,.35); cursor:default; pointer-events:none;">
-        <span class="nav-icon">v</span>
-        <span>v2.4.1</span>
+      <div class="nav-item" style="font-size:11px;color:rgba(255,255,255,.3);cursor:default;pointer-events:none;">
+        <span class="nav-icon">v</span><span>v1.0.0-dev</span>
       </div>
     </div>
   </nav>
 
   <!-- ─── MAIN ─── -->
   <main class="main">
-    <div class="breadcrumb-bar">
-      <span>홈</span>
-      <span class="sep">›</span>
-      <span>시험 관리</span>
-      <span class="sep">›</span>
-      <span class="current">OJT 기초고사 생성</span>
+    <div class="breadcrumb-bar" id="breadcrumb-bar">
+      <span>홈</span><span class="sep">›</span><span class="current">대시보드</span>
     </div>
 
-    <!-- 3-column grid -->
-    <div class="columns-wrapper">
+    <div class="view-container">
 
-      <!-- ══════════════════ COLUMN 1 ══════════════════ -->
-      <div class="col-card">
-        <div class="col-header">
-          <div class="col-header-top">
-            <div class="step-badge s1">①</div>
-            <div class="col-header-text">
-              <div class="col-title">시험 생성</div>
-              <div class="col-subtitle">직무와 조건을 선택하면 AI가 문제를 자동 생성합니다.</div>
+      <!-- ══════════ VIEW: 대시보드 ══════════ -->
+      <section class="view active" id="view-dashboard">
+        <div class="mock-banner">⚠️ Mock 모드 — Claude API·Google Drive 없이 작동 중. 실제 연동 전 뼈대 확인용입니다.</div>
+
+        <div class="page-grid pg-4">
+          <div class="stat-card">
+            <div class="stat-icon si-blue">👤</div>
+            <div class="stat-info"><span class="stat-label">승인된 응시자</span><span class="stat-val" id="stat-approved-count">2<span class="stat-unit">명</span></span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon si-yellow">📝</div>
+            <div class="stat-info"><span class="stat-label">총 응시 완료</span><span class="stat-val" id="stat-exam-count">-<span class="stat-unit">회</span></span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon si-green">✅</div>
+            <div class="stat-info"><span class="stat-label">합격률</span><span class="stat-val">60<span class="stat-unit">%</span></span></div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-icon si-purple">⭐</div>
+            <div class="stat-info"><span class="stat-label">평균 점수</span><span class="stat-val">80.8<span class="stat-unit">점</span></span></div>
+          </div>
+        </div>
+
+        <div class="fw-card">
+          <div class="fw-card-header"><span class="fw-card-title">빠른 실행</span></div>
+          <div class="fw-card-body">
+            <div class="quick-actions">
+              <button class="qa-btn" onclick="navigate('exam-create', null)"><span class="qa-icon">📋</span>시험 생성</button>
+              <button class="qa-btn" onclick="navigate('users', null)"><span class="qa-icon">👥</span>사용자 승인</button>
+              <button class="qa-btn" onclick="navigate('history', null)"><span class="qa-icon">📊</span>응시 이력</button>
+              <button class="qa-btn" onclick="navigate('questions', null)"><span class="qa-icon">📚</span>문제 관리</button>
+              <button class="qa-btn" onclick="navigate('results', null)"><span class="qa-icon">📈</span>결과 분석</button>
             </div>
           </div>
         </div>
 
-        <div class="col-body">
-          <!-- Section title row -->
-          <div class="label-row" style="margin-bottom:12px;">
-            <span class="section-title" style="margin:0;">OJT 기초고사 생성</span>
-            <button class="link-btn">이전 시험 불러오기</button>
-          </div>
-
-          <!-- 1. 직무/팀 선택 -->
-          <div class="field-label" style="margin-bottom:7px;">1. 직무 / 팀 선택</div>
-          <div class="toggle-group" id="team-group">
-            <button class="toggle-btn sel" onclick="selectToggle('team-group', this)">
-              <span class="ti">👤</span>
-              <span>1팀<br>(주간)</span>
-              <span class="check">✓</span>
-            </button>
-            <button class="toggle-btn" onclick="selectToggle('team-group', this)">
-              <span class="ti">👤</span>
-              <span>2팀<br>(4조 3교대)</span>
-              <span class="check">✓</span>
-            </button>
-            <button class="toggle-btn" onclick="selectToggle('team-group', this)">
-              <span class="ti">👤</span>
-              <span>3팀<br>(3조 2교대)</span>
-              <span class="check">✓</span>
-            </button>
-          </div>
-
-          <!-- 2. 난이도 -->
-          <div class="field-label" style="margin-bottom:7px;">2. 난이도</div>
-          <div class="flat-toggle-group" id="diff-group">
-            <button class="flat-toggle" onclick="selectFlat('diff-group', this)">초급</button>
-            <button class="flat-toggle sel" onclick="selectFlat('diff-group', this)">중급</button>
-            <button class="flat-toggle" onclick="selectFlat('diff-group', this)">고급</button>
-          </div>
-
-          <!-- 3. 문항 수 -->
-          <div class="field-label" style="margin-bottom:7px;">3. 문항 수</div>
-          <div class="flat-toggle-group" id="count-group">
-            <button class="flat-toggle" onclick="selectFlat('count-group', this)">10문항</button>
-            <button class="flat-toggle sel" onclick="selectFlat('count-group', this)">20문항</button>
-            <button class="flat-toggle" onclick="selectFlat('count-group', this)">25문항</button>
-          </div>
-
-          <!-- 4. 출제 범위 -->
-          <div class="field-label" style="margin-bottom:7px;">4. 출제 범위 <span style="color:var(--text-light);font-weight:400;">(선택)</span></div>
-          <div class="select-row">
-            <select>
-              <option>전체 범위</option>
-              <option>안전 관리</option>
-              <option>품질 관리</option>
-              <option>설비 운영</option>
-              <option>생산 공정</option>
-            </select>
-            <button class="btn-outline-sm">범위 설정</button>
-          </div>
-
-          <!-- CTA -->
-          <button class="btn-primary">
-            <span>✦</span> AI 문제 생성
-          </button>
-
-          <div class="divider"></div>
-
-          <!-- Preview results -->
-          <div class="result-header">
-            <span class="section-title" style="margin:0;">AI 생성 결과 (미리보기)</span>
-            <span class="result-count">20문항 생성됨</span>
-          </div>
-
-          <div class="q-list">
-            <div class="q-item">
-              <div class="q-item-left">
-                <span class="q-num">문항 1</span>
-                <span class="q-text">생산라인 작업 시 가장 먼저 확인해야 하는 것은?</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <span class="q-type-badge">객관식</span>
-                <span class="q-arrow">›</span>
-              </div>
-            </div>
-            <div class="q-item">
-              <div class="q-item-left">
-                <span class="q-num">문항 2</span>
-                <span class="q-text">품질 이상 발생 시 최초로 보고 대상은?</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <span class="q-type-badge">객관식</span>
-                <span class="q-arrow">›</span>
-              </div>
-            </div>
-            <div class="q-item">
-              <div class="q-item-left">
-                <span class="q-num">문항 3</span>
-                <span class="q-text">5S 활동의 목적이 아닌 것은?</span>
-              </div>
-              <div style="display:flex;align-items:center;gap:6px;">
-                <span class="q-type-badge">객관식</span>
-                <span class="q-arrow">›</span>
+        <div class="page-grid pg-2">
+          <div class="fw-card">
+            <div class="fw-card-header"><span class="fw-card-title">최근 응시 이력</span></div>
+            <div class="fw-card-body" style="padding:0;">
+              <div class="activity-list" style="padding:0 18px;">
+                <div class="activity-item"><div class="activity-dot" style="background:var(--success)"></div><span class="activity-text">홍길동 (T1) — 92점 합격</span><span class="activity-time">2026-06-14</span></div>
+                <div class="activity-item"><div class="activity-dot" style="background:var(--danger)"></div><span class="activity-text">김철수 (T2) — 64점 재교육</span><span class="activity-time">2026-06-14</span></div>
+                <div class="activity-item"><div class="activity-dot" style="background:var(--success)"></div><span class="activity-text">박영희 (T1) — 88점 합격</span><span class="activity-time">2026-06-13</span></div>
+                <div class="activity-item"><div class="activity-dot" style="background:var(--danger)"></div><span class="activity-text">이민수 (T3) — 65점 재교육</span><span class="activity-time">2026-06-13</span></div>
+                <div class="activity-item"><div class="activity-dot" style="background:var(--success)"></div><span class="activity-text">최지훈 (T2) — 95점 합격</span><span class="activity-time">2026-06-12</span></div>
               </div>
             </div>
           </div>
-
-          <div class="more-link">▸ 더보기 (17문항)</div>
-
-          <div class="divider" style="margin-top:8px;"></div>
-
-          <!-- Bottom actions -->
-          <div class="bottom-actions">
-            <button class="btn-outline-gray">📄 PDF 생성</button>
-            <button class="btn-save">💾 시험지 저장</button>
-          </div>
-
-          <div class="note-text">※ AI가 생성한 문제는 반드시 검토 후 사용해주세요.</div>
-        </div>
-      </div>
-
-      <!-- ══════════════════ COLUMN 2 ══════════════════ -->
-      <div class="col-card">
-        <div class="col-header">
-          <div class="col-header-top">
-            <div class="step-badge s2">②</div>
-            <div class="col-header-text">
-              <div class="col-title">검토 · 수정</div>
-              <div class="col-subtitle">관리자가 AI 생성 문제를 검토하고 수정합니다.</div>
+          <div class="fw-card">
+            <div class="fw-card-header"><span class="fw-card-title">시스템 상태</span></div>
+            <div class="fw-card-body">
+              <div class="settings-item"><div><div class="settings-label">운영 모드</div><div class="settings-desc">데이터 소스</div></div><span class="settings-val sv-mock">Mock</span></div>
+              <div class="settings-item"><div><div class="settings-label">백엔드 API</div><div class="settings-desc">FastAPI (localhost:8000)</div></div><span class="settings-val sv-live" id="api-status">확인 중...</span></div>
+              <div class="settings-item"><div><div class="settings-label">Claude API</div><div class="settings-desc">문제 자동 생성</div></div><span class="settings-val sv-mock">미연동</span></div>
+              <div class="settings-item"><div><div class="settings-label">Google Drive</div><div class="settings-desc">문제은행·결과 저장</div></div><span class="settings-val sv-mock">미연동</span></div>
             </div>
           </div>
         </div>
+      </section>
 
-        <div class="col-body">
-          <!-- Status card -->
-          <div class="status-card">
-            <div class="status-row">
-              <span class="status-label">현재 상태</span>
-              <span class="badge badge-warning">검토중</span>
+      <!-- ══════════ VIEW: 시험 생성 ══════════ -->
+      <section class="view" id="view-exam-create">
+        <div class="page-grid pg-2">
+          <div class="fw-card">
+            <div class="fw-card-header">
+              <span class="fw-card-title">① 시험 생성</span>
+              <button class="btn-outline-sm" style="font-size:11px;">이전 시험 불러오기</button>
             </div>
-            <div class="status-meta">
-              <div class="meta-item">
-                <span class="meta-key">시험명</span>
-                <span class="meta-val">OJT 기초고사 2025-06</span>
+            <div class="fw-card-body">
+              <div class="field-label" style="margin-bottom:7px;">1. 직무 / 팀 선택</div>
+              <div class="toggle-group" id="team-group">
+                <button class="toggle-btn sel" onclick="selectToggle('team-group',this)">
+                  <span class="ti">👤</span><span>1팀<br>(주간)</span><span class="check">✓</span>
+                </button>
+                <button class="toggle-btn" onclick="selectToggle('team-group',this)">
+                  <span class="ti">👤</span><span>2팀<br>(4조3교대)</span><span class="check">✓</span>
+                </button>
+                <button class="toggle-btn" onclick="selectToggle('team-group',this)">
+                  <span class="ti">👤</span><span>3팀<br>(3조2교대)</span><span class="check">✓</span>
+                </button>
               </div>
-              <div class="meta-item">
-                <span class="meta-key">문항 수</span>
-                <span class="meta-val">20문항</span>
+
+              <div class="field-label" style="margin-bottom:7px;">2. 난이도</div>
+              <div class="flat-toggle-group" id="diff-group">
+                <button class="flat-toggle" onclick="selectFlat('diff-group',this)">초급</button>
+                <button class="flat-toggle sel" onclick="selectFlat('diff-group',this)">중급</button>
+                <button class="flat-toggle" onclick="selectFlat('diff-group',this)">고급</button>
               </div>
-              <div class="meta-item">
-                <span class="meta-key">생성일</span>
-                <span class="meta-val">2025.06.01</span>
+
+              <div class="field-label" style="margin-bottom:7px;">3. 문항 수</div>
+              <div class="flat-toggle-group" id="count-group">
+                <button class="flat-toggle" onclick="selectFlat('count-group',this)">10문항</button>
+                <button class="flat-toggle" onclick="selectFlat('count-group',this)">20문항</button>
+                <button class="flat-toggle sel" onclick="selectFlat('count-group',this)">25문항</button>
               </div>
+
+              <div class="field-label" style="margin-bottom:7px;">4. 출제 범위 <span style="color:var(--text-light);font-weight:400;">(선택)</span></div>
+              <div class="select-row">
+                <select><option>전체 범위</option><option>안전 관리</option><option>품질 관리</option><option>설비 운영</option><option>생산 공정</option></select>
+                <button class="btn-outline-sm">범위 설정</button>
+              </div>
+
+              <button class="btn-primary" style="width:100%;justify-content:center;margin-bottom:10px;" onclick="generatePreview()">
+                <span>✦</span> AI 문제 생성
+              </button>
+              <div class="note-text">※ AI 생성 문제는 반드시 검토 후 사용해주세요. (현재 Mock 모드)</div>
             </div>
           </div>
 
-          <!-- Tabs -->
-          <div class="tabs" id="review-tabs">
-            <button class="tab active" onclick="switchTab('review-tabs', this)">전체 문항 (20)</button>
-            <button class="tab" onclick="switchTab('review-tabs', this)">검토 중 (5)</button>
-            <button class="tab" onclick="switchTab('review-tabs', this)">수정 요청 (2)</button>
-            <button class="tab" onclick="switchTab('review-tabs', this)">승인 완료 (13)</button>
+          <div class="fw-card">
+            <div class="fw-card-header">
+              <span class="fw-card-title">AI 생성 결과 (미리보기)</span>
+              <span class="result-count" id="preview-count">—</span>
+            </div>
+            <div class="fw-card-body">
+              <div class="q-list" id="preview-list">
+                <p style="color:var(--text-muted);font-size:12px;text-align:center;padding:20px 0;">팀을 선택하고 'AI 문제 생성'을 눌러주세요.</p>
+              </div>
+              <div class="divider"></div>
+              <div style="display:flex;gap:8px;">
+                <button class="btn-outline-gray" style="flex:1;">📄 PDF 생성</button>
+                <button class="btn-save" style="flex:1;">💾 시험지 저장</button>
+              </div>
+            </div>
           </div>
+        </div>
+      </section>
 
-          <!-- Page nav -->
-          <div class="page-nav" id="page-nav">
-            <button class="page-btn active" onclick="selectPage(this)">1</button>
-            <button class="page-btn" onclick="selectPage(this)">2</button>
-            <button class="page-btn" onclick="selectPage(this)">3</button>
-            <button class="page-btn" onclick="selectPage(this)">4</button>
-            <button class="page-btn" onclick="selectPage(this)">5</button>
-            <button class="page-btn" onclick="selectPage(this)">6</button>
-            <button class="page-btn" onclick="selectPage(this)">7</button>
-            <span style="font-size:11px;color:var(--text-muted);display:flex;align-items:center;padding:0 2px;">…</span>
-            <button class="page-btn" onclick="selectPage(this)">20</button>
-          </div>
+      <!-- ══════════ VIEW: 검토·수정 ══════════ -->
+      <section class="view" id="view-exam-review">
+        <div class="fw-card">
+          <div class="fw-card-header"><span class="fw-card-title">② 검토 · 수정</span><span style="font-size:11px;color:var(--text-muted);">AI 생성 문제를 검토하고 수정하세요</span></div>
+          <div class="fw-card-body">
+            <div class="status-card">
+              <div class="status-row"><span class="status-label">현재 상태</span><span class="badge badge-warning">검토중</span></div>
+              <div class="status-meta">
+                <div class="meta-item"><span class="meta-key">시험명</span><span class="meta-val">OJT 기초고사 2026-06</span></div>
+                <div class="meta-item"><span class="meta-key">문항 수</span><span class="meta-val">25문항</span></div>
+                <div class="meta-item"><span class="meta-key">생성일</span><span class="meta-val">2026.06.01</span></div>
+              </div>
+            </div>
 
-          <!-- Question card -->
-          <div class="q-card">
-            <div class="q-card-header">
-              <span class="q-card-num">문항 1 (객관식)</span>
-              <div class="badge-select">
+            <div class="tabs" id="review-tabs">
+              <button class="tab active" onclick="switchTab('review-tabs',this)">전체 문항 (25)</button>
+              <button class="tab" onclick="switchTab('review-tabs',this)">검토 중 (5)</button>
+              <button class="tab" onclick="switchTab('review-tabs',this)">수정 요청 (2)</button>
+              <button class="tab" onclick="switchTab('review-tabs',this)">승인 완료 (18)</button>
+            </div>
+
+            <div class="page-nav">
+              <button class="page-btn active" onclick="selectPage(this)">1</button>
+              <button class="page-btn" onclick="selectPage(this)">2</button>
+              <button class="page-btn" onclick="selectPage(this)">3</button>
+              <button class="page-btn" onclick="selectPage(this)">4</button>
+              <button class="page-btn" onclick="selectPage(this)">5</button>
+            </div>
+
+            <div class="q-card">
+              <div class="q-card-header">
+                <span class="q-card-num">문항 1 (객관식 · 팀별)</span>
                 <span class="badge badge-warning">검토 중</span>
-                <span class="badge-arrow">▾</span>
+              </div>
+              <div class="q-card-body">
+                <div class="q-question">생산라인 작업 시 가장 먼저 확인해야 하는 것은?</div>
+                <div class="choices">
+                  <div class="choice"><span class="choice-num">A</span>작업지시서</div>
+                  <div class="choice"><span class="choice-num">B</span>생산계획</div>
+                  <div class="choice correct"><span class="choice-num">C</span>설비상태 ✓</div>
+                  <div class="choice"><span class="choice-num">D</span>작업일지</div>
+                </div>
+                <div class="two-col">
+                  <div class="info-box"><div class="info-box-label">정답</div><div class="info-box-val">C. 설비상태</div></div>
+                  <div class="info-box"><div class="info-box-label">AI 난이도</div><div class="info-box-val">중</div></div>
+                </div>
+                <div class="textarea-label">수정 내용 (필요 시):</div>
+                <textarea rows="2" placeholder="수정 내용이 있으면 입력하세요..."></textarea>
+              </div>
+              <div class="action-row">
+                <button class="btn-sm btn-sm-red">수정 요청</button>
+                <button class="btn-sm btn-sm-gray">임시 저장</button>
+                <button class="btn-sm btn-sm-blue">승인</button>
               </div>
             </div>
 
-            <div class="q-card-body">
-              <div class="q-question">생산라인 작업 시 가장 먼저 확인해야 하는 것은?</div>
-
-              <div class="q-label">보기 (객관식)</div>
-              <div class="choices">
-                <div class="choice">
-                  <span class="choice-num">1</span>
-                  작업지시서
-                </div>
-                <div class="choice">
-                  <span class="choice-num">2</span>
-                  생산계획
-                </div>
-                <div class="choice correct">
-                  <span class="choice-num">3</span>
-                  설비상태 ✓
-                </div>
-                <div class="choice">
-                  <span class="choice-num">4</span>
-                  작업일지
-                </div>
-              </div>
-
-              <div class="two-col">
-                <div class="info-box">
-                  <div class="info-box-label">AI 추천 정답</div>
-                  <div class="info-box-val">③ 설비상태</div>
-                </div>
-                <div class="comment-box">
-                  <div class="info-box-label">변경 내용 및 의견</div>
-                  <div class="comment-text">설비 안전 점검 사항 반영 필요합니다.</div>
-                  <div class="comment-meta">홍길동 이대일 · 2025.08.01 14:23</div>
-                </div>
-              </div>
-
-              <div class="textarea-label">수정 내용 (필요 시 수정하세요):</div>
-              <textarea rows="3">생산라인 작업 시 가장 먼저 확인해야 하는 것은? (설비 안전 점검 사항을 중심으로 서술)</textarea>
-            </div>
-
-            <div class="action-row">
-              <button class="btn-sm btn-sm-red">수정 요청</button>
-              <button class="btn-sm btn-sm-gray">임시 저장</button>
-              <button class="btn-sm btn-sm-blue">승인</button>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      <!-- ══════════════════ COLUMN 3 ══════════════════ -->
-      <div class="col-card">
-        <div class="col-header">
-          <div class="col-header-top">
-            <div class="step-badge s3">③</div>
-            <div class="col-header-text">
-              <div class="col-title">자동 채점 · 결과 분석</div>
-              <div class="col-subtitle">응시자 결과를 자동 채점하고 분석합니다.</div>
-            </div>
+            <div style="text-align:center;padding:10px;font-size:12px;color:var(--text-muted);">시험 생성 후 문항이 여기에 표시됩니다. (현재 Mock 뷰)</div>
           </div>
         </div>
+      </section>
 
-        <div class="col-body">
-          <!-- Top row -->
-          <div class="col3-top">
-            <span class="col3-title">시험 결과 분석</span>
-            <div class="col3-right">
-              <button class="link-btn">결과 리포트 다운로드 ↓</button>
-              <select style="border:1.5px solid var(--border);border-radius:6px;padding:5px 8px;font-family:var(--font);font-size:11px;color:var(--text);background:white;cursor:pointer;">
-                <option>2025.06.02 시험</option>
-                <option>2025.05.15 시험</option>
-                <option>2025.04.10 시험</option>
+      <!-- ══════════ VIEW: 응시 이력 ══════════ -->
+      <section class="view" id="view-history">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title">응시 이력</span>
+            <div class="filter-row">
+              <select class="filter-select" id="filter-team">
+                <option value="">전체 팀</option>
+                <option value="T1">1팀</option>
+                <option value="T2">2팀</option>
+                <option value="T3">3팀</option>
               </select>
+              <input type="date" class="filter-select" id="filter-from">
+              <span style="color:var(--text-muted);font-size:12px;">~</span>
+              <input type="date" class="filter-select" id="filter-to">
+              <button class="btn-outline-sm" onclick="loadHistory()">조회</button>
             </div>
           </div>
-
-          <!-- Stat grid 2x2 -->
-          <div class="stat-grid">
-            <div class="stat-card">
-              <div class="stat-icon si-blue">👤</div>
-              <div class="stat-info">
-                <span class="stat-label">응시 인원</span>
-                <span class="stat-val">18<span class="stat-unit">명</span></span>
-              </div>
+          <div class="fw-card-body" style="padding:0;">
+            <div style="padding:12px 18px 8px;border-bottom:1px solid var(--border);">
+              <input type="text" class="search-input" id="history-search" placeholder="이름 검색" style="max-width:240px;">
             </div>
-            <div class="stat-card">
-              <div class="stat-icon si-yellow">⭐</div>
-              <div class="stat-info">
-                <span class="stat-label">평균 점수</span>
-                <span class="stat-val">84.6<span class="stat-unit">점</span></span>
-              </div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon si-green">✅</div>
-              <div class="stat-info">
-                <span class="stat-label">정답률</span>
-                <span class="stat-val">77.8<span class="stat-unit">%</span></span>
-              </div>
-            </div>
-            <div class="stat-card">
-              <div class="stat-icon si-purple">🏁</div>
-              <div class="stat-info">
-                <span class="stat-label">응시 완료</span>
-                <span class="stat-val">17<span class="stat-unit">명</span></span>
-              </div>
-            </div>
+            <table class="data-table" id="history-table">
+              <thead><tr><th>이름</th><th>팀</th><th>점수</th><th>합격</th><th>응시일</th><th>난이도 분포</th></tr></thead>
+              <tbody id="history-tbody"><tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:24px;">조회 버튼을 눌러 이력을 불러오세요.</td></tr></tbody>
+            </table>
           </div>
-
-          <!-- Results list -->
-          <div class="section-title">응시자 결과 목록</div>
-
-          <div class="search-row">
-            <input type="text" class="search-input" placeholder="이름 검색" />
-          </div>
-
-          <table class="result-table">
-            <thead>
-              <tr>
-                <th>이름</th>
-                <th>부서</th>
-                <th>점수</th>
-                <th>합격</th>
-                <th>응시일</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>홍길동</td>
-                <td>생산팀</td>
-                <td class="score">92점</td>
-                <td><span class="pass">합격</span></td>
-                <td class="date-cell">2025.06.02</td>
-              </tr>
-              <tr>
-                <td>김철수</td>
-                <td>생산팀</td>
-                <td class="score">78점</td>
-                <td><span class="retrain">재교육</span></td>
-                <td class="date-cell">2025.06.02</td>
-              </tr>
-              <tr>
-                <td>박영희</td>
-                <td>품질팀</td>
-                <td class="score">88점</td>
-                <td><span class="pass">합격</span></td>
-                <td class="date-cell">2025.06.02</td>
-              </tr>
-              <tr>
-                <td>이민수</td>
-                <td>설비팀</td>
-                <td class="score">65점</td>
-                <td><span class="retrain">재교육</span></td>
-                <td class="date-cell">2025.06.02</td>
-              </tr>
-              <tr>
-                <td>최지훈</td>
-                <td>품질팀</td>
-                <td class="score">95점</td>
-                <td><span class="pass">합격</span></td>
-                <td class="date-cell">2025.06.02</td>
-              </tr>
-              <tr class="more-row">
-                <td colspan="5" style="cursor:pointer;color:var(--accent);font-weight:600;" onclick="this.parentElement.style.display='none'">
-                  ▸ 13명 더보기
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          <!-- Charts -->
-          <div class="charts-row">
-            <!-- Bar chart -->
-            <div class="chart-card">
-              <div class="chart-title">부서별 평균 점수</div>
-              <div class="bar-chart">
-                <div class="bar-row">
-                  <span class="bar-label">생산팀</span>
-                  <div class="bar-track">
-                    <div class="bar-fill" style="width:85%;background:var(--accent);"></div>
-                  </div>
-                  <span class="bar-val">85</span>
-                </div>
-                <div class="bar-row">
-                  <span class="bar-label">품질팀</span>
-                  <div class="bar-track">
-                    <div class="bar-fill" style="width:91%;background:var(--success);"></div>
-                  </div>
-                  <span class="bar-val">91</span>
-                </div>
-                <div class="bar-row">
-                  <span class="bar-label">설비팀</span>
-                  <div class="bar-track">
-                    <div class="bar-fill" style="width:76%;background:var(--warning);"></div>
-                  </div>
-                  <span class="bar-val">76</span>
-                </div>
-                <div class="bar-row">
-                  <span class="bar-label">인사팀</span>
-                  <div class="bar-track">
-                    <div class="bar-fill" style="width:82%;background:#8b5cf6;"></div>
-                  </div>
-                  <span class="bar-val">82</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Donut chart -->
-            <div class="chart-card">
-              <div class="chart-title">문항 유형별 정답률</div>
-              <div class="donut-wrap">
-                <svg class="donut-svg" width="72" height="72" viewBox="0 0 72 72">
-                  <!-- Background circle -->
-                  <circle cx="36" cy="36" r="26" fill="none" stroke="#e2e8f0" stroke-width="10"/>
-                  <!-- OX문제 90% = 146.6deg from top; going clockwise -->
-                  <!-- Using stroke-dasharray on a circle circumference = 2πr = 163.4 -->
-                  <!-- Segment 1: 객관식 85% -> 138.9 of 163.4 -->
-                  <circle cx="36" cy="36" r="26" fill="none"
-                    stroke="#3b82f6" stroke-width="10"
-                    stroke-dasharray="138.9 163.4"
-                    stroke-dashoffset="0"
-                    stroke-linecap="butt"
-                    transform="rotate(-90 36 36)"/>
-                  <!-- Segment 2: 주관식 68% -> 111.1; offset by 138.9 -->
-                  <circle cx="36" cy="36" r="26" fill="none"
-                    stroke="#f59e0b" stroke-width="10"
-                    stroke-dasharray="111.1 163.4"
-                    stroke-dashoffset="-138.9"
-                    stroke-linecap="butt"
-                    transform="rotate(-90 36 36)"/>
-                  <!-- Segment 3: OX문제 90% -> 147.1; fill remainder -->
-                  <circle cx="36" cy="36" r="26" fill="none"
-                    stroke="#10b981" stroke-width="10"
-                    stroke-dasharray="147.1 163.4"
-                    stroke-dashoffset="-250"
-                    stroke-linecap="butt"
-                    transform="rotate(-90 36 36)"/>
-                  <!-- Center text -->
-                  <text x="36" y="33" text-anchor="middle" font-size="9" font-weight="700" fill="#1e293b" font-family="Malgun Gothic, sans-serif">평균</text>
-                  <text x="36" y="44" text-anchor="middle" font-size="10" font-weight="800" fill="#1e293b" font-family="Malgun Gothic, sans-serif">81%</text>
-                </svg>
-                <div class="donut-legend">
-                  <div class="legend-item">
-                    <span class="legend-dot" style="background:var(--accent);"></span>
-                    <span>객관식 85%</span>
-                  </div>
-                  <div class="legend-item">
-                    <span class="legend-dot" style="background:var(--warning);"></span>
-                    <span>주관식 68%</span>
-                  </div>
-                  <div class="legend-item">
-                    <span class="legend-dot" style="background:var(--success);"></span>
-                    <span>OX문제 90%</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- AI analysis -->
-          <div class="ai-card">
-            <div class="ai-card-header">
-              <div class="ai-icon">🤖</div>
-              <span class="ai-card-title">AI 분석 결과</span>
-            </div>
-            <div class="ai-bullets">
-              <div class="ai-bullet">설비점검 안전과정 항목의 정답률이 42%로 낮습니다.</div>
-              <div class="ai-bullet">비상상황 대응 절차 관련 문제의 정답률이 높습니다.</div>
-              <div class="ai-bullet">추가 교육 및 현장 OJT 강화가 필요합니다.</div>
-            </div>
-          </div>
-
-          <button class="btn-report">상세 분석 리포트 보기 →</button>
         </div>
-      </div>
+      </section>
 
-    </div><!-- /columns-wrapper -->
+      <!-- ══════════ VIEW: 문제 관리 ══════════ -->
+      <section class="view" id="view-questions">
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title">문제 관리 · 난이도 조정</span>
+            <div class="filter-row">
+              <select class="filter-select" id="q-filter-cat">
+                <option value="">전체 카테고리</option>
+                <option value="공통">공통</option>
+                <option value="팀별">팀별</option>
+                <option value="환경안전">환경안전</option>
+                <option value="일반상식">일반상식</option>
+              </select>
+              <button class="btn-outline-sm" onclick="loadQuestions()">조회</button>
+            </div>
+          </div>
+          <div class="fw-card-body" style="padding:0;">
+            <div style="padding:10px 18px;background:var(--bg);border-bottom:1px solid var(--border);font-size:11px;color:var(--text-muted);">
+              난이도 드롭다운을 변경하면 즉시 서버에 반영됩니다.
+            </div>
+            <div id="questions-list" style="padding:12px 18px;">
+              <p style="color:var(--text-muted);text-align:center;padding:24px 0;font-size:12px;">조회 버튼을 눌러 문제를 불러오세요.</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════ VIEW: 사용자 승인 ══════════ -->
+      <section class="view" id="view-users">
+        <div class="page-grid pg-2">
+          <div class="fw-card">
+            <div class="fw-card-header"><span class="fw-card-title">신입사원 응시 승인</span></div>
+            <div class="fw-card-body">
+              <div class="form-group">
+                <label class="form-label">사원번호</label>
+                <input class="form-input" id="user-empno" placeholder="예: 2024003" autocomplete="off">
+              </div>
+              <div class="form-group">
+                <label class="form-label">이름</label>
+                <input class="form-input" id="user-name" placeholder="홍길동">
+              </div>
+              <div class="form-group">
+                <label class="form-label">소속 팀</label>
+                <select class="form-input" id="user-team">
+                  <option value="T1">1팀 (주간)</option>
+                  <option value="T2">2팀 (4조3교대)</option>
+                  <option value="T3">3팀 (3조2교대)</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">응시 예정일</label>
+                <input class="form-input" type="date" id="user-date">
+              </div>
+              <button class="btn-primary" style="width:100%;justify-content:center;" onclick="approveUser()">
+                ✓ 승인 등록
+              </button>
+              <p id="user-result" style="margin-top:10px;font-size:12px;min-height:18px;"></p>
+            </div>
+          </div>
+
+          <div class="fw-card">
+            <div class="fw-card-header">
+              <span class="fw-card-title">승인된 응시자 목록</span>
+              <button class="btn-outline-sm" onclick="loadUsers()">새로고침</button>
+            </div>
+            <div class="fw-card-body" style="padding:0;">
+              <table class="data-table" id="users-table">
+                <thead><tr><th>사원번호</th><th>이름</th><th>팀</th><th>응시일</th><th>상태</th><th>관리</th></tr></thead>
+                <tbody id="users-tbody">
+                  <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:16px;">로딩 중...</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ══════════ VIEW: 결과 분석 ══════════ -->
+      <section class="view" id="view-results">
+        <div class="page-grid pg-4" style="margin-bottom:16px;">
+          <div class="stat-card"><div class="stat-icon si-blue">👤</div><div class="stat-info"><span class="stat-label">응시 인원</span><span class="stat-val">18<span class="stat-unit">명</span></span></div></div>
+          <div class="stat-card"><div class="stat-icon si-yellow">⭐</div><div class="stat-info"><span class="stat-label">평균 점수</span><span class="stat-val">84.6<span class="stat-unit">점</span></span></div></div>
+          <div class="stat-card"><div class="stat-icon si-green">✅</div><div class="stat-info"><span class="stat-label">정답률</span><span class="stat-val">77.8<span class="stat-unit">%</span></span></div></div>
+          <div class="stat-card"><div class="stat-icon si-purple">🏁</div><div class="stat-info"><span class="stat-label">합격자</span><span class="stat-val">14<span class="stat-unit">명</span></span></div></div>
+        </div>
+
+        <div class="fw-card">
+          <div class="fw-card-header">
+            <span class="fw-card-title">응시자 결과 목록</span>
+            <select style="border:1.5px solid var(--border);border-radius:6px;padding:5px 8px;font-family:var(--font);font-size:11px;color:var(--text);background:white;cursor:pointer;">
+              <option>2026.06.14 시험</option><option>2026.05.15 시험</option><option>2026.04.10 시험</option>
+            </select>
+          </div>
+          <div class="fw-card-body" style="padding:0;">
+            <div style="padding:10px 18px;border-bottom:1px solid var(--border);">
+              <input type="text" class="search-input" id="result-search" placeholder="이름 검색" style="max-width:240px;">
+            </div>
+            <table class="data-table" id="result-table">
+              <thead><tr><th>이름</th><th>부서</th><th>점수</th><th>합격</th><th>응시일</th></tr></thead>
+              <tbody>
+                <tr><td>홍길동</td><td>생산팀</td><td class="score">92점</td><td><span class="pass">합격</span></td><td class="date-cell">2026.06.14</td></tr>
+                <tr><td>김철수</td><td>생산팀</td><td class="score">64점</td><td><span class="retrain">재교육</span></td><td class="date-cell">2026.06.14</td></tr>
+                <tr><td>박영희</td><td>품질팀</td><td class="score">88점</td><td><span class="pass">합격</span></td><td class="date-cell">2026.06.13</td></tr>
+                <tr><td>이민수</td><td>설비팀</td><td class="score">65점</td><td><span class="retrain">재교육</span></td><td class="date-cell">2026.06.13</td></tr>
+                <tr><td>최지훈</td><td>품질팀</td><td class="score">95점</td><td><span class="pass">합격</span></td><td class="date-cell">2026.06.12</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="charts-row">
+          <div class="chart-card">
+            <div class="chart-title">부서별 평균 점수</div>
+            <div class="bar-chart">
+              <div class="bar-row"><span class="bar-label">생산팀</span><div class="bar-track"><div class="bar-fill" style="width:85%;background:var(--accent);"></div></div><span class="bar-val">85</span></div>
+              <div class="bar-row"><span class="bar-label">품질팀</span><div class="bar-track"><div class="bar-fill" style="width:91%;background:var(--success);"></div></div><span class="bar-val">91</span></div>
+              <div class="bar-row"><span class="bar-label">설비팀</span><div class="bar-track"><div class="bar-fill" style="width:76%;background:var(--warning);"></div></div><span class="bar-val">76</span></div>
+              <div class="bar-row"><span class="bar-label">인사팀</span><div class="bar-track"><div class="bar-fill" style="width:82%;background:#8b5cf6;"></div></div><span class="bar-val">82</span></div>
+            </div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-title">문항 유형별 정답률</div>
+            <div class="donut-wrap">
+              <svg width="72" height="72" viewBox="0 0 72 72">
+                <circle cx="36" cy="36" r="26" fill="none" stroke="#e2e8f0" stroke-width="10"/>
+                <circle cx="36" cy="36" r="26" fill="none" stroke="#3b82f6" stroke-width="10" stroke-dasharray="138.9 163.4" stroke-dashoffset="0" transform="rotate(-90 36 36)"/>
+                <circle cx="36" cy="36" r="26" fill="none" stroke="#f59e0b" stroke-width="10" stroke-dasharray="111.1 163.4" stroke-dashoffset="-138.9" transform="rotate(-90 36 36)"/>
+                <circle cx="36" cy="36" r="26" fill="none" stroke="#10b981" stroke-width="10" stroke-dasharray="147.1 163.4" stroke-dashoffset="-250" transform="rotate(-90 36 36)"/>
+                <text x="36" y="33" text-anchor="middle" font-size="9" font-weight="700" fill="#1e293b" font-family="Malgun Gothic,sans-serif">평균</text>
+                <text x="36" y="44" text-anchor="middle" font-size="10" font-weight="800" fill="#1e293b" font-family="Malgun Gothic,sans-serif">81%</text>
+              </svg>
+              <div class="donut-legend">
+                <div class="legend-item"><span class="legend-dot" style="background:var(--accent);"></span><span>객관식 85%</span></div>
+                <div class="legend-item"><span class="legend-dot" style="background:var(--warning);"></span><span>주관식 68%</span></div>
+                <div class="legend-item"><span class="legend-dot" style="background:var(--success);"></span><span>OX문제 90%</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="ai-card">
+          <div class="ai-card-header"><div class="ai-icon">🤖</div><span class="ai-card-title">AI 분석 결과</span></div>
+          <div class="ai-bullets">
+            <div class="ai-bullet">설비점검 안전과정 항목의 정답률이 42%로 낮습니다.</div>
+            <div class="ai-bullet">비상상황 대응 절차 관련 문제의 정답률이 높습니다.</div>
+            <div class="ai-bullet">추가 교육 및 현장 OJT 강화가 필요합니다.</div>
+          </div>
+        </div>
+        <button class="btn-report">상세 분석 리포트 보기 →</button>
+      </section>
+
+      <!-- ══════════ VIEW: 설정 ══════════ -->
+      <section class="view" id="view-settings">
+        <div class="page-grid pg-2">
+          <div class="fw-card">
+            <div class="fw-card-header"><span class="fw-card-title">시스템 설정</span></div>
+            <div class="fw-card-body">
+              <div class="settings-group">
+                <div class="settings-group-title">운영 모드</div>
+                <div class="settings-item"><div><div class="settings-label">데이터 소스</div><div class="settings-desc">USE_MOCK_DATA 환경변수</div></div><span class="settings-val sv-mock">Mock 모드</span></div>
+                <div class="settings-item"><div><div class="settings-label">백엔드 API</div><div class="settings-desc">FastAPI — localhost:8000</div></div><span class="settings-val sv-live">실행 중</span></div>
+                <div class="settings-item"><div><div class="settings-label">JWT 인증</div><div class="settings-desc">python-jose (구현 완료)</div></div><span class="settings-val sv-live">활성</span></div>
+              </div>
+              <div class="settings-group">
+                <div class="settings-group-title">외부 연동 현황</div>
+                <div class="settings-item"><div><div class="settings-label">Claude API</div><div class="settings-desc">ANTHROPIC_API_KEY 필요</div></div><span class="settings-val sv-mock">미연동</span></div>
+                <div class="settings-item"><div><div class="settings-label">Google Drive</div><div class="settings-desc">Service Account JSON 필요</div></div><span class="settings-val sv-mock">미연동</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="fw-card">
+            <div class="fw-card-header"><span class="fw-card-title">향후 구현 항목 (TODO)</span></div>
+            <div class="fw-card-body">
+              <div class="todo-list">
+                <div class="todo-item">Google Drive Service Account 연동</div>
+                <div class="todo-item">Claude API 문제 생성 JSON 파싱</div>
+                <div class="todo-item">Drive 문제은행 Excel 파싱</div>
+                <div class="todo-item">Drive 결과로그 저장</div>
+                <div class="todo-item">난이도 AI 자동 확정 피드백 루프</div>
+                <div class="todo-item">결과 리포트 PDF 내보내기</div>
+                <div class="todo-item">비밀번호 초기화 기능</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div><!-- /view-container -->
   </main>
 </div><!-- /shell -->
 
 <script>
-  /* ── Sidebar nav helpers ─────────────────────────────────────── */
-  function setActive(el) {
-    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-    el.classList.add('active');
+  'use strict';
+
+  const API = '';
+
+  /* ── API helper ─────────────────────────────────────────────── */
+  async function api(method, path, body = null) {
+    const token = sessionStorage.getItem('token');
+    const opts = {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    };
+    if (body) opts.body = JSON.stringify(body);
+    const res = await fetch(API + path, opts);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+      throw new Error(err.detail);
+    }
+    return res.json();
+  }
+
+  function toast(msg, type = 'success') {
+    const el = document.createElement('div');
+    el.className = `toast toast-${type}`;
+    el.textContent = msg;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 2500);
+  }
+
+  /* ── Navigation ─────────────────────────────────────────────── */
+  const NAV_META = {
+    'dashboard':    { bc: ['홈', '대시보드'],            title: '관리자 대시보드' },
+    'exam-create':  { bc: ['홈', '시험 관리', '시험 생성'], title: '시험 생성' },
+    'exam-review':  { bc: ['홈', '시험 관리', '검토·수정'], title: '검토 · 수정' },
+    'history':      { bc: ['홈', '응시 이력'],            title: '응시 이력' },
+    'questions':    { bc: ['홈', '문제 관리'],            title: '문제 관리 · 난이도 조정' },
+    'users':        { bc: ['홈', '사용자 승인'],          title: '사용자 승인' },
+    'results':      { bc: ['홈', '결과 분석'],            title: '결과 분석' },
+    'settings':     { bc: ['홈', '설정'],                 title: '시스템 설정' },
+  };
+
+  function navigate(viewId, triggerEl) {
+    const meta = NAV_META[viewId];
+    if (!meta) return;
+
+    // Show view
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.getElementById('view-' + viewId)?.classList.add('active');
+
+    // Breadcrumb
+    const bar = document.getElementById('breadcrumb-bar');
+    bar.innerHTML = meta.bc.map((c, i) =>
+      i === meta.bc.length - 1
+        ? `<span class="current">${c}</span>`
+        : `<span>${c}</span><span class="sep">›</span>`
+    ).join('');
+
+    // Header title
+    document.getElementById('header-title').textContent = meta.title;
+
+    // Nav active state
+    document.querySelectorAll('.nav-item, .nav-sub-item').forEach(el => el.classList.remove('active'));
+    const navEl = document.querySelector(`[data-view="${viewId}"]`);
+    if (navEl) {
+      navEl.classList.add('active');
+      const sub = navEl.closest('.nav-sub');
+      if (sub) {
+        sub.classList.add('open');
+        const parent = sub.previousElementSibling;
+        if (parent?.classList.contains('nav-item')) {
+          parent.classList.add('active');
+          const exp = parent.querySelector('.nav-expand');
+          if (exp) { exp.textContent = '▾'; exp.classList.add('open'); }
+        }
+      }
+    }
+
+    // Lazy load data
+    if (viewId === 'dashboard')      loadDashboardStats();
+    else if (viewId === 'history')   loadHistory();
+    else if (viewId === 'questions') loadQuestions();
+    else if (viewId === 'users')     loadUsers();
   }
 
   function toggleSub(subId, navEl) {
     const sub = document.getElementById(subId);
     const isOpen = sub.classList.contains('open');
-    // Close all subs
     document.querySelectorAll('.nav-sub').forEach(s => s.classList.remove('open'));
-    document.querySelectorAll('.nav-expand').forEach(e => e.textContent = '›');
-    // Toggle this one
+    document.querySelectorAll('.nav-expand').forEach(e => { e.textContent = '›'; e.classList.remove('open'); });
     if (!isOpen) {
       sub.classList.add('open');
       const exp = navEl.querySelector('.nav-expand');
-      if (exp) exp.textContent = '▾';
+      if (exp) { exp.textContent = '▾'; exp.classList.add('open'); }
     }
-    setActive(navEl);
   }
 
-  /* ── Toggle button groups ────────────────────────────────────── */
+  /* ── Toggle helpers (exam create) ──────────────────────────── */
   function selectToggle(groupId, btn) {
-    const group = document.getElementById(groupId);
-    group.querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('sel'));
+    document.getElementById(groupId).querySelectorAll('.toggle-btn').forEach(b => b.classList.remove('sel'));
     btn.classList.add('sel');
   }
-
   function selectFlat(groupId, btn) {
-    const group = document.getElementById(groupId);
-    group.querySelectorAll('.flat-toggle').forEach(b => b.classList.remove('sel'));
+    document.getElementById(groupId).querySelectorAll('.flat-toggle').forEach(b => b.classList.remove('sel'));
     btn.classList.add('sel');
   }
-
-  /* ── Tabs ────────────────────────────────────────────────────── */
   function switchTab(tabsId, btn) {
-    const tabs = document.getElementById(tabsId);
-    tabs.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.getElementById(tabsId).querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     btn.classList.add('active');
   }
-
-  /* ── Page nav ────────────────────────────────────────────────── */
   function selectPage(btn) {
-    const nav = btn.closest('.page-nav');
-    nav.querySelectorAll('.page-btn').forEach(b => b.classList.remove('active'));
+    btn.closest('.page-nav').querySelectorAll('.page-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
   }
 
-  /* ── Nav sub items ───────────────────────────────────────────── */
-  document.querySelectorAll('.nav-sub-item').forEach(item => {
-    item.addEventListener('click', function () {
-      document.querySelectorAll('.nav-sub-item').forEach(i => i.classList.remove('active'));
-      this.classList.add('active');
-    });
-  });
+  /* ── 응시 이력 ──────────────────────────────────────────────── */
+  async function loadHistory() {
+    const tbody = document.getElementById('history-tbody');
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">불러오는 중...</td></tr>';
+    try {
+      const team = document.getElementById('filter-team')?.value || '';
+      const from = document.getElementById('filter-from')?.value || '';
+      const to   = document.getElementById('filter-to')?.value   || '';
+      let path = '/api/admin/logs?';
+      if (team) path += `team=${team}&`;
+      if (from) path += `date_from=${from}&`;
+      if (to)   path += `date_to=${to}&`;
+      const data = await api('GET', path);
+      if (!data.logs.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:20px;">해당 조건의 이력이 없습니다.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.logs.map(l => `
+        <tr>
+          <td>${l.name}</td>
+          <td>${l.team}</td>
+          <td class="score">${l.score}점</td>
+          <td><span class="${l.pass ? 'pass' : 'retrain'}">${l.pass ? '합격' : '재교육'}</span></td>
+          <td class="date-cell">${l.date}</td>
+          <td class="date-cell">상${l.difficulty_dist?.상||0}/중${l.difficulty_dist?.중||0}/하${l.difficulty_dist?.하||0}</td>
+        </tr>`).join('');
+    } catch (e) {
+      tbody.innerHTML = `<tr><td colspan="6" style="color:var(--danger);padding:16px;">오류: ${e.message}</td></tr>`;
+    }
+  }
 
-  /* ── Search filter (live) ────────────────────────────────────── */
-  const searchInput = document.querySelector('.search-input');
-  if (searchInput) {
-    searchInput.addEventListener('input', function () {
+  /* ── 검색 필터 (이력) ────────────────────────────────────────── */
+  document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('history-search')?.addEventListener('input', function () {
       const q = this.value.toLowerCase();
-      document.querySelectorAll('.result-table tbody tr:not(.more-row)').forEach(row => {
-        const name = row.cells[0] ? row.cells[0].textContent.toLowerCase() : '';
-        row.style.display = name.includes(q) ? '' : 'none';
+      document.querySelectorAll('#history-tbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
       });
     });
+    document.getElementById('result-search')?.addEventListener('input', function () {
+      const q = this.value.toLowerCase();
+      document.querySelectorAll('#result-table tbody tr').forEach(row => {
+        row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+      });
+    });
+    checkApiStatus();
+  });
+
+  /* ── 문제 관리 ──────────────────────────────────────────────── */
+  async function loadQuestions() {
+    const container = document.getElementById('questions-list');
+    container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:24px;font-size:12px;">불러오는 중...</p>';
+    try {
+      const cat = document.getElementById('q-filter-cat')?.value || '';
+      const data = await api('GET', `/api/admin/questions${cat ? `?category=${encodeURIComponent(cat)}` : ''}`);
+      if (!data.questions.length) {
+        container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:24px;font-size:12px;">문제가 없습니다.</p>';
+        return;
+      }
+      container.innerHTML = '<div class="q-list">' + data.questions.map(q => `
+        <div class="q-item">
+          <div class="q-item-left">
+            <span class="q-num">${q.question_id} · ${q.category}</span>
+            <span class="q-text">${q.question}</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <span class="q-type-badge">${q.difficulty_ai || q.difficulty_init}</span>
+            <select class="diff-select" onchange="updateDifficulty('${q.question_id}', this.value)">
+              <option ${(q.difficulty_ai||q.difficulty_init)==='하'?'selected':''} value="하">하</option>
+              <option ${(q.difficulty_ai||q.difficulty_init)==='중'?'selected':''} value="중">중</option>
+              <option ${(q.difficulty_ai||q.difficulty_init)==='상'?'selected':''} value="상">상</option>
+            </select>
+          </div>
+        </div>`).join('') + '</div>';
+    } catch (e) {
+      container.innerHTML = `<p style="color:var(--danger);padding:16px;font-size:12px;">오류: ${e.message}</p>`;
+    }
+  }
+
+  async function updateDifficulty(questionId, newDifficulty) {
+    try {
+      await api('PATCH', '/api/admin/difficulty', { question_id: questionId, new_difficulty: newDifficulty });
+      toast(`${questionId} 난이도 → ${newDifficulty} 변경 완료`);
+    } catch (e) {
+      toast(`오류: ${e.message}`, 'error');
+    }
+  }
+
+  /* ── 대시보드 통계 ───────────────────────────────────────────── */
+  async function loadDashboardStats() {
+    const [userRes, examRes] = await Promise.allSettled([
+      api('GET', '/api/admin/user-count'),
+      api('GET', '/api/admin/exam-count'),
+    ]);
+    if (userRes.status === 'fulfilled') {
+      const el = document.getElementById('stat-approved-count');
+      if (el) el.innerHTML = `${userRes.value.count}<span class="stat-unit">명</span>`;
+    }
+    if (examRes.status === 'fulfilled') {
+      const el = document.getElementById('stat-exam-count');
+      if (el) el.innerHTML = `${examRes.value.count}<span class="stat-unit">회</span>`;
+    }
+  }
+
+  /* ── 사용자 승인 ─────────────────────────────────────────────── */
+  async function loadUsers() {
+    const tbody = document.getElementById('users-tbody');
+    try {
+      const data = await api('GET', '/api/admin/users');
+      if (!data.users.length) {
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:16px;">승인된 응시자가 없습니다.</td></tr>';
+        return;
+      }
+      tbody.innerHTML = data.users.map(u => `
+        <tr>
+          <td>${u.employee_id}</td>
+          <td>${u.name}</td>
+          <td>${u.team}</td>
+          <td>${u.exam_date || '-'}</td>
+          <td><span class="badge badge-success">승인</span></td>
+          <td><button class="btn-outline-sm" style="color:var(--danger);border-color:var(--danger);" onclick="deleteUser('${u.employee_id}', '${u.name}')">삭제</button></td>
+        </tr>`).join('');
+    } catch {
+      tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--danger);padding:16px;">불러오기 실패</td></tr>';
+    }
+  }
+
+  async function deleteUser(employeeId, name) {
+    if (!confirm(`${name} (${employeeId}) 을 삭제하시겠습니까?`)) return;
+    try {
+      await api('DELETE', `/api/admin/users/${employeeId}`);
+      await loadUsers();
+      await loadDashboardStats();
+    } catch (e) {
+      alert(`삭제 실패: ${e.message}`);
+    }
+  }
+
+  async function approveUser() {
+    const empno = document.getElementById('user-empno').value.trim();
+    const name  = document.getElementById('user-name').value.trim();
+    const team  = document.getElementById('user-team').value;
+    const date  = document.getElementById('user-date').value;
+    const resultEl = document.getElementById('user-result');
+
+    if (!empno || !name || !date) {
+      resultEl.style.color = 'var(--danger)';
+      resultEl.textContent = '모든 항목을 입력해주세요.';
+      return;
+    }
+
+    try {
+      await api('POST', '/api/admin/approve-user', {
+        employee_id: empno, name, team, exam_date: date,
+      });
+      resultEl.style.color = 'var(--success)';
+      resultEl.textContent = `✓ ${name} (${empno}) 승인 완료`;
+      document.getElementById('user-empno').value = '';
+      document.getElementById('user-name').value  = '';
+      document.getElementById('user-date').value  = '';
+      await loadUsers();
+      await loadDashboardStats();
+    } catch (e) {
+      resultEl.style.color = 'var(--danger)';
+      resultEl.textContent = `오류: ${e.message}`;
+    }
+  }
+
+  /* ── 시험 생성 미리보기 ─────────────────────────────────────── */
+  async function generatePreview() {
+    const teamBtns = [...document.querySelectorAll('#team-group .toggle-btn')];
+    const selIdx = teamBtns.findIndex(b => b.classList.contains('sel'));
+    const teamCode = ['T1','T2','T3'][selIdx] || 'T1';
+
+    const previewList = document.getElementById('preview-list');
+    const countEl     = document.getElementById('preview-count');
+    previewList.innerHTML = '<p style="color:var(--text-muted);font-size:12px;text-align:center;padding:16px;">생성 중...</p>';
+    countEl.textContent = '—';
+
+    try {
+      const data = await api('POST', '/api/admin/preview-exam', { team_code: teamCode });
+      countEl.textContent = `${data.questions.length}문항 생성됨`;
+      previewList.innerHTML = data.questions.slice(0, 6).map((q, i) => `
+        <div class="q-item">
+          <div class="q-item-left">
+            <span class="q-num">문항 ${i+1} · ${q.category} · ${q.difficulty}</span>
+            <span class="q-text">${q.question}</span>
+          </div>
+          <span class="q-type-badge">객관식</span>
+        </div>`).join('') +
+        (data.questions.length > 6 ? `<div class="more-link">▸ 더보기 (${data.questions.length-6}문항)</div>` : '');
+    } catch (e) {
+      previewList.innerHTML = `<p style="color:var(--danger);font-size:12px;padding:12px;">오류: ${e.message}</p>`;
+    }
+  }
+
+  /* ── API 상태 확인 ───────────────────────────────────────────── */
+  async function checkApiStatus() {
+    const el = document.getElementById('api-status');
+    if (!el) return;
+    try {
+      const data = await fetch(`${API}/`).then(r => r.json());
+      el.textContent = data.status === 'ok' ? '정상' : '오류';
+      el.className = data.status === 'ok' ? 'settings-val sv-live' : 'settings-val sv-mock';
+    } catch {
+      el.textContent = '연결 불가';
+      el.className = 'settings-val sv-mock';
+    }
   }
 </script>
 

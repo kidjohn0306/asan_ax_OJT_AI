@@ -1144,7 +1144,7 @@
     /* ═══════════════════════════════
        MOCK DATA
     ═══════════════════════════════ */
-    const QUESTIONS = [
+    let QUESTIONS = [
       {id:"C-001",  cat:"공통",    diff:"하", q:"회사 내 작업 전 반드시 확인해야 하는 것은?",                 opts:["작업지시서","생산계획","설비상태","작업일지"],                         ans:0},
       {id:"C-002",  cat:"공통",    diff:"중", q:"5S 활동의 목적이 아닌 것은?",                                opts:["생산성 향상","안전사고 예방","개인 편의","품질 향상"],                 ans:2},
       {id:"C-003",  cat:"공통",    diff:"하", q:"품질 이상 발생 시 최초로 보고 대상은?",                      opts:["팀장","안전관리자","인사팀","고객사"],                                 ans:0},
@@ -1179,6 +1179,7 @@
     let answers        = new Array(25).fill(null);
     let timerSeconds   = 3600;
     let timerInterval  = null;
+    let examId         = null;
 
     // Employee info (URL param driven)
     const urlParams = new URLSearchParams(location.search);
@@ -1214,7 +1215,44 @@
     /* ═══════════════════════════════
        SCREEN 2 — EXAM START
     ═══════════════════════════════ */
-    function startExam() {
+    async function startExam() {
+      showScreen('screen-scoring');
+      document.getElementById('scoring-title').textContent = '문제를 불러오는 중...';
+      document.getElementById('scoring-sub').textContent = '잠시만 기다려주세요';
+      document.getElementById('scoring-fill').style.width = '60%';
+      document.getElementById('scoring-pct').textContent = '';
+
+      const teamRaw = EMP_INFO.team;
+      const teamCode = teamRaw.startsWith('2') ? 'T2' : teamRaw.startsWith('3') ? 'T3' : 'T1';
+      const token = sessionStorage.getItem('token');
+
+      try {
+        const res = await fetch('/api/exam/generate', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          },
+          body: JSON.stringify({ team_code: teamCode }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          examId = data.exam_id;
+          QUESTIONS.length = 0;
+          data.questions.forEach(q => {
+            QUESTIONS.push({
+              id: q.id, cat: q.category, diff: q.difficulty || '중',
+              q: q.question,
+              opts: [q.options.A, q.options.B, q.options.C, q.options.D],
+              ans: -1,
+            });
+          });
+          answers = new Array(QUESTIONS.length).fill(null);
+        }
+      } catch {
+        console.warn('API 연결 실패 — Mock 데이터로 진행');
+      }
+
       showScreen('screen-exam');
       buildNavGrid();
       renderQuestion(0);
@@ -1386,22 +1424,48 @@
       showScreen('screen-exam');
     }
 
-    function doSubmit() {
+    async function doSubmit() {
       clearInterval(timerInterval);
       showScreen('screen-scoring');
+      document.getElementById('scoring-title').textContent = '채점 중입니다...';
+      document.getElementById('scoring-sub').textContent = '잠시만 기다려주세요';
 
-      // Animate scoring bar
       const fill = document.getElementById('scoring-fill');
       const pct  = document.getElementById('scoring-pct');
-      requestAnimationFrame(() => {
-        fill.style.width = '100%';
-      });
+      requestAnimationFrame(() => { fill.style.width = '100%'; });
       let p = 0;
       const pctInterval = setInterval(() => {
         p = Math.min(p + 3, 100);
         pct.textContent = p + '%';
         if (p >= 100) clearInterval(pctInterval);
       }, 60);
+
+      if (examId) {
+        const LMAP = ['A','B','C','D'];
+        const answersDict = {};
+        const timesDict   = {};
+        QUESTIONS.forEach((q, i) => {
+          answersDict[q.id] = answers[i] !== null ? LMAP[answers[i]] : 'A';
+          timesDict[q.id]   = 30;
+        });
+        try {
+          const token = sessionStorage.getItem('token');
+          const res = await fetch('/api/exam/submit', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { Authorization: `Bearer ${token}` } : {}),
+            },
+            body: JSON.stringify({ exam_id: examId, answers: answersDict, response_times: timesDict }),
+          });
+          if (res.ok) {
+            const data = await res.json();
+            window._apiScore = data.score;
+          }
+        } catch {
+          console.warn('제출 API 오류 — 로컬 채점 사용');
+        }
+      }
 
       setTimeout(() => {
         buildResult();
@@ -1433,7 +1497,9 @@
        SCREEN 5 — RESULT BUILD
     ═══════════════════════════════ */
     function buildResult() {
-      const { score, correct, catResults } = calculateScore();
+      const local = calculateScore();
+      const score = (window._apiScore !== undefined) ? window._apiScore : local.score;
+      const { correct, catResults } = local;
       const pass = score >= 70;
 
       // Header meta

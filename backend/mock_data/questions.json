@@ -1,144 +1,59 @@
 {
   "common": [
-    {
-      "question_id": "C-001",
-      "category": "공통",
-      "question": "회사 내 작업 전 반드시 확인해야 하는 것은?",
-      "option_a": "작업지시서",
-      "option_b": "생산계획",
-      "option_c": "설비상태",
-      "option_d": "작업일지",
-      "answer": "A",
-      "difficulty_init": "하",
-      "difficulty_ai": "하",
-      "admin_override": ""
-    },
-    {
-      "question_id": "C-002",
-      "category": "공통",
-      "question": "5S 활동의 목적이 아닌 것은?",
-      "option_a": "생산성 향상",
-      "option_b": "안전사고 예방",
-      "option_c": "개인 편의",
-      "option_d": "품질 향상",
-      "answer": "C",
-      "difficulty_init": "중",
-      "difficulty_ai": "중",
-      "admin_override": ""
-    },
-    {
-      "question_id": "C-003",
-      "category": "공통",
-      "question": "품질 이상 발생 시 최초로 보고 대상은?",
-      "option_a": "팀장",
-      "option_b": "안전관리자",
-      "option_c": "인사팀",
-      "option_d": "고객사",
-      "answer": "A",
-      "difficulty_init": "하",
-      "difficulty_ai": "하",
-      "admin_override": ""
-    },
-    {
-      "question_id": "C-004",
-      "category": "공통",
-      "question": "작업 중 아차사고 발생 시 올바른 대처는?",
-      "option_a": "무시하고 계속 작업",
-      "option_b": "즉시 팀장에게 보고",
-      "option_c": "혼자 해결",
-      "option_d": "퇴근 후 보고",
-      "answer": "B",
-      "difficulty_init": "하",
-      "difficulty_ai": "하",
-      "admin_override": ""
-    },
-    {
-      "question_id": "C-005",
-      "category": "공통",
-      "question": "설비 이상 발견 시 절차로 옳은 것은?",
-      "option_a": "설비 강제 가동",
-      "option_b": "설비 정지 후 담당자 연락",
-      "option_c": "개인 판단으로 수리",
-      "option_d": "로그 작성 없이 재가동",
-      "answer": "B",
-      "difficulty_init": "중",
-      "difficulty_ai": "중",
-      "admin_override": ""
-    }
+    {"question_id":"C-001","category":"공통","question":"회사 내 작업 전 반드시 확인해야 하는 것은?","option_a":"작업지시서","option_b":"생산계획","option_c":"설비상태","option_d":"작업일지","answer":"A","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"C-002","category":"공통","question":"5S 활동의 목적이 아닌 것은?","option_a":"생산성 향상","option_b":"안전사고 예방","option_c":"개인 편의","option_d":"품질 향상","answer":"C","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"C-003","category":"공통","question":"품질 이상 발생 시 최초로 보고 대상은?","option_a":"팀장","option_b":"안전관리자","option_c":"인사팀","option_d":"고객사","answer":"A","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"C-004","category":"공통","question":"작업 중 아차사고 발생 시 올바른 대처는?","option_a":"무시하고 계속 작업","option_b":"즉시 팀장에게 보고","option_c":"혼자 해결","option_d":"퇴근 후 보고","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"C-005","category":"공통","question":"설비 이상 발견 시 절차로 옳은 것은?","option_a":"설비 강제 가동","option_b":"설비 정지 후 담당자 연락","option_c":"개인 판단으로 수리","option_d":"로그 작성 없이 재가동","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""}
   ],
   "team1": [
-    {
-      "question_id": "T1-001",
-      "category": "팀별",
-      "question": "[1팀 주간] 생산라인 작업 시 가장 먼저 확인해야 하는 것은?",
-      "option_a": "작업지시서",
-      "option_b": "생산계획",
-      "option_c": "설비상태",
-      "option_d": "작업일지",
-      "answer": "C",
-      "difficulty_init": "중",
-      "difficulty_ai": "중",
-      "admin_override": ""
-    }
+    {"question_id":"T1-001","category":"팀별","question":"생산라인 작업 시 가장 먼저 확인해야 하는 것은?","option_a":"작업지시서","option_b":"생산계획","option_c":"설비상태","option_d":"작업일지","answer":"C","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T1-002","category":"팀별","question":"주간 작업 시 설비 안전 점검 주기로 올바른 것은?","option_a":"월 1회","option_b":"주 1회","option_c":"작업 전 매일","option_d":"연 1회","answer":"C","difficulty_init":"상","difficulty_ai":"상","admin_override":""},
+    {"question_id":"T1-003","category":"팀별","question":"설비 예방 보전 기록의 주된 목적은?","option_a":"개인 기록용","option_b":"설비 수명 연장 및 사고 예방","option_c":"팀장 보고용","option_d":"관계없음","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T1-004","category":"팀별","question":"작업 지시서 없이 작업을 진행해야 할 때는?","option_a":"바로 진행","option_b":"팀장 승인 후 진행","option_c":"옆 동료에게 확인","option_d":"임의 판단","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"T1-005","category":"팀별","question":"품질 불량 발생 시 즉시 취해야 할 조치는?","option_a":"라인 계속 가동","option_b":"불량 격리 후 팀장 보고","option_c":"불량품 즉시 폐기","option_d":"다음 교대자에게 인계","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T1-006","category":"팀별","question":"설비 가동 중 이상 소음 발생 시 올바른 조치는?","option_a":"소음 무시하고 계속 가동","option_b":"설비 정지 후 점검","option_c":"소음 차단 후 가동 유지","option_d":"다음 교대까지 대기","answer":"B","difficulty_init":"상","difficulty_ai":"상","admin_override":""},
+    {"question_id":"T1-007","category":"팀별","question":"작업 환경 개선 제안은 누구에게 하는가?","option_a":"동료 작업자","option_b":"팀장","option_c":"인사팀","option_d":"고객사","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T1-008","category":"팀별","question":"작업 전 안전 교육의 주된 목적은?","option_a":"의무 이수 기록","option_b":"사고 예방","option_c":"시간 채우기","option_d":"규정 준수 형식","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"T1-009","category":"팀별","question":"반도체 설비 클린룸 내 이물질 유입 방지 방법으로 올바른 것은?","option_a":"마스크만 착용","option_b":"전신 방진복 착용 후 에어샤워 통과","option_c":"장갑만 착용","option_d":"빠른 속도로 입장","answer":"B","difficulty_init":"상","difficulty_ai":"상","admin_override":""},
+    {"question_id":"T1-010","category":"팀별","question":"작업 후 정리정돈의 기준은 무엇인가?","option_a":"개인 판단","option_b":"5S 기준","option_c":"팀장 지시 시에만","option_d":"퇴근 5분 전","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""}
   ],
   "team2": [
-    {
-      "question_id": "T2-001",
-      "category": "팀별",
-      "question": "[2팀 4조3교대] 교대 인수인계 시 반드시 확인 항목이 아닌 것은?",
-      "option_a": "설비 현황",
-      "option_b": "진행 중 작업",
-      "option_c": "개인 사물함",
-      "option_d": "이상 발생 이력",
-      "answer": "C",
-      "difficulty_init": "중",
-      "difficulty_ai": "중",
-      "admin_override": ""
-    }
+    {"question_id":"T2-001","category":"팀별","question":"4조 3교대 교대 인수인계 시 반드시 확인 항목이 아닌 것은?","option_a":"설비 현황","option_b":"진행 중 작업","option_c":"개인 사물함 정리","option_d":"이상 발생 이력","answer":"C","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T2-002","category":"팀별","question":"야간 교대 시 이전 교대자에게 반드시 전달해야 하는 정보는?","option_a":"설비 이상 이력 및 진행 중 작업 현황","option_b":"개인 식사 메뉴","option_c":"다음 주 휴무 일정","option_d":"팀장 연락처","answer":"A","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T2-003","category":"팀별","question":"4조 3교대 근무 중 발생한 설비 문제를 다음 교대자에게 인계할 때 포함해야 할 내용은?","option_a":"이상 현상·조치 내역·미완료 사항","option_b":"개인 의견만","option_c":"팀장에게만 보고","option_d":"인계 불필요","answer":"A","difficulty_init":"상","difficulty_ai":"상","admin_override":""},
+    {"question_id":"T2-004","category":"팀별","question":"교대 근무 중 졸음이 심할 때 올바른 대처는?","option_a":"참고 계속 작업","option_b":"팀장에게 보고 후 안전한 휴식","option_c":"에너지 음료 과다 섭취","option_d":"동료 몰래 휴식","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"T2-005","category":"팀별","question":"인수인계서에 반드시 기재해야 하는 항목이 아닌 것은?","option_a":"설비 상태","option_b":"이상 발생 이력","option_c":"교대자 개인 소감","option_d":"진행 중 작업 내용","answer":"C","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T2-006","category":"팀별","question":"야간 근무 후 피로 누적으로 인한 안전 위험을 줄이는 가장 효과적인 방법은?","option_a":"카페인 섭취 증가","option_b":"규칙적인 수면 및 적절한 휴식 관리","option_c":"운동량 대폭 증가","option_d":"야간 근무 기간 연장","answer":"B","difficulty_init":"상","difficulty_ai":"상","admin_override":""},
+    {"question_id":"T2-007","category":"팀별","question":"교대 근무 시 개인 안전장구의 올바른 관리 방법은?","option_a":"타인과 공용 사용","option_b":"개인별 전용 보관 및 상태 점검 후 사용","option_c":"필요 시에만 착용","option_d":"팀장이 관리","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"T2-008","category":"팀별","question":"야간 근무 중 화재 발생 시 최우선 행동은?","option_a":"소화기 먼저 사용","option_b":"비상벨 울리고 대피 유도","option_c":"원인 파악 후 행동","option_d":"혼자 진화 시도","answer":"B","difficulty_init":"상","difficulty_ai":"상","admin_override":""},
+    {"question_id":"T2-009","category":"팀별","question":"교대 중 돌발 이상 발생 시 처리 순서로 올바른 것은?","option_a":"설비 정지 → 팀장 보고 → 원인 파악 → 조치","option_b":"원인 파악 → 조치 → 보고","option_c":"무시하고 교대 종료 후 보고","option_d":"다음 교대자에게 전부 인계","answer":"A","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T2-010","category":"팀별","question":"4조 3교대에서 비번 날 회사 긴급 연락을 받았을 때 올바른 대응은?","option_a":"무시","option_b":"확인 후 팀장 지시에 따라 대응","option_c":"다른 동료에게 전가","option_d":"개인 판단으로 출근 거부","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""}
   ],
   "team3": [
-    {
-      "question_id": "T3-001",
-      "category": "팀별",
-      "question": "[3팀 3조2교대] 야간 작업 시 추가로 확인해야 하는 안전 사항은?",
-      "option_a": "조명 상태 확인",
-      "option_b": "주간 작업자와 동일",
-      "option_c": "별도 확인 불필요",
-      "option_d": "관리자 부재 시 자체 판단",
-      "answer": "A",
-      "difficulty_init": "상",
-      "difficulty_ai": "상",
-      "admin_override": ""
-    }
+    {"question_id":"T3-001","category":"팀별","question":"3조 2교대 야간 작업 시 추가로 확인해야 하는 안전 사항은?","option_a":"조명 상태 및 시야 확보 여부","option_b":"주간 작업자와 동일하게만 확인","option_c":"별도 확인 불필요","option_d":"관리자 부재 시 자체 판단","answer":"A","difficulty_init":"상","difficulty_ai":"상","admin_override":""},
+    {"question_id":"T3-002","category":"팀별","question":"3조 2교대 야간조 인수인계 시 가장 중요한 항목은?","option_a":"다음 주 생산 계획","option_b":"설비 이상 이력과 잔여 작업 현황","option_c":"개인 휴가 일정","option_d":"팀 회식 일정","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T3-003","category":"팀별","question":"야간 단독 작업 중 설비 오류가 발생했을 때 올바른 조치는?","option_a":"즉시 설비 정지 후 담당자 연락","option_b":"혼자 수리 시도","option_c":"교대까지 대기","option_d":"무시하고 계속 가동","answer":"A","difficulty_init":"상","difficulty_ai":"상","admin_override":""},
+    {"question_id":"T3-004","category":"팀별","question":"3조 2교대 근무에서 주간조 → 야간조 전환 시 신체 적응을 위해 권장되는 것은?","option_a":"전환 당일 바로 야간 근무 시작","option_b":"전환 전 충분한 수면과 식사 조절","option_c":"카페인 과다 섭취로 각성 유지","option_d":"신체 적응은 불필요","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T3-005","category":"팀별","question":"야간 작업 시 정전 발생 시 최우선 조치는?","option_a":"혼자 전기실 확인","option_b":"비상 조명 확인 후 팀장·시설팀 즉시 연락","option_c":"작업 계속 진행","option_d":"전원 복구까지 대기만","answer":"B","difficulty_init":"상","difficulty_ai":"상","admin_override":""},
+    {"question_id":"T3-006","category":"팀별","question":"3조 2교대에서 작업 중 동료의 이상 징후 발견 시 대처는?","option_a":"무시","option_b":"즉시 팀장 보고 후 응급처치 지원","option_c":"본인 작업 완료 후 보고","option_d":"자체 판단으로 귀가 조치","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T3-007","category":"팀별","question":"야간 작업 중 보호구 착용이 불편할 경우 올바른 행동은?","option_a":"보호구 제거 후 작업","option_b":"불편 사항 보고 후 적합한 보호구로 교체","option_c":"잠시 벗고 작업","option_d":"동료 보호구 빌려 사용","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"T3-008","category":"팀별","question":"3조 2교대 야간 작업 중 생산 목표 미달 시 취해야 할 행동은?","option_a":"안전 기준 무시하고 속도 높이기","option_b":"팀장에게 상황 보고 후 지시 따르기","option_c":"혼자 판단하여 잔업","option_d":"다음 교대에 떠넘기기","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"T3-009","category":"팀별","question":"야간 작업 구역에서 외부인 발견 시 조치는?","option_a":"무시","option_b":"즉시 보안팀·팀장 연락 및 접근 제한","option_c":"직접 퇴거 조치","option_d":"다음 날 보고","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"T3-010","category":"팀별","question":"3조 2교대 근무자의 연속 야간 근무 한도를 넘겼을 때 올바른 대응은?","option_a":"계속 근무","option_b":"팀장에게 보고 후 근무 조정 요청","option_c":"조용히 혼자 처리","option_d":"무단 결근","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""}
   ],
   "safety": [
-    {
-      "question_id": "S-001",
-      "category": "환경안전",
-      "question": "화학물질 취급 시 반드시 착용해야 하는 보호구는?",
-      "option_a": "안전모만",
-      "option_b": "보안경과 내화학성 장갑",
-      "option_c": "일반 면장갑",
-      "option_d": "없음",
-      "answer": "B",
-      "difficulty_init": "하",
-      "difficulty_ai": "하",
-      "admin_override": ""
-    }
+    {"question_id":"S-001","category":"환경안전","question":"화학물질 취급 시 반드시 착용해야 하는 보호구는?","option_a":"안전모만","option_b":"보안경과 내화학성 장갑","option_c":"일반 면장갑","option_d":"없음","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"S-002","category":"환경안전","question":"화재 발생 시 최우선 조치는?","option_a":"소화기 먼저 사용","option_b":"인명 대피 우선","option_c":"원인 파악 후 행동","option_d":"팀장에게 보고 후 대기","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"S-003","category":"환경안전","question":"MSDS(물질안전보건자료)를 반드시 확인해야 하는 시점은?","option_a":"사고 발생 후","option_b":"화학물질 취급 전","option_c":"교대 인수인계 시","option_d":"월 1회 정기점검 시","answer":"B","difficulty_init":"상","difficulty_ai":"상","admin_override":""},
+    {"question_id":"S-004","category":"환경안전","question":"산업폐기물 처리 규정 위반 시 결과는?","option_a":"구두 경고만","option_b":"법적 처벌 및 회사 제재","option_c":"벌금만 부과","option_d":"관련 규정 없음","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"S-005","category":"환경안전","question":"안전보호구 착용 의무 미이행 시 책임 소재는?","option_a":"회사만 책임","option_b":"개인과 회사 공동 책임","option_c":"팀장만 책임","option_d":"책임 없음","answer":"B","difficulty_init":"상","difficulty_ai":"상","admin_override":""}
   ],
   "general": [
-    {
-      "question_id": "G-001",
-      "category": "일반상식",
-      "question": "반도체 공정에서 클린룸의 주된 목적은?",
-      "option_a": "냉방",
-      "option_b": "미세먼지 차단 및 오염 방지",
-      "option_c": "소음 차단",
-      "option_d": "조명 확보",
-      "answer": "B",
-      "difficulty_init": "중",
-      "difficulty_ai": "중",
-      "admin_override": ""
-    }
+    {"question_id":"G-001","category":"일반상식","question":"반도체 공정에서 클린룸의 주된 목적은?","option_a":"냉방 및 온도 유지","option_b":"미세먼지 차단 및 오염 방지","option_c":"소음 차단","option_d":"조명 확보","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"G-002","category":"일반상식","question":"직장 내 괴롭힘 발생 시 신고 창구는?","option_a":"직속 팀장에게만","option_b":"고충처리위원회 또는 인사팀","option_c":"동료에게 상담","option_d":"SNS 공개 제보","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"G-003","category":"일반상식","question":"근로기준법상 법정 근로시간(주 단위)은?","option_a":"주 52시간","option_b":"주 40시간","option_c":"주 60시간","option_d":"월 200시간","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""},
+    {"question_id":"G-004","category":"일반상식","question":"개인정보 보호를 위해 지켜야 할 사항은?","option_a":"동료와 자유롭게 공유 가능","option_b":"업무 목적 외 사용 금지","option_c":"SNS에 공유 가능","option_d":"별도 규정 없음","answer":"B","difficulty_init":"하","difficulty_ai":"하","admin_override":""},
+    {"question_id":"G-005","category":"일반상식","question":"사내 민감 정보를 외부에 유출할 경우 결과는?","option_a":"구두 경고만","option_b":"민사·형사 책임 및 해고 가능","option_c":"벌금만 부과","option_d":"특별한 문제 없음","answer":"B","difficulty_init":"중","difficulty_ai":"중","admin_override":""}
   ]
 }
