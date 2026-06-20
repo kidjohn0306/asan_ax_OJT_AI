@@ -217,3 +217,63 @@ AI 판정이 안정적이라고 자동 인정하는 학습 루프 구조 (`admin
 - [ ] 결과 리포트 PDF 내보내기
 - [ ] 비밀번호 초기화 기능
 - [ ] 응시자 전용 토큰 검증 (`/api/exam/*` 라우트)
+
+---
+
+## 배포 (Vercel)
+
+**배포 URL**: `https://asan-ax-ojt-ai.vercel.app/`
+
+### 구조
+모든 요청을 FastAPI(`api/index.py`)가 처리합니다.
+- `/api/*` → API 라우터
+- 그 외 → `frontend/dist/` 정적 파일 서빙 (React SPA)
+
+### Vercel 환경변수 설정 (프로젝트 소유자만)
+Vercel 대시보드 → 프로젝트 → **Settings → Environment Variables**
+
+| 변수명 | 설명 | 필수 여부 |
+|---|---|---|
+| `JWT_SECRET_KEY` | JWT 서명 키 (랜덤 문자열로 교체 필수) | **즉시 설정** |
+| `ANTHROPIC_API_KEY` | Claude API 키 | AI 연동 시 |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON 전체 내용 | Drive 연동 시 |
+
+> ⚠️ `JWT_SECRET_KEY`를 설정하지 않으면 코드의 기본값(`ojt-dev-secret-change-in-prod-2026`)이 사용됩니다. 반드시 Vercel 환경변수로 덮어쓰세요.
+
+---
+
+## 브랜치 전략
+
+```
+main        ← 배포 브랜치 (Vercel 자동 배포)
+develop     ← 통합 브랜치 (PR 머지 대상)
+feature/xxx ← 팀원 개별 작업 브랜치
+```
+
+**작업 흐름**
+
+```bash
+git checkout develop
+git pull origin develop
+git checkout -b feature/내작업명
+
+# 작업 후
+git push origin feature/내작업명
+# GitHub에서 develop으로 PR 생성
+```
+
+---
+
+## 프론트엔드 빌드 규칙
+
+`frontend/dist/`가 git에 포함되어 있습니다. **프론트엔드 소스(`src/`)를 수정하면 반드시 빌드 후 함께 커밋해야 합니다.**
+
+```bash
+cd frontend
+npm run build        # dist/ 재생성
+cd ..
+git add frontend/dist/ frontend/src/  # dist와 소스 함께 커밋
+git commit -m "feat: ..."
+```
+
+빌드 없이 소스만 커밋하면 배포 화면과 코드가 불일치합니다.
