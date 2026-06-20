@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
+import { logout as apiLogout } from '../api'
 
 const MOCK_QUESTIONS = [
   {id:"C-001",cat:"공통",diff:"하",q:"회사 내 작업 전 반드시 확인해야 하는 것은?",opts:["작업지시서","생산계획","설비상태","작업일지"],ans:0},
@@ -469,8 +470,7 @@ export default function Exam() {
   handleSubmitRef.current = handleSubmit
 
   function handleFinish() {
-    sessionStorage.clear()
-    navigate('/login')
+    apiLogout(navigate)
   }
 
   return (
