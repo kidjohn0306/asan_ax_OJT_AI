@@ -1,0 +1,16 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/index.py", "use": "@vercel/python" },
+    { "src": "frontend/login.html", "use": "@vercel/static" },
+    { "src": "frontend/exam.html",  "use": "@vercel/static" },
+    { "src": "frontend/admin.html", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/index.py" },
+    { "src": "/login.html", "dest": "/frontend/login.html" },
+    { "src": "/exam.html",  "dest": "/frontend/exam.html" },
+    { "src": "/admin.html", "dest": "/frontend/admin.html" },
+    { "src": "/", "dest": "/frontend/login.html" }
+  ]
+}
