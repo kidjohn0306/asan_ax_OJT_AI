@@ -9,8 +9,11 @@ export default function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/login" replace />} />
         <Route path="/login" element={<Login />} />
+        <Route path="/login.html" element={<Navigate to="/login" replace />} />
         <Route path="/exam" element={<Exam />} />
+        <Route path="/exam.html" element={<Navigate to="/exam" replace />} />
         <Route path="/admin" element={<Admin />} />
+        <Route path="/admin.html" element={<Navigate to="/admin" replace />} />
       </Routes>
     </BrowserRouter>
   )

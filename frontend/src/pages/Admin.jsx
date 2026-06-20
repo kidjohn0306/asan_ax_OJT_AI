@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch } from '../api'
+import { apiFetch, logout as apiLogout } from '../api'
 
 /* ── Toast ─────────────────────────────────────────────────── */
 function useToast() {
@@ -628,8 +628,7 @@ export default function Admin() {
   }
 
   function logout() {
-    sessionStorage.clear()
-    navigate('/login')
+    apiLogout(navigate)
   }
 
   const navItems = [
@@ -661,7 +660,6 @@ export default function Admin() {
         <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 20px' }}>
           <span style={{ fontSize:15, fontWeight:700, color:'var(--text)' }}>{meta.title}</span>
           <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-            <button onClick={logout} style={{ background:'none', border:'1px solid var(--border)', borderRadius:7, padding:'6px 12px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', color:'var(--text-muted)' }}>로그아웃</button>
             <div style={{ display:'flex', alignItems:'center', gap:10, padding:'6px 10px', borderRadius:8 }}>
               <div style={{ width:34, height:34, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:13, fontWeight:700 }}>김</div>
               <div>
@@ -702,7 +700,19 @@ export default function Admin() {
             ))}
           </div>
           <div style={{ marginTop:'auto', borderTop:'1px solid rgba(255,255,255,.08)', padding:'12px 0' }}>
-            <div style={{ padding:'9px 18px', fontSize:11, color:'rgba(255,255,255,.3)', cursor:'default' }}>v1.0.0-dev</div>
+            <div style={{ padding:'8px 18px 4px', display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ width:28, height:28, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:12, fontWeight:700, flexShrink:0 }}>김</div>
+              <div style={{ overflow:'hidden' }}>
+                <div style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,.9)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>김흥길 과장</div>
+                <div style={{ fontSize:10, color:'rgba(255,255,255,.4)' }}>관리자</div>
+              </div>
+            </div>
+            <div style={{ padding:'6px 18px 4px' }}>
+              <button onClick={logout} style={{ width:'100%', background:'rgba(255,255,255,.08)', border:'1px solid rgba(255,255,255,.15)', borderRadius:7, padding:'7px 10px', fontFamily:'var(--font)', fontSize:12, color:'rgba(255,255,255,.7)', cursor:'pointer', textAlign:'left', display:'flex', alignItems:'center', gap:6 }}>
+                <span>↩</span> 로그아웃
+              </button>
+            </div>
+            <div style={{ padding:'4px 18px 2px', fontSize:10, color:'rgba(255,255,255,.25)', cursor:'default' }}>v1.0.0-dev</div>
           </div>
         </nav>
 

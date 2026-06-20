@@ -17,3 +17,15 @@ export async function apiFetch(method, path, body = null) {
   }
   return res.json()
 }
+
+export async function logout(navigate) {
+  const token = sessionStorage.getItem('token')
+  if (token) {
+    await fetch('/api/auth/logout', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+    }).catch(() => {})
+  }
+  sessionStorage.clear()
+  navigate('/login')
+}
