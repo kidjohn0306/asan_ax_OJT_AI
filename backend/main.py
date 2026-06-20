@@ -19,4 +19,6 @@ app.include_router(exam.router, prefix="/api/exam", tags=["시험"])
 app.include_router(admin.router, prefix="/api/admin", tags=["관리자"])
 
 
-app.mount("/", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "..", "frontend"), html=True), name="frontend")
+_frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")
+if os.path.isdir(_frontend_dir):
+    app.mount("/", StaticFiles(directory=_frontend_dir, html=True), name="frontend")

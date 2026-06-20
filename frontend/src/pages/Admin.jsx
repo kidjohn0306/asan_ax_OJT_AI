@@ -115,8 +115,9 @@ function Dashboard({ onNavigate }) {
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/user-count').then(d => setApprovedCount(d.count)).catch(() => {})
-    apiFetch('GET', '/api/admin/exam-count').then(d => setExamCount(d.count)).catch(() => {})
-    fetch('/').then(r => r.json()).then(d => setApiStatus(d.status === 'ok' ? '정상' : '오류')).catch(() => setApiStatus('연결 불가'))
+    apiFetch('GET', '/api/admin/exam-count')
+      .then(d => { setExamCount(d.count); setApiStatus('정상') })
+      .catch(() => setApiStatus('연결 불가'))
   }, [])
 
   const recent = [

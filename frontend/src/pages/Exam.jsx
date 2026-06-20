@@ -334,13 +334,14 @@ function ResultScreen({ empInfo, questions, answers, score, onFinish }) {
           {accordionOpen && (
             <div style={{ maxHeight:600, overflowY:'auto' }}>
               {questions.map((q, i) => {
-                const isCorrect = answers[i] === q.ans
+                const unknownAnswer = q.ans === -1
+                const isCorrect = !unknownAnswer && answers[i] === q.ans
                 return (
                   <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 24px', borderTop:'1px solid var(--border)' }}>
                     <span style={{ fontSize:12, fontWeight:800, color:'var(--text-muted)', width:24, flexShrink:0 }}>{i+1}</span>
                     <span style={{ flex:1, fontSize:13, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{q.q}</span>
-                    <span style={{ width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, flexShrink:0, background: isCorrect ? 'var(--success-light)' : 'var(--danger-light)', color: isCorrect ? 'var(--success)' : 'var(--danger)' }}>{isCorrect ? 'O' : 'X'}</span>
-                    <span style={{ fontSize:11, color:'var(--text-muted)', width:80, textAlign:'right', flexShrink:0 }}>정답: {LABEL[q.ans]}</span>
+                    <span style={{ width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, flexShrink:0, background: unknownAnswer ? '#f1f5f9' : isCorrect ? 'var(--success-light)' : 'var(--danger-light)', color: unknownAnswer ? 'var(--text-muted)' : isCorrect ? 'var(--success)' : 'var(--danger)' }}>{unknownAnswer ? '−' : isCorrect ? 'O' : 'X'}</span>
+                    <span style={{ fontSize:11, color:'var(--text-muted)', width:80, textAlign:'right', flexShrink:0 }}>정답: {unknownAnswer ? '(서버)' : LABEL[q.ans]}</span>
                   </div>
                 )
               })}
@@ -378,6 +379,7 @@ export default function Exam() {
   const [examId, setExamId] = useState(null)
   const [score, setScore] = useState(null)
   const timerRef = useRef(null)
+  const handleSubmitRef = useRef(null)
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current)
@@ -388,13 +390,13 @@ export default function Exam() {
       setTimerSeconds(prev => {
         if (prev <= 1) {
           stopTimer()
-          handleSubmit()
+          handleSubmitRef.current?.()
           return 0
         }
         return prev - 1
       })
     }, 1000)
-  }, [])
+  }, [stopTimer])
 
   useEffect(() => () => stopTimer(), [])
 
@@ -463,6 +465,8 @@ export default function Exam() {
     setScore(calculateScore(questions, answers))
     setTimeout(() => setScreen('result'), 2000)
   }
+
+  handleSubmitRef.current = handleSubmit
 
   function handleFinish() {
     sessionStorage.clear()
