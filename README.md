@@ -152,9 +152,9 @@ http://localhost:8000/admin.html   # 관리자
 `USE_MOCK_DATA=true`(기본값)일 때:
 
 - Claude API 호출 없음 → `mock_data/questions.json` 문제 사용
-- Google Drive 없음 → `mock_data/results.json`에 로컬 저장
+- Google Drive API 연결됨, 결과 저장은 아직 `mock_data/results.json`에 로컬 저장
 - 비밀번호 `mock_hash` 계정은 아무 값으로 로그인 가능 (개발 편의)
-- 실제 전환: `.env`에서 `USE_MOCK_DATA=false` 후 Drive·Claude 연동 구현
+- 실제 전환: `.env`에서 `USE_MOCK_DATA=false` 후 Drive 결과 저장·Claude 문제 생성 구현
 
 ---
 
