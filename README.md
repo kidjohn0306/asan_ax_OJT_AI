@@ -165,8 +165,7 @@ http://localhost:8000/admin.html   # 관리자
 | `USE_MOCK_DATA` | `true` | `true`=Mock, `false`=실제 API |
 | `JWT_SECRET_KEY` | `ojt-dev-secret-...` | JWT 서명 키 (운영 시 반드시 교체) |
 | `ANTHROPIC_API_KEY` | — | Claude API 키 (문제 생성용) |
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | — | Service Account JSON 경로 |
-| `GOOGLE_OAUTH_TOKEN` | — | Google OAuth 토큰 JSON (Vercel 배포용) |
+| `GOOGLE_SERVICE_ACCOUNT_JSON` | — | Service Account JSON 전체 내용 (Vercel 배포용) |
 | `GDRIVE_QUESTION_BANK_FOLDER_ID` | — | 문제은행 루트 폴더 ID |
 | `GDRIVE_RESULT_LOG_FOLDER_ID` | — | 결과로그 폴더 ID |
 
@@ -197,7 +196,8 @@ http://localhost:8000/admin.html   # 관리자
 
 | 기능 | 필요한 것 | 현재 상태 |
 |---|---|---|
-| Google Drive 결과 저장 | Service Account JSON + 폴더 ID | `results.json` 로컬 저장으로 대체 중 |
+| Google Drive API 연결 | Service Account JSON | ✅ 완료 — 서비스 계정 인증, Vercel 환경변수 설정 완료 |
+| Google Drive 결과 저장 | 폴더 ID + 저장 로직 | `results.json` 로컬 저장으로 대체 중 (API 연결은 완료) |
 | Google Drive 이력 조회 | 위 동일 | `fetch_logs()` 내 하드코딩 더미 데이터 반환 중 |
 | Claude API 문제 생성 | `ANTHROPIC_API_KEY` | `question_generator.py` 미구현, mock 문항 사용 중 |
 | 난이도 자동 확정 루프 | Drive 결과 집계 | `classify_difficulty()` 구현됨, 채점 후 자동 호출만 미연결 |
@@ -213,7 +213,7 @@ AI 판정이 안정적이라고 자동 인정하는 학습 루프 구조 (`admin
 
 ## 향후 구현 (TODO)
 
-- [ ] Google Drive OAuth 토큰 발급 후 `GOOGLE_OAUTH_TOKEN` Vercel 환경변수 등록
+- [x] Google Drive 서비스 계정 인증 연동 (`drive_service.py`, Vercel 환경변수 설정)
 - [ ] Claude API 문제 생성 JSON 파싱 (`question_generator.py`)
 - [ ] Drive 문제은행 Excel 파싱
 - [ ] Drive 결과로그 저장
