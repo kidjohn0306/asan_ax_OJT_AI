@@ -112,12 +112,16 @@ function Dashboard({ onNavigate }) {
   const [approvedCount, setApprovedCount] = useState('-')
   const [examCount, setExamCount] = useState('-')
   const [apiStatus, setApiStatus] = useState('확인 중...')
+  const [driveStatus, setDriveStatus] = useState('확인 중...')
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/user-count').then(d => setApprovedCount(d.count)).catch(() => {})
     apiFetch('GET', '/api/admin/exam-count')
       .then(d => { setExamCount(d.count); setApiStatus('정상') })
       .catch(() => setApiStatus('연결 불가'))
+    apiFetch('GET', '/api/drive/status')
+      .then(() => setDriveStatus('연동'))
+      .catch(() => setDriveStatus('미연동'))
   }, [])
 
   const recent = [
@@ -161,7 +165,7 @@ function Dashboard({ onNavigate }) {
           </div>
         </Card>
         <Card title="시스템 상태">
-          {[['운영 모드','Mock 모드','mock'],['백엔드 API',apiStatus, apiStatus === '정상' ? 'live' : 'mock'],['Claude API','미연동','mock'],['Google Drive','미연동','mock']].map(([label, val, mode]) => (
+          {[['운영 모드','Mock 모드','mock'],['백엔드 API',apiStatus, apiStatus === '정상' ? 'live' : 'mock'],['Claude API','미연동','mock'],['Google Drive',driveStatus, driveStatus === '연동' ? 'live' : 'mock']].map(([label, val, mode]) => (
             <div key={label} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 0', borderBottom:'1px solid var(--border)' }}>
               <span style={{ fontSize:12, fontWeight:600 }}>{label}</span>
               <span style={{ fontSize:12, fontWeight:700, color: mode === 'live' ? 'var(--success)' : 'var(--warning)' }}>{val}</span>
@@ -571,9 +575,17 @@ function Results() {
 }
 
 function Settings() {
+  const [driveStatus, setDriveStatus] = useState('확인 중...')
+
+  useEffect(() => {
+    apiFetch('GET', '/api/drive/status')
+      .then(() => setDriveStatus('연동'))
+      .catch(() => setDriveStatus('미연동'))
+  }, [])
+
   const items = [
     { group:'운영 모드', rows:[['데이터 소스','USE_MOCK_DATA 환경변수','Mock 모드','mock'],['백엔드 API','FastAPI — localhost:8000','실행 중','live'],['JWT 인증','python-jose (구현 완료)','활성','live']] },
-    { group:'외부 연동 현황', rows:[['Claude API','ANTHROPIC_API_KEY 필요','미연동','mock'],['Google Drive','Service Account JSON 필요','미연동','mock']] },
+    { group:'외부 연동 현황', rows:[['Claude API','ANTHROPIC_API_KEY 필요','미연동','mock'],['Google Drive','Service Account 연동',driveStatus, driveStatus === '연동' ? 'live' : 'mock']] },
   ]
   const todos = ['Google Drive Service Account 연동','Claude API 문제 생성 JSON 파싱','Drive 문제은행 Excel 파싱','Drive 결과로그 저장','난이도 AI 자동 확정 피드백 루프','결과 리포트 PDF 내보내기','비밀번호 초기화 기능']
   return (
