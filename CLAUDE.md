@@ -11,8 +11,9 @@ asan_ax_OJT_AI/
 ├── api/index.py          # Vercel 진입점 — backend/main.py의 app을 임포트
 ├── backend/
 │   ├── main.py           # FastAPI 앱, frontend/dist/ StaticFiles 마운트
-│   ├── api/              # 라우터 (auth, exam, admin)
-│   ├── services/         # 비즈니스 로직
+│   ├── api/              # 라우터 (auth, exam, admin, drive)
+│   ├── services/         # 비즈니스 로직 (drive_service.py 포함)
+│   ├── credentials/      # OAuth 인증 파일 (gitignore됨)
 │   └── mock_data/        # 더미 JSON (users, questions, results)
 ├── frontend/
 │   ├── src/              # React 소스 (수정 대상)
@@ -45,6 +46,21 @@ Vercel 배포용 키는 Vercel 대시보드 Environment Variables에서 설정 (
 ### 데이터 유의사항
 현재 `mock_data/*.json` 파일 기반 저장. Vercel 서버리스 환경에서는 재배포 시 초기화됨.
 (Drive 연동 완료 전 임시 구조)
+
+## PR/커밋 규칙
+
+### 커밋 메시지
+`type: 설명` 형식을 반드시 사용:
+- `feat` — 새 기능
+- `fix` — 버그 수정
+- `docs` — 문서 변경
+- `chore` — 빌드·설정 변경
+- `refactor` — 리팩토링
+
+### PR 생성 시
+- 반드시 `.github/pull_request_template.md` 형식 사용
+- 이슈 생성 시 `.github/ISSUE_TEMPLATE/` 템플릿 사용
+- `feature/xxx` → `develop` 으로 PR, `develop` → `main` 은 통합 완료 후 PR
 
 ## 브랜치 전략
 - `main` → Vercel 자동 배포
