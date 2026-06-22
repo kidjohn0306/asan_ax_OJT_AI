@@ -2,7 +2,7 @@
 
 ## 프로젝트 개요
 AI 기반 신입사원 OJT 교육 이해도 평가 시스템. FastAPI 백엔드 + Vite React 프론트엔드.
-현재 단계: **더미데이터 기반 Mock MVP** (Google Drive·Claude API 연동 전)
+현재 단계: **Mock MVP + Google Drive 서비스 계정 연동 완료** (Claude API 연동 전)
 
 ## 아키텍처
 
@@ -13,7 +13,7 @@ asan_ax_OJT_AI/
 │   ├── main.py           # FastAPI 앱, frontend/dist/ StaticFiles 마운트
 │   ├── api/              # 라우터 (auth, exam, admin, drive)
 │   ├── services/         # 비즈니스 로직 (drive_service.py 포함)
-│   ├── credentials/      # OAuth 인증 파일 (gitignore됨)
+│   ├── credentials/      # 서비스 계정 파일 (gitignore됨)
 │   └── mock_data/        # 더미 JSON (users, questions, results)
 ├── frontend/
 │   ├── src/              # React 소스 (수정 대상)
@@ -39,13 +39,22 @@ USE_MOCK_DATA=true
 Vercel 배포용 키는 Vercel 대시보드 Environment Variables에서 설정 (코드에 직접 쓰지 말 것).
 
 ### Mock 모드
-`USE_MOCK_DATA=true`(기본값)일 때 Claude API·Drive 없이 동작.
+`USE_MOCK_DATA=true`(기본값, `exam_service.py` Line 8)일 때:
+- Claude API 없이 `mock_data/questions.json` 문제 사용
+- Google Drive API는 연결됨 — 단, 채점 결과는 `mock_data/results.json`에 로컬 저장 (Drive 결과 저장 로직 미구현)
 - 비밀번호: `mock_hash` 계정은 아무 값으로 로그인 가능
 - 테스트 계정: `admin001`(관리자), `2024001`(응시자 T1), `2024002`(응시자 T2)
 
 ### 데이터 유의사항
 현재 `mock_data/*.json` 파일 기반 저장. Vercel 서버리스 환경에서는 재배포 시 초기화됨.
-(Drive 연동 완료 전 임시 구조)
+(Drive 결과 저장 연동 전 임시 구조 — Drive API 연결은 완료, 결과 저장 로직은 미구현)
+
+### Google Drive 인증
+서비스 계정 방식으로 연동됨. 브라우저 로그인 불필요.
+- 로컬: `backend/credentials/service_account.json` (gitignore됨 — 직접 생성 필요)
+- Vercel: `GOOGLE_SERVICE_ACCOUNT_JSON` 환경변수에 JSON 전체 내용 입력
+- 서비스 계정 이메일: `asan-ojt-drive@asanteam4-500207.iam.gserviceaccount.com`
+- Drive 폴더 접근 시 해당 이메일로 폴더 공유 필요
 
 ## PR/커밋 규칙
 
