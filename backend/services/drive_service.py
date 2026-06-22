@@ -3,7 +3,6 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any
 
-from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 from google.auth.transport.requests import Request
@@ -24,25 +23,33 @@ class DriveService:
         self.service = self._build_service()
 
     def _build_service(self):
-        # OAuth 클라이언트 파일이 있으면 OAuth 사용, 없으면 서비스 계정 폴백
-        if OAUTH_CLIENT_FILE.exists():
-            creds = self._get_oauth_creds()
-        else:
-            sa_path = os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON", str(CREDENTIALS_DIR / "service_account.json"))
-            creds = service_account.Credentials.from_service_account_file(sa_path, scopes=SCOPES)
+        creds = self._get_oauth_creds()
         return build("drive", "v3", credentials=creds)
 
     def _get_oauth_creds(self) -> Credentials:
         creds = None
-        if OAUTH_TOKEN_FILE.exists():
+
+        # Vercel 환경: 환경변수에서 토큰 로드
+        token_json = os.getenv("GOOGLE_OAUTH_TOKEN")
+        if token_json:
+            creds = Credentials.from_authorized_user_info(json.loads(token_json), SCOPES)
+        elif OAUTH_TOKEN_FILE.exists():
             creds = Credentials.from_authorized_user_file(str(OAUTH_TOKEN_FILE), SCOPES)
+
         if not creds or not creds.valid:
             if creds and creds.expired and creds.refresh_token:
+                # 만료된 토큰 자동 갱신 (Vercel 포함)
                 creds.refresh(Request())
+                if not token_json:
+                    OAUTH_TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
             else:
+                # 로컬 최초 인증 (브라우저 플로우)
+                if not OAUTH_CLIENT_FILE.exists():
+                    raise RuntimeError("GOOGLE_OAUTH_TOKEN 환경변수 또는 oauth_client.json 필요")
                 flow = InstalledAppFlow.from_client_secrets_file(str(OAUTH_CLIENT_FILE), SCOPES)
-                creds = flow.run_local_server(port=0)
-            OAUTH_TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+                creds = flow.run_local_server(port=0, open_browser=False)
+                OAUTH_TOKEN_FILE.write_text(creds.to_json(), encoding="utf-8")
+
         return creds
 
     def status(self) -> Dict[str, Any]:

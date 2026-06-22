@@ -113,7 +113,7 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict) -> dict:
         q = questions.get(qid)
         if not q:
             continue
-        correct = q["answer"] == user_ans.upper()
+        correct = isinstance(user_ans, str) and q["answer"] == user_ans.upper()
         if correct:
             score += 4  # 25문항 × 4점 = 100점 만점
         results.append({

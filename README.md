@@ -42,8 +42,7 @@ asan_ax_OJT_AI/
 │   ├── requirements.txt
 │   └── .env.example
 └── ai_engine/
-    ├── question_generator.py  # Claude API 문제 생성 (TODO)
-    └── drive_connector.py     # Google Drive 연동 (TODO)
+    └── question_generator.py  # Claude API 문제 생성 (TODO)
 ```
 
 ---
@@ -141,6 +140,10 @@ http://localhost:8000/admin.html   # 관리자
 | DELETE| `/api/admin/users/{id}` | Admin JWT | 응시자 삭제 |
 | GET  | `/api/admin/user-count` | Admin JWT | 승인된 응시자 수 (대시보드용) |
 | GET  | `/api/admin/exam-count` | Admin JWT | 총 응시 완료 수 (대시보드용) |
+| GET  | `/api/drive/status` | 없음 | Google Drive 연결 상태 확인 |
+| GET  | `/api/drive/files?folder_id={id}` | 없음 | 폴더 내 파일 목록 조회 |
+| POST | `/api/drive/download` | 없음 | Drive 파일 다운로드 |
+| POST | `/api/drive/upload-test-result` | 없음 | JSON 결과 파일 업로드 |
 
 ---
 
@@ -163,6 +166,7 @@ http://localhost:8000/admin.html   # 관리자
 | `JWT_SECRET_KEY` | `ojt-dev-secret-...` | JWT 서명 키 (운영 시 반드시 교체) |
 | `ANTHROPIC_API_KEY` | — | Claude API 키 (문제 생성용) |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | — | Service Account JSON 경로 |
+| `GOOGLE_OAUTH_TOKEN` | — | Google OAuth 토큰 JSON (Vercel 배포용) |
 | `GDRIVE_QUESTION_BANK_FOLDER_ID` | — | 문제은행 루트 폴더 ID |
 | `GDRIVE_RESULT_LOG_FOLDER_ID` | — | 결과로그 폴더 ID |
 
@@ -209,7 +213,7 @@ AI 판정이 안정적이라고 자동 인정하는 학습 루프 구조 (`admin
 
 ## 향후 구현 (TODO)
 
-- [ ] Google Drive Service Account 연동 (`drive_connector.py`)
+- [ ] Google Drive OAuth 토큰 발급 후 `GOOGLE_OAUTH_TOKEN` Vercel 환경변수 등록
 - [ ] Claude API 문제 생성 JSON 파싱 (`question_generator.py`)
 - [ ] Drive 문제은행 Excel 파싱
 - [ ] Drive 결과로그 저장
@@ -259,8 +263,13 @@ git checkout -b feature/내작업명
 
 # 작업 후
 git push origin feature/내작업명
-# GitHub에서 develop으로 PR 생성
+# GitHub에서 develop으로 PR 생성 (.github/pull_request_template.md 자동 적용)
 ```
+
+**커밋 메시지 규칙**: `type: 설명`
+- `feat` — 새 기능 / `fix` — 버그 수정 / `docs` — 문서 / `chore` — 설정 / `refactor` — 리팩토링
+
+**이슈 등록**: `.github/ISSUE_TEMPLATE/` 의 버그 리포트·기능 요청 템플릿 사용
 
 ---
 

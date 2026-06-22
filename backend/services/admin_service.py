@@ -96,7 +96,7 @@ def fetch_questions(team=None, category=None) -> dict:
 
 
 def override_difficulty(question_id: str, new_difficulty: str) -> dict:
-    prev = _difficulty_overrides.get(question_id, new_difficulty)
+    prev = _difficulty_overrides.get(question_id)
     log = _difficulty_error_logs.setdefault(question_id, [])
     result = update_difficulty_from_feedback(question_id, prev, new_difficulty, log)
     _difficulty_overrides[question_id] = new_difficulty

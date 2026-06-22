@@ -14,6 +14,7 @@ export default function App() {
         <Route path="/exam.html" element={<Navigate to="/exam" replace />} />
         <Route path="/admin" element={<Admin />} />
         <Route path="/admin.html" element={<Navigate to="/admin" replace />} />
+        <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </BrowserRouter>
   )
