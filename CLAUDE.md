@@ -39,7 +39,9 @@ USE_MOCK_DATA=true
 Vercel 배포용 키는 Vercel 대시보드 Environment Variables에서 설정 (코드에 직접 쓰지 말 것).
 
 ### Mock 모드
-`USE_MOCK_DATA=true`(기본값)일 때 Claude API·Drive 없이 동작.
+`USE_MOCK_DATA=true`(기본값, `exam_service.py` Line 8)일 때:
+- Claude API 없이 `mock_data/questions.json` 문제 사용
+- Google Drive API는 연결됨 — 단, 채점 결과는 `mock_data/results.json`에 로컬 저장 (Drive 결과 저장 로직 미구현)
 - 비밀번호: `mock_hash` 계정은 아무 값으로 로그인 가능
 - 테스트 계정: `admin001`(관리자), `2024001`(응시자 T1), `2024002`(응시자 T2)
 
