@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
-from api import auth, exam, admin
+from api import auth, exam, admin, drive
 
 app = FastAPI(title="OJT 평가 시스템 API", version="1.0.0")
 
@@ -17,6 +17,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/auth", tags=["인증"])
 app.include_router(exam.router, prefix="/api/exam", tags=["시험"])
 app.include_router(admin.router, prefix="/api/admin", tags=["관리자"])
+app.include_router(drive.router, prefix="/api/drive", tags=["드라이브"])
 
 
 _frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend", "dist")

@@ -4,3 +4,8 @@ __pycache__/
 *.pyc
 .env
 .DS_Store
+backend/credentials/service_account.json
+backend/credentials/oauth_client.json
+backend/credentials/oauth_token.json
+token.json
+backend/drive_test_result.json
