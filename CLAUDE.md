@@ -84,8 +84,9 @@ cd frontend && npm install && npm run dev
 - `api/index.py`는 수정 불필요 — Vercel 진입점 역할만 함
 
 ### 패키지 의존성 관리
-`requirements.txt`가 두 곳에 있고 역할이 다름:
-- `api/requirements.txt` — **Vercel 빌드 시 설치됨** (이 파일이 실제 배포에 사용됨)
+`requirements.txt`가 세 곳에 있고 역할이 다름:
+- `requirements.txt` (루트) — **Vercel 빌드 시 실제로 설치됨** (가장 중요)
+- `api/requirements.txt` — Vercel api/ 함수용 (루트와 동기화 유지)
 - `backend/requirements.txt` — 로컬 개발용
 
-**패키지 추가·변경 시 반드시 두 파일 모두 수정할 것.** `backend/`만 수정하면 Vercel에서 ModuleNotFoundError 발생.
+**패키지 추가·변경 시 세 파일 모두 수정할 것.** 루트 `requirements.txt` 누락 시 Vercel에서 ModuleNotFoundError 발생.
