@@ -1,4 +1,4 @@
----
+﻿---
 name: 기능 요청 이슈
 about: Suggest an idea for this project
 title: "[Feature]"
