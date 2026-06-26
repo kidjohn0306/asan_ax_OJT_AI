@@ -1,36 +1,37 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  --primary:        #1e3a5f;
-  --primary-dark:   #152d4a;
-  --primary-light:  #264d7e;
-  --accent:         #3b82f6;
-  --accent-dark:    #2563eb;
-  --accent-light:   #eff6ff;
-  --success:        #10b981;
-  --success-light:  #d1fae5;
-  --warning:        #f59e0b;
-  --warning-light:  #fef3c7;
-  --danger:         #ef4444;
-  --danger-light:   #fee2e2;
-  --purple:         #8b5cf6;
-  --purple-light:   #ede9fe;
-  --bg:             #f1f5f9;
-  --card:           #ffffff;
-  --border:         #e2e8f0;
-  --border-dark:    #cbd5e1;
-  --text:           #1e293b;
-  --text-muted:     #64748b;
-  --text-light:     #94a3b8;
+  --primary:        #0F172A;
+  --primary-dark:   #0A1120;
+  --primary-light:  #1E293B;
+  --accent:         #2563EB;
+  --accent-dark:    #1D4ED8;
+  --accent-light:   #EFF6FF;
+  --success:        #059669;
+  --success-light:  #ECFDF5;
+  --warning:        #B45309;
+  --warning-light:  #FFFBEB;
+  --danger:         #DC2626;
+  --danger-light:   #FEF2F2;
+  --purple:         #7C3AED;
+  --purple-light:   #F5F3FF;
+  --bg:             #F0F2F7;
+  --card:           #FFFFFF;
+  --border:         #E1E5EF;
+  --border-dark:    #CBD5E1;
+  --text:           #111827;
+  --text-muted:     #6B7280;
+  --text-light:     #9CA3AF;
   --font:           'Malgun Gothic', 'Apple SD Gothic Neo', 'Nanum Gothic', sans-serif;
-  --radius:         12px;
-  --shadow:         0 2px 16px rgba(0,0,0,0.08);
+  --radius:         8px;
+  --shadow:         0 1px 3px rgba(0,0,0,0.08);
 }
 
 body {
   font-family: var(--font);
   background: var(--bg);
   color: var(--text);
+  font-size: 14px;
   -webkit-tap-highlight-color: transparent;
 }
 
