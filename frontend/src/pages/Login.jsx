@@ -116,7 +116,7 @@ export default function Login() {
       if (data.role === 'admin') {
         navigate('/admin')
       } else {
-        navigate(`/exam?emp=${empId}&name=${encodeURIComponent(data.name)}&team=${encodeURIComponent(data.team || '')}`)
+        navigate('/exam')
       }
     } catch {
       setError('서버에 연결할 수 없습니다. 백엔드 서버가 실행 중인지 확인하세요.')
