@@ -1,0 +1,18 @@
+{
+  "basic_test": {
+    "total_questions": 25,
+    "pass_score": 70,
+    "score_per_question": 4,
+    "distribution": {
+      "공통": 5,
+      "팀": 10,
+      "환경안전": 5,
+      "일반상식": 5
+    },
+    "difficulty_distribution": {
+      "HIGH": 7,
+      "MID": 10,
+      "LOW": 8
+    }
+  }
+}
