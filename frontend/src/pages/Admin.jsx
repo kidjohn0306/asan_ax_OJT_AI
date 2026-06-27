@@ -872,9 +872,9 @@ function ExamSheet({ toast, onNavigate }) {
 
   const diffColor = { 상:'var(--danger)', 중:'var(--warning)', 하:'var(--success)' }
   const diffCount = questions
-    ? { 상: questions.filter(q => (q.difficulty_ai || q.difficulty_init) === '상').length,
-        중: questions.filter(q => (q.difficulty_ai || q.difficulty_init) === '중').length,
-        하: questions.filter(q => (q.difficulty_ai || q.difficulty_init) === '하').length }
+    ? { 상: questions.filter(q => q.difficulty === '상').length,
+        중: questions.filter(q => q.difficulty === '중').length,
+        하: questions.filter(q => q.difficulty === '하').length }
     : null
 
   return (
@@ -990,7 +990,7 @@ function ExamSheet({ toast, onNavigate }) {
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
             {questions.map((q, i) => {
-              const diff = q.difficulty_ai || q.difficulty_init || '중'
+              const diff = q.difficulty || '중'
               const isSwapOpen = swapTargetIdx === i
               return (
                 <div key={q.question_id + i} style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, overflow:'hidden', transition:'border-color .15s' }}>

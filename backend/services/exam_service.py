@@ -96,7 +96,8 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
                     "C": q["option_c"],
                     "D": q["option_d"],
                 },
-                # 응시자 화면에는 난이도 숨김 (설계 §9.4)
+                # admin preview에서는 난이도 포함, 응시자 화면에서는 제외 (설계 §9.4)
+                **({ "difficulty": q.get("admin_override") or q.get("difficulty_ai") or q.get("difficulty_init", "중") } if preview else {}),
             }
             for q in questions
         ],
