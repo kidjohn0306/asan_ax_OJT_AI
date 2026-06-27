@@ -154,7 +154,6 @@ function ExamScreen({ questions, answers, currentQ, timerSeconds, onSelectAnswer
           <div style={{ background:'white', borderRadius:12, boxShadow:'var(--shadow)', padding:'28px 32px', flex:1, display:'flex', flexDirection:'column' }}>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:20, flexWrap:'wrap' }}>
               <span style={{ fontSize:12, fontWeight:700, padding:'4px 10px', borderRadius:20, ...catBadgeStyle(q.cat) }}>{q.cat}</span>
-              <span style={{ fontSize:12, fontWeight:700, padding:'4px 10px', borderRadius:20, ...diffBadgeStyle(q.diff) }}>{q.diff}</span>
               <span style={{ marginLeft:'auto', fontSize:13, fontWeight:700, color:'var(--text-muted)' }}>문항 {currentQ+1} / {questions.length}</span>
             </div>
             <p style={{ fontSize:18, fontWeight:700, lineHeight:1.65, color:'var(--text)', marginBottom:24, letterSpacing:'-0.3px' }}>{q.q}</p>
@@ -353,8 +352,7 @@ function ResultScreen({ empInfo, questions, answers, score, onFinish }) {
 
       <div style={{ background:'white', borderTop:'1px solid var(--border)', padding:'20px 32px', flexShrink:0 }}>
         <div style={{ marginBottom:16 }}>
-          <p style={{ fontSize:12, color:'var(--text-muted)' }}>결과가 인사팀에 자동 전송되었습니다.</p>
-          <p style={{ fontSize:12, color:'var(--warning)', fontWeight:600, marginTop:4 }}>※ 이 화면을 닫으면 모든 응시 데이터가 삭제됩니다.</p>
+          <p style={{ fontSize:12, color:'var(--text-muted)' }}>결과가 인사팀에 자동 전송 및 저장되었습니다.</p>
         </div>
         <button onClick={onFinish} style={{ width:'100%', height:56, background:'var(--primary)', color:'white', border:'none', borderRadius:12, fontSize:16, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)' }}>확인 후 로그아웃</button>
       </div>
