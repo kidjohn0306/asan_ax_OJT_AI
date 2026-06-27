@@ -50,6 +50,17 @@ class LocalQuestionRepository(QuestionRepository):
                 return q
         return None
 
+    def add_question(self, pool_key: str, question: dict) -> None:
+        data = self._load()
+        if pool_key not in data:
+            data[pool_key] = []
+        data[pool_key].append(question)
+        try:
+            self._save(data)
+        except OSError:
+            # Vercel read-only filesystem — 로컬 저장 불가, 호출부에서 처리
+            raise RuntimeError("questions.json 쓰기 실패: 읽기 전용 파일시스템입니다. DriveQuestionRepository가 필요합니다.")
+
     _CONTENT_FIELDS = {"question", "option_a", "option_b", "option_c", "option_d", "answer", "explanation"}
 
     def update_question(self, question_id: str, fields: dict) -> None:
@@ -104,7 +115,7 @@ class LocalResultRepository(ResultRepository):
 
 
 class LocalSnapshotRepository(SnapshotRepository):
-    _file = MOCK_DIR / "snapshots.jsonl"
+    _file = Path("/tmp") / "snapshots.jsonl"
 
     def save_snapshot(self, exam_id: str, snapshot: dict) -> None:
         record = {"exam_id": exam_id, "snapshot": snapshot,

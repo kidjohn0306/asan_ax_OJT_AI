@@ -173,7 +173,7 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
         if gate_result["pass"]:
             q["status"] = "reviewing"
             q["flags"] = gate_result["flags"]
-            q_repo.update_question(q["question_id"], q)
+            q_repo.add_question(category, q)
             passed.append(q)
         else:
             q["status"] = "draft"

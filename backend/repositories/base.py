@@ -15,6 +15,9 @@ class QuestionRepository(ABC):
     def get_question(self, question_id: str) -> dict: ...
 
     @abstractmethod
+    def add_question(self, pool_key: str, question: dict) -> None: ...
+
+    @abstractmethod
     def update_question(self, question_id: str, fields: dict) -> None: ...
 
     @abstractmethod
