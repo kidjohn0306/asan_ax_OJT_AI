@@ -27,6 +27,8 @@ class DifficultyPatchRequest(BaseModel):
 
 class PreviewExamRequest(BaseModel):
     team_code: TeamCode
+    total_count: int = 25
+    manual_dist: Optional[dict] = None
     config: Optional[dict] = None
 
 
@@ -120,7 +122,10 @@ def reject_question(question_id: str, body: RejectQuestionRequest, _: dict = Dep
 @router.post("/preview-exam")
 def preview_exam(body: PreviewExamRequest, _: dict = Depends(require_admin)):
     from services.exam_service import generate_exam_questions
-    return generate_exam_questions(body.team_code, preview=True, config=body.config)
+    return generate_exam_questions(
+        body.team_code, preview=True, config=body.config,
+        total_count=body.total_count, manual_dist=body.manual_dist
+    )
 
 
 @router.post("/approve-user")

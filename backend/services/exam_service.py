@@ -5,14 +5,14 @@ from datetime import datetime, timezone
 
 USE_MOCK = os.getenv("USE_MOCK_DATA", "true").lower() == "true"
 
-DIFFICULTY_DIST = {
-    "common":  {"상": 1, "중": 2, "하": 2},
-    "team":    {"상": 3, "중": 4, "하": 3},
-    "safety":  {"상": 2, "중": 2, "하": 1},
-    "general": {"상": 1, "중": 2, "하": 2},
-}
-
 TEAM_KEY_MAP = {"T1": "team1", "T2": "team2", "T3": "team3"}
+
+
+def _calc_dist(total: int) -> dict:
+    upper = round(total * 0.28)
+    mid   = round(total * 0.40)
+    low   = total - upper - mid
+    return {"상": upper, "중": mid, "하": low}
 
 
 def _get_repos():
@@ -36,23 +36,30 @@ def _pick_by_difficulty(pool: list, dist: dict) -> list:
     return result
 
 
-def generate_exam_questions(team_code: str, preview: bool = False, config: dict = None) -> dict:
+def generate_exam_questions(team_code: str, preview: bool = False, config: dict = None,
+                            total_count: int = 25, manual_dist: dict = None) -> dict:
     q_repo, r_repo, s_repo = _get_repos()
     team_key = TEAM_KEY_MAP.get(team_code, "team1")
 
-    # 카테고리별로 approved 문제 직접 분리 (pool 키 기반)
     data = q_repo.get_all_questions()
-    common  = [q for q in data.get("common",  []) if q.get("status") == "approved"]
-    team_qs = [q for q in data.get(team_key,  []) if q.get("status") == "approved"]
-    safety  = [q for q in data.get("safety",  []) if q.get("status") == "approved"]
-    general = [q for q in data.get("general", []) if q.get("status") == "approved"]
-
-    questions = (
-        _pick_by_difficulty(common,  DIFFICULTY_DIST["common"])
-        + _pick_by_difficulty(team_qs, DIFFICULTY_DIST["team"])
-        + _pick_by_difficulty(safety,  DIFFICULTY_DIST["safety"])
-        + _pick_by_difficulty(general, DIFFICULTY_DIST["general"])
+    # preview 모드는 approved+reviewing 포함, 실제 시험은 approved만
+    allowed = {"approved", "reviewing"} if preview else {"approved"}
+    pool = (
+        [q for q in data.get("common",  []) if q.get("status") in allowed]
+        + [q for q in data.get(team_key, []) if q.get("status") in allowed]
+        + [q for q in data.get("safety",  []) if q.get("status") in allowed]
+        + [q for q in data.get("general", []) if q.get("status") in allowed]
     )
+
+    dist = manual_dist if manual_dist else _calc_dist(total_count)
+    questions = _pick_by_difficulty(pool, dist)
+    # 난이도별 부족 시 나머지 풀에서 보충
+    if len(questions) < total_count:
+        picked_ids = {q.get("question_id") for q in questions}
+        remaining = [q for q in pool if q.get("question_id") not in picked_ids]
+        random.shuffle(remaining)
+        questions += remaining[:total_count - len(questions)]
+    random.shuffle(questions)
 
     exam_id = str(uuid.uuid4())
 
@@ -89,7 +96,8 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
                     "C": q["option_c"],
                     "D": q["option_d"],
                 },
-                # 응시자 화면에는 난이도 숨김 (설계 §9.4)
+                # admin preview에서는 난이도 포함, 응시자 화면에서는 제외 (설계 §9.4)
+                **({ "difficulty": q.get("admin_override") or q.get("difficulty_ai") or q.get("difficulty_init", "중") } if preview else {}),
             }
             for q in questions
         ],
