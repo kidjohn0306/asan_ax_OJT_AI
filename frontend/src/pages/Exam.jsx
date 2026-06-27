@@ -454,7 +454,7 @@ export default function Exam() {
         const res = await fetch('/api/exam/submit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ exam_id: examId, answers: answersDict, response_times: timesDict }),
+          body: JSON.stringify({ exam_id: examId, answers: answersDict, response_times: timesDict, employee_id: empInfo.empno, name: empInfo.name }),
         })
         if (res.ok) {
           const data = await res.json()
