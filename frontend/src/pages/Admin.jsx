@@ -762,19 +762,10 @@ function ExamSheet({ toast, onNavigate }) {
     setLoading(true)
     setSwapTargetIdx(null)
     try {
-      const data = await apiFetch('POST', '/api/admin/preview-exam', { team_code: team })
-      let qs
-      if (manualMode) {
-        const all = data.questions
-        const byDiff = (d) => all.filter(q => (q.difficulty_ai || q.difficulty_init) === d)
-        qs = [
-          ...byDiff('상').slice(0, manualUpper),
-          ...byDiff('중').slice(0, manualMid),
-          ...byDiff('하').slice(0, manualLow),
-        ].slice(0, totalCount)
-      } else {
-        qs = data.questions.slice(0, totalCount)
-      }
+      const body = { team_code: team, total_count: totalCount }
+      if (manualMode) body.manual_dist = { 상: manualUpper, 중: manualMid, 하: manualLow }
+      const data = await apiFetch('POST', '/api/admin/preview-exam', body)
+      const qs = data.questions
       setQuestions(qs.map((q, i) => ({ ...q, _order: i + 1 })))
       toast(`${qs.length}문항 ${manualMode ? '수동' : '자동'} 배분 완료. 순서 변경·문제 교체가 가능합니다.`)
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
