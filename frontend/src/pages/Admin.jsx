@@ -191,7 +191,7 @@ function Dashboard({ onNavigate }) {
     ['ai',    '문제 생성',   'q-generate'],
     ['check', '검토·검증',  'q-review'],
     ['book',  '문제은행',   'q-bank'],
-    ['file',  '시험지 생성', 'exam-sheet'],
+    ['file',  '시험 생성', 'exam-sheet'],
     ['users', '사용자 승인', 'users'],
     ['clock', '응시 이력',   'history'],
   ]
@@ -655,7 +655,7 @@ function QuestionBank({ toast, onNavigate }) {
         </FilterSelect>
         <BtnOutlineSm onClick={() => load()}>조회</BtnOutlineSm>
         <BtnPrimary onClick={() => onNavigate('exam-sheet')} style={{ padding:'6px 14px', fontSize:13 }}>
-          <Icon name="file" size={13} style={{ color:'white' }} /> 시험지 생성
+          <Icon name="file" size={13} style={{ color:'white' }} /> 시험 생성
         </BtnPrimary>
       </div>
     }>
@@ -739,10 +739,15 @@ function QuestionBank({ toast, onNavigate }) {
   )
 }
 
-/* ── 시험지 생성 (자동 배분 + 피드백 편집) ───────────────────── */
+/* ── 시험 생성 (자동 배분 + 피드백 편집) ───────────────────── */
 function ExamSheet({ toast, onNavigate }) {
+  const [examName, setExamName] = useState('')
   const [team, setTeam] = useState('T1')
   const [totalCount, setTotalCount] = useState(25)
+  const [manualMode, setManualMode] = useState(false)
+  const [manualUpper, setManualUpper] = useState(7)
+  const [manualMid, setManualMid] = useState(10)
+  const [manualLow, setManualLow] = useState(8)
   const [questions, setQuestions] = useState(null)
   const [loading, setLoading] = useState(false)
   const [swapTargetIdx, setSwapTargetIdx] = useState(null)
@@ -751,13 +756,27 @@ function ExamSheet({ toast, onNavigate }) {
   const teamOpts = [['T1','1팀 (주간)'],['T2','2팀 (4조3교대)'],['T3','3팀 (3조2교대)']]
 
   async function assign() {
+    if (manualMode && (manualUpper + manualMid + manualLow) !== totalCount) {
+      toast('합계가 총 문항수와 맞지 않습니다.', 'error'); return
+    }
     setLoading(true)
     setSwapTargetIdx(null)
     try {
       const data = await apiFetch('POST', '/api/admin/preview-exam', { team_code: team })
-      const qs = data.questions.slice(0, totalCount)
+      let qs
+      if (manualMode) {
+        const all = data.questions
+        const byDiff = (d) => all.filter(q => (q.difficulty_ai || q.difficulty_init) === d)
+        qs = [
+          ...byDiff('상').slice(0, manualUpper),
+          ...byDiff('중').slice(0, manualMid),
+          ...byDiff('하').slice(0, manualLow),
+        ].slice(0, totalCount)
+      } else {
+        qs = data.questions.slice(0, totalCount)
+      }
       setQuestions(qs.map((q, i) => ({ ...q, _order: i + 1 })))
-      toast(`${qs.length}문항 자동 배분 완료. 순서 변경·문제 교체가 가능합니다.`)
+      toast(`${qs.length}문항 ${manualMode ? '수동' : '자동'} 배분 완료. 순서 변경·문제 교체가 가능합니다.`)
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
     finally { setLoading(false) }
   }
@@ -821,7 +840,15 @@ function ExamSheet({ toast, onNavigate }) {
     <div style={{ display:'grid', gridTemplateColumns:'280px 1fr', gap:14 }}>
       {/* 좌측: 조건 설정 */}
       <div>
-        <Card title="시험지 조건 설정">
+        <Card title="시험 조건 설정">
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:6 }}>시험 이름</div>
+          <input
+            type="text"
+            value={examName}
+            onChange={e => setExamName(e.target.value)}
+            placeholder="예) 2024년 하반기 OJT 기초고사"
+            style={{ width:'100%', border:'1.5px solid var(--border)', borderRadius:7, padding:'8px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', outline:'none', boxSizing:'border-box', marginBottom:16 }}
+          />
           <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>대상 팀</div>
           <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
             {teamOpts.map(([val, label]) => (
@@ -839,14 +866,44 @@ function ExamSheet({ toast, onNavigate }) {
               style={{ flex:1, accentColor:'var(--accent)' }} />
             <span style={{ fontSize:20, fontWeight:800, color:'var(--accent)', minWidth:44, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{totalCount}</span>
           </div>
-          <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:16 }}>
-            난이도 자동 배분: 상 {Math.round(totalCount*0.28)}·중 {Math.round(totalCount*0.40)}·하 {Math.round(totalCount*0.32)}문항 (예상)
-          </div>
+          {!manualMode ? (
+            <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:16 }}>
+              자동 배분: 상 {Math.round(totalCount*0.28)}·중 {Math.round(totalCount*0.40)}·하 {Math.round(totalCount*0.32)}문항 (예상)
+            </div>
+          ) : (
+            <div style={{ marginBottom:16 }}>
+              <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:8 }}>난이도별 문항 수 직접 설정</div>
+              {[
+                ['상', manualUpper, setManualUpper, '#b91c1c', '#fee2e2'],
+                ['중', manualMid,   setManualMid,   '#b45309', '#fef3c7'],
+                ['하', manualLow,   setManualLow,   '#065f46', '#d1fae5'],
+              ].map(([label, val, setter, color, bg]) => (
+                <div key={label} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                  <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, background:bg, color, minWidth:24, textAlign:'center' }}>{label}</span>
+                  <input type="number" min={0} max={totalCount} value={val}
+                    onChange={e => setter(Math.max(0, Math.min(totalCount, Number(e.target.value))))}
+                    style={{ width:56, border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:13, textAlign:'center', outline:'none' }}
+                  />
+                  <span style={{ fontSize:11, color:'var(--text-muted)' }}>문항</span>
+                </div>
+              ))}
+              <div style={{ fontSize:11, color: (manualUpper+manualMid+manualLow) === totalCount ? 'var(--success)' : 'var(--danger)', marginTop:4, fontWeight:600 }}>
+                합계: {manualUpper+manualMid+manualLow} / {totalCount}문항
+                {(manualUpper+manualMid+manualLow) !== totalCount && ' ← 총 문항수와 맞춰주세요'}
+              </div>
+            </div>
+          )}
 
-          <BtnPrimary onClick={assign} style={{ width:'100%', justifyContent:'center' }} disabled={loading}>
-            <Icon name="refresh" size={14} style={{ color:'white' }} />
-            {loading ? '배분 중...' : '자동 배분 시작'}
-          </BtnPrimary>
+          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+            <BtnPrimary onClick={assign} style={{ flex:1, justifyContent:'center' }} disabled={loading}>
+              <Icon name="refresh" size={14} style={{ color:'white' }} />
+              {loading ? '배분 중...' : '자동 배분'}
+            </BtnPrimary>
+            <button
+              onClick={() => setManualMode(m => !m)}
+              style={{ border:`1.5px solid ${manualMode ? 'var(--accent)' : 'var(--border)'}`, background: manualMode ? 'var(--accent-light)' : 'white', color: manualMode ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:7, padding:'8px 11px', fontFamily:'var(--font)', fontSize:12, fontWeight: manualMode ? 700 : 400, cursor:'pointer', whiteSpace:'nowrap' }}
+            >수동 배분</button>
+          </div>
 
           {questions && (
             <div style={{ marginTop:10, fontSize:11, color:'var(--text-muted)', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, padding:'8px 10px' }}>
@@ -1403,7 +1460,7 @@ const NAV_META = {
   'q-generate': { bc:['홈','문제 관리','문제 생성'],       title:'문제 생성' },
   'q-review':   { bc:['홈','문제 관리','검토·검증'],       title:'검토 · 검증' },
   'q-bank':     { bc:['홈','문제 관리','문제은행'],        title:'문제은행' },
-  'exam-sheet': { bc:['홈','시험지 생성'],                 title:'시험지 생성' },
+  'exam-sheet': { bc:['홈','시험 생성'],                   title:'시험 생성' },
   history:      { bc:['홈','응시 이력'],                   title:'응시 이력' },
   users:        { bc:['홈','사용자 승인'],                 title:'사용자 승인' },
   results:      { bc:['홈','결과 분석'],                   title:'결과 분석' },
@@ -1430,7 +1487,7 @@ export default function Admin() {
       { id:'q-review',   icon:'check', label:'검토·검증' },
       { id:'q-bank',     icon:'book',  label:'문제은행' },
     ]},
-    { id:'exam-sheet', icon:'file',     label:'시험지 생성' },
+    { id:'exam-sheet', icon:'file',     label:'시험 생성' },
     { id:'history',    icon:'clock',    label:'응시 이력' },
     { id:'users',      icon:'users',    label:'사용자 승인' },
     { id:'results',    icon:'chart',    label:'결과 분석' },
