@@ -19,6 +19,10 @@ function Icon({ name, size = 16, style }) {
     plus:     <><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></>,
     refresh:  <><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></>,
     ai:       <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+    swap:     <><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></>,
+    trash:    <><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></>,
+    up:       <><polyline points="18 15 12 9 6 15"/></>,
+    down:     <><polyline points="6 9 12 15 18 9"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -112,12 +116,12 @@ function DataTable({ headers, children }) {
   )
 }
 
-function BtnPrimary({ onClick, children, style }) {
+function BtnPrimary({ onClick, children, style, disabled }) {
   return (
-    <button onClick={onClick}
-      style={{ background:'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'10px 18px', fontFamily:'var(--font)', fontSize:14, fontWeight:700, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:6, ...style }}
-      onMouseOver={e => e.currentTarget.style.background='var(--accent-dark)'}
-      onMouseOut={e => e.currentTarget.style.background='var(--accent)'}>
+    <button onClick={onClick} disabled={disabled}
+      style={{ background: disabled ? '#94A3B8' : 'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'10px 18px', fontFamily:'var(--font)', fontSize:14, fontWeight:700, cursor: disabled ? 'not-allowed' : 'pointer', display:'inline-flex', alignItems:'center', gap:6, ...style }}
+      onMouseOver={e => { if (!disabled) e.currentTarget.style.background='var(--accent-dark)' }}
+      onMouseOut={e => { if (!disabled) e.currentTarget.style.background='var(--accent)' }}>
       {children}
     </button>
   )
@@ -158,6 +162,8 @@ function StatusDot({ mode }) {
 function Dashboard({ onNavigate }) {
   const [approvedCount, setApprovedCount] = useState('-')
   const [examCount, setExamCount] = useState('-')
+  const [approvedQCount, setApprovedQCount] = useState('-')
+  const [reviewingQCount, setReviewingQCount] = useState('-')
   const [apiStatus, setApiStatus] = useState('확인 중...')
   const [driveStatus, setDriveStatus] = useState('확인 중...')
 
@@ -166,6 +172,8 @@ function Dashboard({ onNavigate }) {
     apiFetch('GET', '/api/admin/exam-count')
       .then(d => { setExamCount(d.count); setApiStatus('정상') })
       .catch(() => setApiStatus('연결 불가'))
+    apiFetch('GET', '/api/admin/approved-question-count').then(d => setApprovedQCount(d.count)).catch(() => {})
+    apiFetch('GET', '/api/admin/reviewing-question-count').then(d => setReviewingQCount(d.count)).catch(() => {})
     apiFetch('GET', '/api/drive/status')
       .then(() => setDriveStatus('연동'))
       .catch(() => setDriveStatus('미연동'))
@@ -180,11 +188,12 @@ function Dashboard({ onNavigate }) {
   ]
 
   const quickActions = [
-    ['file',  '시험 생성',   'exam-create'],
+    ['ai',    '문제 생성',   'q-generate'],
+    ['check', '검토·검증',  'q-review'],
+    ['book',  '문제은행',   'q-bank'],
+    ['file',  '시험지 생성', 'exam-sheet'],
     ['users', '사용자 승인', 'users'],
     ['clock', '응시 이력',   'history'],
-    ['book',  '문제 관리',   'questions'],
-    ['chart', '결과 분석',   'results'],
   ]
 
   const systemRows = [
@@ -204,8 +213,8 @@ function Dashboard({ onNavigate }) {
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
         <StatCard iconName="users" iconColor="#2563EB" iconBg="#EFF6FF" label="승인된 응시자" value={approvedCount} unit="명" />
         <StatCard iconName="file"  iconColor="#D97706" iconBg="#FFFBEB" label="총 응시 완료"  value={examCount}    unit="회" />
-        <StatCard iconName="check" iconColor="#059669" iconBg="#ECFDF5" label="합격률"        value="60"           unit="%" />
-        <StatCard iconName="star"  iconColor="#7C3AED" iconBg="#F5F3FF" label="평균 점수"     value="80.8"         unit="점" />
+        <StatCard iconName="check" iconColor="#059669" iconBg="#ECFDF5" label="승인된 문제"   value={approvedQCount} unit="개" />
+        <StatCard iconName="book"  iconColor="#7C3AED" iconBg="#F5F3FF" label="검토 대기"     value={reviewingQCount} unit="개" />
       </div>
 
       <Card title="빠른 실행">
@@ -252,11 +261,15 @@ function Dashboard({ onNavigate }) {
   )
 }
 
-function ExamCreate({ toast }) {
+/* ── 문제 생성 (AI API 호출) ─────────────────────────────────── */
+function QuestionGenerate({ toast, onNavigate }) {
+  const [mode, setMode] = useState('preset')
   const [team, setTeam] = useState('T1')
   const [diff, setDiff] = useState('중급')
   const [count, setCount] = useState('25문항')
   const [material, setMaterial] = useState('')
+  const [bulkCount, setBulkCount] = useState(50)
+  const [bulkCats, setBulkCats] = useState(['공통','팀별','환경안전','일반상식'])
   const [preview, setPreview] = useState(null)
   const [provider, setProvider] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -275,17 +288,36 @@ function ExamCreate({ toast }) {
       })
       setPreview(data.questions)
       setProvider(data.provider)
+      toast('문제 생성 완료! 검토·검증 탭에서 승인 후 문제은행에 등록됩니다.')
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
     finally { setLoading(false) }
+  }
+
+  function toggleCat(cat) {
+    setBulkCats(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat])
   }
 
   const teamOpts = [['T1','1팀 (주간)'],['T2','2팀 (4조3교대)'],['T3','3팀 (3조2교대)']]
   const diffOpts = ['초급','중급','고급']
   const countOpts = ['10문항','20문항','25문항']
+  const catOpts = ['공통','팀별','환경안전','일반상식']
+
+  const modeTabStyle = (m) => ({
+    flex:1, border:'none', padding:'9px 4px', cursor:'pointer',
+    fontFamily:'var(--font)', fontSize:13, fontWeight: mode===m ? 700 : 400,
+    background: mode===m ? 'var(--accent)' : 'white',
+    color: mode===m ? 'white' : 'var(--text-muted)',
+  })
 
   return (
     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-      <Card title="시험 생성" action={<BtnOutlineSm>이전 시험 불러오기</BtnOutlineSm>}>
+      <Card title="AI 문제 생성">
+        <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>생성 방식</div>
+        <div style={{ display:'flex', border:'1.5px solid var(--border)', borderRadius:7, overflow:'hidden', marginBottom:16 }}>
+          <button onClick={() => setMode('preset')} style={modeTabStyle('preset')}>난이도별 생성</button>
+          <button onClick={() => setMode('bulk')}   style={{ ...modeTabStyle('bulk'), borderLeft:'1px solid var(--border)' }}>복합 생성</button>
+        </div>
+
         <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>1. 직무 / 팀 선택</div>
         <div style={{ display:'flex', gap:6, marginBottom:14 }}>
           {teamOpts.map(([val, label]) => (
@@ -295,125 +327,602 @@ function ExamCreate({ toast }) {
             </button>
           ))}
         </div>
-        <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>2. 난이도</div>
-        <div style={{ display:'flex', border:'1.5px solid var(--border)', borderRadius:7, overflow:'hidden', marginBottom:14 }}>
-          {diffOpts.map(d => (
-            <button key={d} onClick={() => setDiff(d)} style={{ flex:1, border:'none', borderRight:'1px solid var(--border)', padding:'9px 4px', cursor:'pointer', fontFamily:'var(--font)', fontSize:13, background: diff===d ? 'var(--accent)' : 'white', color: diff===d ? 'white' : 'var(--text-muted)', fontWeight: diff===d ? 700 : 400 }}>{d}</button>
-          ))}
-        </div>
-        <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>3. 문항 수</div>
-        <div style={{ display:'flex', border:'1.5px solid var(--border)', borderRadius:7, overflow:'hidden', marginBottom:14 }}>
-          {countOpts.map(c => (
-            <button key={c} onClick={() => setCount(c)} style={{ flex:1, border:'none', borderRight:'1px solid var(--border)', padding:'9px 4px', cursor:'pointer', fontFamily:'var(--font)', fontSize:13, background: count===c ? 'var(--accent)' : 'white', color: count===c ? 'white' : 'var(--text-muted)', fontWeight: count===c ? 700 : 400 }}>{c}</button>
-          ))}
-        </div>
-        <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>4. 교육자료 입력 (선택)</div>
-        <textarea
-          value={material}
-          onChange={e => setMaterial(e.target.value)}
-          placeholder="교육자료 텍스트를 붙여넣으세요. 비워두면 Mock 문항을 반환합니다."
-          style={{ width:'100%', minHeight:88, border:'1.5px solid var(--border)', borderRadius:7, padding:'9px 10px', fontFamily:'var(--font)', fontSize:12, color:'var(--text)', resize:'vertical', boxSizing:'border-box', marginBottom:14, outline:'none' }}
-        />
+
+        {mode === 'preset' && (<>
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>2. 난이도</div>
+          <div style={{ display:'flex', border:'1.5px solid var(--border)', borderRadius:7, overflow:'hidden', marginBottom:14 }}>
+            {diffOpts.map(d => (
+              <button key={d} onClick={() => setDiff(d)} style={{ flex:1, border:'none', borderRight:'1px solid var(--border)', padding:'9px 4px', cursor:'pointer', fontFamily:'var(--font)', fontSize:13, background: diff===d ? 'var(--accent)' : 'white', color: diff===d ? 'white' : 'var(--text-muted)', fontWeight: diff===d ? 700 : 400 }}>{d}</button>
+            ))}
+          </div>
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>3. 문항 수</div>
+          <div style={{ display:'flex', border:'1.5px solid var(--border)', borderRadius:7, overflow:'hidden', marginBottom:14 }}>
+            {countOpts.map(c => (
+              <button key={c} onClick={() => setCount(c)} style={{ flex:1, border:'none', borderRight:'1px solid var(--border)', padding:'9px 4px', cursor:'pointer', fontFamily:'var(--font)', fontSize:13, background: count===c ? 'var(--accent)' : 'white', color: count===c ? 'white' : 'var(--text-muted)', fontWeight: count===c ? 700 : 400 }}>{c}</button>
+            ))}
+          </div>
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>4. 교육자료 입력 (선택)</div>
+          <textarea
+            value={material}
+            onChange={e => setMaterial(e.target.value)}
+            placeholder="교육자료 텍스트를 붙여넣으세요. 비워두면 Mock 문항을 반환합니다."
+            style={{ width:'100%', minHeight:88, border:'1.5px solid var(--border)', borderRadius:7, padding:'9px 10px', fontFamily:'var(--font)', fontSize:12, color:'var(--text)', resize:'vertical', boxSizing:'border-box', marginBottom:14, outline:'none' }}
+          />
+        </>)}
+
+        {mode === 'bulk' && (<>
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>2. 카테고리 선택 <span style={{ fontSize:11, fontWeight:400, color:'var(--text-muted)' }}>(복수 선택 가능)</span></div>
+          <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14 }}>
+            {catOpts.map(cat => {
+              const on = bulkCats.includes(cat)
+              return (
+                <button key={cat} onClick={() => toggleCat(cat)} style={{ padding:'7px 14px', borderRadius:20, border:`1.5px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent-light)' : 'white', color: on ? 'var(--accent-dark)' : 'var(--text-muted)', fontFamily:'var(--font)', fontSize:12, fontWeight: on ? 700 : 400, cursor:'pointer' }}>
+                  {on ? '✓ ' : ''}{cat}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>3. 생성 문항 수</div>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
+            <input type="range" min={10} max={200} step={10} value={bulkCount}
+              onChange={e => setBulkCount(Number(e.target.value))}
+              style={{ flex:1, accentColor:'var(--accent)' }} />
+            <span style={{ fontSize:18, fontWeight:800, color:'var(--accent)', minWidth:52, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{bulkCount}문</span>
+          </div>
+          <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:14 }}>
+            선택 카테고리 {bulkCats.length}개 · 카테고리당 약 {bulkCats.length ? Math.round(bulkCount / bulkCats.length) : 0}문항
+          </div>
+        </>)}
+
         <BtnPrimary onClick={generate} style={{ width:'100%', justifyContent:'center', marginBottom:10 }}>
-          <Icon name="plus" size={14} style={{ color:'white' }} />
-          {loading ? '생성 중...' : 'AI 문제 생성'}
+          <Icon name="ai" size={14} style={{ color:'white' }} />
+          {loading ? '생성 중...' : mode === 'bulk' ? `${bulkCount}문항 일괄 생성` : 'AI 문제 생성'}
         </BtnPrimary>
         <div style={{ fontSize:11, color:'var(--warning)', background:'var(--warning-light)', border:'1px solid #FDE68A', borderRadius:6, padding:'7px 10px' }}>
-          AI 생성 문제는 반드시 검토 후 사용해주세요.{provider && ` (${provider.toUpperCase()} 모드)`}
+          생성된 문제는 <strong>검토·검증</strong> 탭에서 승인 후 문제은행에 등록됩니다.{provider && ` (${provider.toUpperCase()} 모드)`}
         </div>
       </Card>
 
-      <Card title="AI 생성 결과 (미리보기)" action={<span style={{ fontSize:11, fontWeight:700, color:'var(--success)', background:'var(--success-light)', padding:'3px 8px', borderRadius:20 }}>{preview ? `${preview.length}문항 생성됨` : '—'}</span>}>
+      <Card title="생성 결과 미리보기" action={
+        preview ? (
+          <BtnOutlineSm onClick={() => onNavigate('q-review')}>
+            <Icon name="check" size={11} /> 검토·검증으로 이동
+          </BtnOutlineSm>
+        ) : null
+      }>
         {!preview ? (
           <p style={{ color:'var(--text-muted)', fontSize:13, textAlign:'center', padding:'24px 0' }}>팀을 선택하고 'AI 문제 생성'을 눌러주세요.</p>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            {preview.slice(0,6).map((q, i) => (
+            {preview.slice(0,8).map((q, i) => (
               <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 12px', border:'1px solid var(--border)', borderRadius:7 }}>
-                <div>
-                  <div style={{ fontSize:11, color:'var(--text-muted)' }}>문항 {i+1} · {q.category} · {q.difficulty}</div>
-                  <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4, marginTop:2 }}>{q.question}</div>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ fontSize:11, color:'var(--text-muted)' }}>문항 {i+1} · {q.category}</div>
+                  <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4, marginTop:2,
+                    overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{q.question}</div>
                 </div>
-                <span style={{ fontSize:10, padding:'2px 7px', borderRadius:4, background:'var(--accent-light)', color:'var(--accent)', fontWeight:600, flexShrink:0 }}>객관식</span>
+                <Badge type="blue">{q.difficulty_init || '중'}</Badge>
               </div>
             ))}
-            {preview.length > 6 && <p style={{ textAlign:'center', fontSize:12, color:'var(--text-muted)', padding:6 }}>더보기 ({preview.length-6}문항)</p>}
+            {preview.length > 8 && (
+              <p style={{ textAlign:'center', fontSize:12, color:'var(--text-muted)', padding:6 }}>
+                +{preview.length - 8}문항 더 있음
+              </p>
+            )}
+            <div style={{ marginTop:8, padding:'9px 12px', background:'var(--success-light)', borderRadius:7, fontSize:12, color:'var(--success)', fontWeight:600 }}>
+              총 {preview.length}문항 생성됨 — 검토·검증 탭에서 승인 처리해주세요.
+            </div>
           </div>
         )}
-        <div style={{ height:1, background:'var(--border)', margin:'16px 0' }} />
-        <div style={{ display:'flex', gap:8 }}>
-          <button style={{ flex:1, border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 14px', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>PDF 생성</button>
-          <button style={{ flex:1, background:'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'10px 16px', fontFamily:'var(--font)', fontSize:13, fontWeight:700, cursor:'pointer' }}>시험지 저장</button>
-        </div>
       </Card>
     </div>
   )
 }
 
-function ExamReview() {
-  const [activeTab, setActiveTab] = useState(0)
-  const [activePage, setActivePage] = useState(0)
-  const tabs = ['전체 문항 (25)','검토 중 (5)','수정 요청 (2)','승인 완료 (18)']
+/* ── 검토·검증 ───────────────────────────────────────────────── */
+function ExamReview({ toast }) {
+  const [items, setItems] = useState(null)
+  const [selected, setSelected] = useState(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejectingId, setRejectingId] = useState(null)
+
+  async function load() {
+    try {
+      const data = await apiFetch('GET', '/api/admin/questions?status=reviewing')
+      setItems(data.questions)
+      if (data.questions.length > 0 && !selected) setSelected(data.questions[0])
+    } catch (e) { toast?.(`오류: ${e.message}`, 'error') }
+  }
+
+  useEffect(() => { load() }, [])
+
+  async function approveQ(qid) {
+    try {
+      await apiFetch('POST', `/api/admin/questions/${qid}/approve`)
+      toast?.(`${qid} 승인 완료`, 'success')
+      setSelected(null)
+      load()
+    } catch (e) { toast?.(`오류: ${e.message}`, 'error') }
+  }
+
+  async function rejectQ(qid) {
+    if (!rejectReason.trim()) { toast?.('반려 사유를 입력해주세요.', 'error'); return }
+    try {
+      await apiFetch('POST', `/api/admin/questions/${qid}/reject`, { reason: rejectReason })
+      toast?.(`${qid} 반려 처리됨`)
+      setRejectingId(null); setRejectReason(''); setSelected(null)
+      load()
+    } catch (e) { toast?.(`오류: ${e.message}`, 'error') }
+  }
+
+  const q = selected
+
   return (
-    <Card title="검토 · 수정" action={<span style={{ fontSize:12, color:'var(--text-muted)' }}>AI 생성 문제를 검토하고 수정하세요</span>}>
-      <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'12px 14px', marginBottom:14 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
-          <span style={{ fontSize:11, color:'var(--text-muted)' }}>현재 상태</span>
-          <Badge type="warning">검토중</Badge>
-        </div>
-        <div style={{ display:'flex', gap:16 }}>
-          {[['시험명','OJT 기초고사 2026-06'],['문항 수','25문항'],['생성일','2026.06.01']].map(([k,v]) => (
-            <div key={k}><div style={{ fontSize:10, color:'var(--text-light)', marginBottom:2 }}>{k}</div><div style={{ fontSize:12, fontWeight:600, color:'var(--text)' }}>{v}</div></div>
-          ))}
-        </div>
+    <div style={{ display:'grid', gridTemplateColumns:'240px 1fr', gap:14 }}>
+      <Card title={`검토 대기 ${items ? `(${items.length})` : ''}`} noPad>
+        {!items ? (
+          <p style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>불러오는 중...</p>
+        ) : items.length === 0 ? (
+          <p style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>검토 대기 문제가 없습니다.</p>
+        ) : items.map(item => (
+          <div key={item.question_id} onClick={() => { setSelected(item); setRejectingId(null); setRejectReason('') }}
+            style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', cursor:'pointer',
+              background: selected?.question_id === item.question_id ? 'var(--accent-light)' : 'white' }}>
+            <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:3, display:'flex', gap:4 }}>
+              <span>{item.question_id}</span>
+              {item.flags?.warning && <span>⚠️</span>}
+              {item.flags?.security_hold && <span>🔒</span>}
+            </div>
+            <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4,
+              overflow:'hidden', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical' }}>
+              {item.question}
+            </div>
+            <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:3 }}>{item.category}</div>
+          </div>
+        ))}
+      </Card>
+
+      <Card title="문항 검토" action={<BtnOutlineSm onClick={load}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
+        {!q ? (
+          <p style={{ textAlign:'center', color:'var(--text-muted)', padding:'32px 0', fontSize:13 }}>
+            {items?.length === 0 ? '검토 대기 문제가 없습니다.' : '좌측 목록에서 문항을 선택하세요.'}
+          </p>
+        ) : (
+          <>
+            <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap' }}>
+              <span style={{ fontSize:11, color:'var(--text-muted)', background:'var(--bg)', border:'1px solid var(--border)', padding:'3px 8px', borderRadius:4 }}>{q.question_id}</span>
+              <span style={{ fontSize:11, color:'var(--text-muted)', background:'var(--bg)', border:'1px solid var(--border)', padding:'3px 8px', borderRadius:4 }}>{q.category}</span>
+              <Badge type="blue">{q.difficulty_ai || q.difficulty_init || '?'}</Badge>
+              {q.flags?.warning && <Badge type="warning">⚠️ 카테고리 불일치</Badge>}
+              {q.flags?.security_hold && <Badge type="danger">🔒 보안 키워드</Badge>}
+            </div>
+
+            <div style={{ fontSize:14, fontWeight:600, color:'var(--text)', marginBottom:12, lineHeight:1.6 }}>{q.question}</div>
+
+            <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:14 }}>
+              {['A','B','C','D'].map(opt => {
+                const text = q[`option_${opt.toLowerCase()}`]
+                const isAnswer = q.answer === opt
+                return (
+                  <div key={opt} style={{ display:'flex', alignItems:'center', gap:8, fontSize:13, padding:'8px 12px', borderRadius:6,
+                    border:`1px solid ${isAnswer ? 'var(--success)' : 'var(--border)'}`,
+                    background: isAnswer ? 'var(--success-light)' : 'white',
+                    color: isAnswer ? 'var(--success)' : 'var(--text)', fontWeight: isAnswer ? 600 : 400 }}>
+                    <span style={{ width:22, height:22, borderRadius:'50%', flexShrink:0, fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center',
+                      background: isAnswer ? 'var(--success)' : 'var(--border)', color: isAnswer ? 'white' : 'var(--text-muted)' }}>{opt}</span>
+                    {text}
+                  </div>
+                )
+              })}
+            </div>
+
+            {q.explanation && (
+              <div style={{ fontSize:12, color:'var(--text-muted)', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, padding:'10px 12px', marginBottom:14, lineHeight:1.6 }}>
+                <span style={{ fontWeight:700, color:'var(--text)', marginRight:6 }}>해설</span>{q.explanation}
+              </div>
+            )}
+
+            {rejectingId === q.question_id ? (
+              <div style={{ display:'flex', gap:8, marginBottom:10 }}>
+                <input value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+                  placeholder="반려 사유 입력 (필수)"
+                  style={{ flex:1, border:'1.5px solid var(--danger)', borderRadius:6, padding:'8px 10px', fontFamily:'var(--font)', fontSize:13, outline:'none' }} />
+                <BtnOutlineSm danger onClick={() => rejectQ(q.question_id)}>반려 확정</BtnOutlineSm>
+                <BtnOutlineSm onClick={() => { setRejectingId(null); setRejectReason('') }}>취소</BtnOutlineSm>
+              </div>
+            ) : (
+              <div style={{ display:'flex', gap:8 }}>
+                <BtnOutlineSm danger onClick={() => setRejectingId(q.question_id)}>✕ 반려</BtnOutlineSm>
+                <BtnPrimary onClick={() => approveQ(q.question_id)}>✓ 승인 → 문제은행 등록</BtnPrimary>
+              </div>
+            )}
+          </>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+/* ── 문제은행 (승인된 문제 목록) ─────────────────────────────── */
+function QuestionBank({ toast, onNavigate }) {
+  const [items, setItems] = useState(null)
+  const [cat, setCat] = useState('')
+  const [statusFilter, setStatusFilter] = useState('approved')
+  const [rejectingId, setRejectingId] = useState(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [reasonCodes, setReasonCodes] = useState({})
+
+  const STATUS_TABS = [
+    { value: 'approved',  label: '승인 (문제은행)' },
+    { value: 'reviewing', label: '검토대기' },
+    { value: 'rejected',  label: '반려' },
+    { value: '',          label: '전체' },
+  ]
+
+  async function load(sf = statusFilter) {
+    try {
+      let path = '/api/admin/questions?'
+      if (cat) path += `category=${encodeURIComponent(cat)}&`
+      if (sf)  path += `status=${sf}&`
+      const data = await apiFetch('GET', path)
+      setItems(data.questions)
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+  }
+
+  async function updateDiff(qid, newDiff) {
+    const reasonCode = reasonCodes[qid] || ''
+    if (!reasonCode) { toast('사유 코드를 선택해주세요.', 'error'); return }
+    try {
+      await apiFetch('PATCH', '/api/admin/difficulty', { question_id: qid, new_difficulty: newDiff, reason_code: reasonCode })
+      toast(`${qid} 난이도 → ${newDiff} 변경 완료`)
+      setReasonCodes(prev => { const n = {...prev}; delete n[qid]; return n })
+      load()
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+  }
+
+  async function approveQ(qid) {
+    try {
+      await apiFetch('POST', `/api/admin/questions/${qid}/approve`)
+      toast(`${qid} 승인 완료`, 'success')
+      load()
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+  }
+
+  async function rejectQ(qid) {
+    if (!rejectReason.trim()) { toast('반려 사유를 입력해주세요.', 'error'); return }
+    try {
+      await apiFetch('POST', `/api/admin/questions/${qid}/reject`, { reason: rejectReason })
+      toast(`${qid} 반려 처리됨`)
+      setRejectingId(null); setRejectReason(''); load()
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+  }
+
+  function switchTab(v) {
+    setStatusFilter(v)
+    load(v)
+  }
+
+  return (
+    <Card title="문제은행" noPad action={
+      <div style={{ display:'flex', gap:8 }}>
+        <FilterSelect value={cat} onChange={setCat}>
+          <option value="">전체 카테고리</option>
+          <option value="공통">공통</option>
+          <option value="팀별">팀별</option>
+          <option value="환경안전">환경안전</option>
+          <option value="일반상식">일반상식</option>
+        </FilterSelect>
+        <BtnOutlineSm onClick={() => load()}>조회</BtnOutlineSm>
+        <BtnPrimary onClick={() => onNavigate('exam-sheet')} style={{ padding:'6px 14px', fontSize:13 }}>
+          <Icon name="file" size={13} style={{ color:'white' }} /> 시험지 생성
+        </BtnPrimary>
       </div>
-      <div style={{ display:'flex', borderBottom:'1px solid var(--border)', marginBottom:12 }}>
-        {tabs.map((t, i) => (
-          <button key={i} onClick={() => setActiveTab(i)} style={{ padding:'8px 12px', fontSize:12, cursor:'pointer', color: activeTab===i ? 'var(--accent)' : 'var(--text-muted)', border:'none', borderBottom: activeTab===i ? '2px solid var(--accent)' : '2px solid transparent', background:'none', fontFamily:'var(--font)', fontWeight: activeTab===i ? 700 : 500, marginBottom:-1 }}>{t}</button>
+    }>
+      <div style={{ display:'flex', borderBottom:'1px solid var(--border)', padding:'0 20px', background:'var(--bg)' }}>
+        {STATUS_TABS.map(tab => (
+          <button key={tab.value} onClick={() => switchTab(tab.value)}
+            style={{ padding:'9px 14px', fontSize:12, cursor:'pointer', border:'none', borderBottom: statusFilter===tab.value ? '2px solid var(--accent)' : '2px solid transparent', background:'none', fontFamily:'var(--font)', fontWeight: statusFilter===tab.value ? 700 : 500, color: statusFilter===tab.value ? 'var(--accent)' : 'var(--text-muted)', marginBottom:-1 }}>
+            {tab.label}
+          </button>
         ))}
       </div>
-      <div style={{ display:'flex', gap:4, flexWrap:'wrap', marginBottom:14 }}>
-        {[1,2,3,4,5].map(p => (
-          <button key={p} onClick={() => setActivePage(p-1)} style={{ width:28, height:28, border:`1.5px solid ${activePage===p-1 ? 'var(--accent)' : 'var(--border)'}`, borderRadius:6, background: activePage===p-1 ? 'var(--accent)' : 'white', fontSize:12, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color: activePage===p-1 ? 'white' : 'var(--text-muted)', fontFamily:'var(--font)', fontWeight: activePage===p-1 ? 700 : 400 }}>{p}</button>
-        ))}
+      <div style={{ padding:'9px 20px', background:'var(--bg)', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>
+        {statusFilter === 'approved'
+          ? '승인된 문제만 시험지 생성에 사용됩니다. 난이도 조정은 즉시 반영됩니다.'
+          : '난이도 드롭다운 변경은 즉시 반영됩니다. 승인/반려는 검토대기 문제에서 가능합니다.'}
       </div>
-      <div style={{ border:'1px solid var(--border)', borderRadius:8, overflow:'hidden', marginBottom:14 }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 14px', background:'var(--bg)', borderBottom:'1px solid var(--border)' }}>
-          <span style={{ fontSize:12, fontWeight:700 }}>문항 1 (객관식 · 팀별)</span>
-          <Badge type="warning">검토 중</Badge>
-        </div>
-        <div style={{ padding:'12px 14px' }}>
-          <div style={{ fontSize:13, fontWeight:600, color:'var(--text)', marginBottom:10, lineHeight:1.5 }}>생산라인 작업 시 가장 먼저 확인해야 하는 것은?</div>
-          <div style={{ display:'flex', flexDirection:'column', gap:4, marginBottom:12 }}>
-            {['작업지시서','생산계획','설비상태 ✓','작업일지'].map((opt, i) => (
-              <div key={i} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12, color: i===2 ? 'var(--success)' : 'var(--text)', padding:'6px 10px', borderRadius:6, border:`1px solid ${i===2 ? 'var(--success)' : 'var(--border)'}`, background: i===2 ? 'var(--success-light)' : 'white', fontWeight: i===2 ? 600 : 400 }}>
-                <span style={{ width:20, height:20, borderRadius:'50%', background: i===2 ? 'var(--success)' : 'var(--border)', color: i===2 ? 'white' : 'var(--text-muted)', fontSize:10, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>{['A','B','C','D'][i]}</span>
-                {opt}
-              </div>
-            ))}
+      <div style={{ padding:'14px 20px' }}>
+        {!items ? (
+          <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>조회 버튼을 눌러 문제를 불러오세요.</p>
+        ) : items.length === 0 ? (
+          <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>
+            {statusFilter === 'approved' ? '승인된 문제가 없습니다. 검토·검증 탭에서 승인해주세요.' : '문제가 없습니다.'}
+          </p>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {items.map(q => {
+              const d = q.admin_override || q.difficulty_ai || q.difficulty_init
+              const isReviewing = q.status === 'reviewing'
+              const isRejecting = rejectingId === q.question_id
+              return (
+                <div key={q.question_id} style={{ border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px' }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:3, display:'flex', alignItems:'center', gap:6 }}>
+                        <span>{q.question_id} · {q.category}</span>
+                        <StatusBadge status={q.status} />
+                        {q.flags?.warning && <span title="카테고리·팀 불일치">⚠️</span>}
+                        {q.flags?.security_hold && <span title="보안 키워드 감지">🔒</span>}
+                      </div>
+                      <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4 }}>{q.question}</div>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0, marginLeft:12 }}>
+                      <Badge type="blue">{d}</Badge>
+                      <select value={reasonCodes[q.question_id] || ''}
+                        onChange={e => setReasonCodes(prev => ({...prev, [q.question_id]: e.target.value}))}
+                        style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', background:'white', outline:'none', color: reasonCodes[q.question_id] ? 'var(--text)' : 'var(--text-muted)' }}>
+                        <option value="">사유 선택</option>
+                        <option value="AI오류">AI 오류</option>
+                        <option value="실무반영">실무 반영</option>
+                        <option value="학습자수준">학습자 수준</option>
+                        <option value="기타">기타</option>
+                      </select>
+                      <select value={d} onChange={e => updateDiff(q.question_id, e.target.value)}
+                        style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', background:'white', outline:'none' }}>
+                        <option value="하">하</option><option value="중">중</option><option value="상">상</option>
+                      </select>
+                      {isReviewing && (
+                        <>
+                          <BtnOutlineSm onClick={() => approveQ(q.question_id)}>✓ 승인</BtnOutlineSm>
+                          <BtnOutlineSm danger onClick={() => { setRejectingId(isRejecting ? null : q.question_id); setRejectReason('') }}>✕ 반려</BtnOutlineSm>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  {isRejecting && (
+                    <div style={{ padding:'10px 12px', borderTop:'1px solid var(--border)', background:'var(--danger-light)', display:'flex', gap:8, alignItems:'center' }}>
+                      <input value={rejectReason} onChange={e => setRejectReason(e.target.value)}
+                        placeholder="반려 사유를 입력하세요 (필수)"
+                        style={{ flex:1, border:'1.5px solid var(--danger)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:12, outline:'none', background:'white' }} />
+                      <BtnOutlineSm danger onClick={() => rejectQ(q.question_id)}>반려 확정</BtnOutlineSm>
+                      <BtnOutlineSm onClick={() => setRejectingId(null)}>취소</BtnOutlineSm>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
-            {[['정답','C. 설비상태'],['AI 난이도','중']].map(([k,v]) => (
-              <div key={k} style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, padding:'8px 10px' }}>
-                <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', marginBottom:3 }}>{k}</div>
-                <div style={{ fontSize:12, color:'var(--text)', fontWeight:600 }}>{v}</div>
-              </div>
-            ))}
-          </div>
-          <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:5 }}>수정 내용 (필요 시):</div>
-          <textarea rows={2} placeholder="수정 내용이 있으면 입력하세요..." style={{ width:'100%', border:'1.5px solid var(--border)', borderRadius:6, padding:'8px 10px', fontFamily:'var(--font)', fontSize:12, color:'var(--text)', resize:'vertical', minHeight:70, lineHeight:1.5, outline:'none' }} />
-        </div>
-        <div style={{ display:'flex', gap:6, padding:'10px 14px', borderTop:'1px solid var(--border)', background:'var(--bg)' }}>
-          <button style={{ flex:1, borderRadius:6, padding:'8px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', fontWeight:600, border:'1.5px solid var(--danger)', background:'white', color:'var(--danger)' }}>수정 요청</button>
-          <button style={{ flex:1, borderRadius:6, padding:'8px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', fontWeight:600, border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)' }}>임시 저장</button>
-          <button style={{ flex:1, borderRadius:6, padding:'8px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', fontWeight:600, border:'none', background:'var(--accent)', color:'white' }}>승인</button>
-        </div>
+        )}
       </div>
-      <p style={{ textAlign:'center', padding:12, fontSize:13, color:'var(--text-muted)' }}>시험 생성 후 문항이 여기에 표시됩니다. (현재 Mock 뷰)</p>
     </Card>
   )
 }
 
+/* ── 시험지 생성 (자동 배분 + 피드백 편집) ───────────────────── */
+function ExamSheet({ toast, onNavigate }) {
+  const [team, setTeam] = useState('T1')
+  const [totalCount, setTotalCount] = useState(25)
+  const [questions, setQuestions] = useState(null)
+  const [loading, setLoading] = useState(false)
+  const [swapTargetIdx, setSwapTargetIdx] = useState(null)
+  const [swapPool, setSwapPool] = useState([])
+
+  const teamOpts = [['T1','1팀 (주간)'],['T2','2팀 (4조3교대)'],['T3','3팀 (3조2교대)']]
+
+  async function assign() {
+    setLoading(true)
+    setSwapTargetIdx(null)
+    try {
+      const data = await apiFetch('POST', '/api/admin/preview-exam', { team_code: team })
+      const qs = data.questions.slice(0, totalCount)
+      setQuestions(qs.map((q, i) => ({ ...q, _order: i + 1 })))
+      toast(`${qs.length}문항 자동 배분 완료. 순서 변경·문제 교체가 가능합니다.`)
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+    finally { setLoading(false) }
+  }
+
+  function moveUp(i) {
+    if (i === 0) return
+    setQuestions(prev => {
+      const arr = [...prev]
+      ;[arr[i - 1], arr[i]] = [arr[i], arr[i - 1]]
+      return arr
+    })
+  }
+
+  function moveDown(i) {
+    setQuestions(prev => {
+      if (i === prev.length - 1) return prev
+      const arr = [...prev]
+      ;[arr[i], arr[i + 1]] = [arr[i + 1], arr[i]]
+      return arr
+    })
+  }
+
+  function removeQ(i) {
+    setQuestions(prev => prev.filter((_, idx) => idx !== i))
+    toast('문제가 제거됐습니다.')
+  }
+
+  async function openSwap(idx) {
+    if (swapTargetIdx === idx) { setSwapTargetIdx(null); return }
+    setSwapTargetIdx(idx)
+    try {
+      const current = questions[idx]
+      const diff = current.difficulty_ai || current.difficulty_init || ''
+      const path = `/api/admin/questions?status=approved${diff ? `&difficulty=${diff}` : ''}`
+      const data = await apiFetch('GET', path)
+      const pool = (data.questions || []).filter(q => q.question_id !== current.question_id)
+      setSwapPool(pool.slice(0, 5))
+    } catch {
+      setSwapPool([])
+    }
+  }
+
+  function swapQuestion(idx, replacement) {
+    setQuestions(prev => {
+      const arr = [...prev]
+      arr[idx] = { ...replacement, _order: arr[idx]._order }
+      return arr
+    })
+    setSwapTargetIdx(null)
+    toast('문제 교체 완료')
+  }
+
+  const diffColor = { 상:'var(--danger)', 중:'var(--warning)', 하:'var(--success)' }
+  const diffCount = questions
+    ? { 상: questions.filter(q => (q.difficulty_ai || q.difficulty_init) === '상').length,
+        중: questions.filter(q => (q.difficulty_ai || q.difficulty_init) === '중').length,
+        하: questions.filter(q => (q.difficulty_ai || q.difficulty_init) === '하').length }
+    : null
+
+  return (
+    <div style={{ display:'grid', gridTemplateColumns:'280px 1fr', gap:14 }}>
+      {/* 좌측: 조건 설정 */}
+      <div>
+        <Card title="시험지 조건 설정">
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>대상 팀</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
+            {teamOpts.map(([val, label]) => (
+              <button key={val} onClick={() => setTeam(val)} style={{ display:'flex', alignItems:'center', gap:8, background: team===val ? 'var(--accent-light)' : 'white', border:`1.5px solid ${team===val ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, padding:'9px 12px', cursor:'pointer', fontFamily:'var(--font)', fontSize:13, color: team===val ? 'var(--accent-dark)' : 'var(--text-muted)', fontWeight: team===val ? 700 : 400 }}>
+                <Icon name="users" size={13} style={{ opacity:0.6, flexShrink:0 }} />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>총 문항 수</div>
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
+            <input type="range" min={10} max={50} step={5} value={totalCount}
+              onChange={e => setTotalCount(Number(e.target.value))}
+              style={{ flex:1, accentColor:'var(--accent)' }} />
+            <span style={{ fontSize:20, fontWeight:800, color:'var(--accent)', minWidth:44, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{totalCount}</span>
+          </div>
+          <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:16 }}>
+            난이도 자동 배분: 상 {Math.round(totalCount*0.28)}·중 {Math.round(totalCount*0.40)}·하 {Math.round(totalCount*0.32)}문항 (예상)
+          </div>
+
+          <BtnPrimary onClick={assign} style={{ width:'100%', justifyContent:'center' }} disabled={loading}>
+            <Icon name="refresh" size={14} style={{ color:'white' }} />
+            {loading ? '배분 중...' : '자동 배분 시작'}
+          </BtnPrimary>
+
+          {questions && (
+            <div style={{ marginTop:10, fontSize:11, color:'var(--text-muted)', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, padding:'8px 10px' }}>
+              현재 시험지: <strong>{questions.length}문항</strong>
+              {diffCount && (
+                <span style={{ marginLeft:6 }}>
+                  · 상 <span style={{ color:'var(--danger)', fontWeight:700 }}>{diffCount.상}</span>
+                  · 중 <span style={{ color:'var(--warning)', fontWeight:700 }}>{diffCount.중}</span>
+                  · 하 <span style={{ color:'var(--success)', fontWeight:700 }}>{diffCount.하}</span>
+                </span>
+              )}
+            </div>
+          )}
+        </Card>
+
+        {questions && (
+          <Card title="시험지 저장">
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <button style={{ width:'100%', background:'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'10px 0', fontFamily:'var(--font)', fontSize:13, fontWeight:700, cursor:'pointer' }}>
+                시험지 저장
+              </button>
+              <button style={{ width:'100%', border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 0', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>
+                PDF 생성
+              </button>
+              <button onClick={() => onNavigate('q-bank')} style={{ width:'100%', border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:7, padding:'9px 0', fontFamily:'var(--font)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
+                문제은행으로 이동
+              </button>
+            </div>
+          </Card>
+        )}
+      </div>
+
+      {/* 우측: 문제 목록 + 편집 */}
+      <Card title={questions ? `시험지 미리보기 (${questions.length}문항)` : '시험지 미리보기'} action={
+        questions ? <Badge type="success">편집 가능</Badge> : null
+      }>
+        {!questions ? (
+          <div style={{ textAlign:'center', padding:'48px 0', color:'var(--text-muted)' }}>
+            <Icon name="file" size={36} style={{ opacity:0.2, display:'block', margin:'0 auto 12px' }} />
+            <p style={{ fontSize:13 }}>조건을 설정하고 '자동 배분 시작'을 눌러주세요.</p>
+            <p style={{ fontSize:11, marginTop:6 }}>문제은행의 승인된 문제에서 자동으로 배분됩니다.</p>
+          </div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+            {questions.map((q, i) => {
+              const diff = q.difficulty_ai || q.difficulty_init || '중'
+              const isSwapOpen = swapTargetIdx === i
+              return (
+                <div key={q.question_id + i} style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, overflow:'hidden', transition:'border-color .15s' }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px' }}>
+                    {/* 순서 번호 */}
+                    <span style={{ width:24, height:24, borderRadius:'50%', background:'var(--accent)', color:'white', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{i + 1}</span>
+
+                    {/* 문제 내용 */}
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:2 }}>
+                        {q.question_id} · {q.category}
+                        <span style={{ marginLeft:6, fontWeight:700, color: diffColor[diff] || 'var(--text-muted)' }}>[{diff}]</span>
+                      </div>
+                      <div style={{ fontSize:13, color:'var(--text)', fontWeight:500, lineHeight:1.4,
+                        overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{q.question}</div>
+                    </div>
+
+                    {/* 편집 버튼들 */}
+                    <div style={{ display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+                      <button onClick={() => moveUp(i)} disabled={i === 0}
+                        title="위로" style={{ border:'1px solid var(--border)', background:'white', borderRadius:5, padding:'4px 6px', cursor: i === 0 ? 'not-allowed' : 'pointer', opacity: i === 0 ? 0.3 : 1, display:'flex', alignItems:'center' }}>
+                        <Icon name="up" size={12} style={{ color:'var(--text-muted)' }} />
+                      </button>
+                      <button onClick={() => moveDown(i)} disabled={i === questions.length - 1}
+                        title="아래로" style={{ border:'1px solid var(--border)', background:'white', borderRadius:5, padding:'4px 6px', cursor: i === questions.length - 1 ? 'not-allowed' : 'pointer', opacity: i === questions.length - 1 ? 0.3 : 1, display:'flex', alignItems:'center' }}>
+                        <Icon name="down" size={12} style={{ color:'var(--text-muted)' }} />
+                      </button>
+                      <button onClick={() => openSwap(i)}
+                        title="문제 교체" style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : 'var(--border)'}`, background: isSwapOpen ? 'var(--accent-light)' : 'white', borderRadius:5, padding:'4px 7px', cursor:'pointer', display:'flex', alignItems:'center', gap:3, fontSize:11, color: isSwapOpen ? 'var(--accent-dark)' : 'var(--text-muted)', fontWeight: isSwapOpen ? 700 : 400 }}>
+                        <Icon name="swap" size={11} /> 교체
+                      </button>
+                      <button onClick={() => removeQ(i)}
+                        title="제거" style={{ border:'1px solid var(--border)', background:'white', borderRadius:5, padding:'4px 6px', cursor:'pointer', display:'flex', alignItems:'center' }}>
+                        <Icon name="trash" size={12} style={{ color:'var(--danger)' }} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 교체 패널 */}
+                  {isSwapOpen && (
+                    <div style={{ borderTop:'1px solid var(--accent)', background:'var(--accent-light)', padding:'10px 12px' }}>
+                      <div style={{ fontSize:11, fontWeight:700, color:'var(--accent-dark)', marginBottom:8 }}>
+                        동일 난이도({diff}) 대체 문제 선택
+                      </div>
+                      {swapPool.length === 0 ? (
+                        <p style={{ fontSize:12, color:'var(--text-muted)' }}>대체 가능한 문제가 없습니다.</p>
+                      ) : (
+                        <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                          {swapPool.map(alt => (
+                            <button key={alt.question_id} onClick={() => swapQuestion(i, alt)}
+                              style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', border:'1px solid var(--border)', borderRadius:6, background:'white', cursor:'pointer', textAlign:'left', width:'100%', fontFamily:'var(--font)' }}>
+                              <span style={{ fontSize:10, padding:'2px 6px', borderRadius:4, background:'var(--accent-light)', color:'var(--accent-dark)', fontWeight:700, flexShrink:0 }}>{alt.question_id}</span>
+                              <span style={{ fontSize:12, color:'var(--text)', flex:1, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{alt.question}</span>
+                              <span style={{ fontSize:11, color:'var(--text-muted)', flexShrink:0 }}>{alt.category}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </Card>
+    </div>
+  )
+}
+
+/* ── 응시 이력 ───────────────────────────────────────────────── */
 function History({ toast }) {
   const [rows, setRows] = useState(null)
   const [filterTeam, setFilterTeam] = useState('')
@@ -467,68 +976,18 @@ function History({ toast }) {
   )
 }
 
-function Questions({ toast }) {
-  const [items, setItems] = useState(null)
-  const [cat, setCat] = useState('')
-
-  async function load() {
-    try {
-      const data = await apiFetch('GET', `/api/admin/questions${cat ? `?category=${encodeURIComponent(cat)}` : ''}`)
-      setItems(data.questions)
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+function StatusBadge({ status }) {
+  const map = {
+    draft:     { type:'gray',    label:'초안' },
+    reviewing: { type:'warning', label:'검토중' },
+    approved:  { type:'success', label:'승인' },
+    rejected:  { type:'danger',  label:'반려' },
   }
-
-  async function updateDiff(qid, newDiff) {
-    try {
-      await apiFetch('PATCH', '/api/admin/difficulty', { question_id: qid, new_difficulty: newDiff })
-      toast(`${qid} 난이도 → ${newDiff} 변경 완료`)
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
-  }
-
-  return (
-    <Card title="문제 관리 · 난이도 조정" noPad action={
-      <div style={{ display:'flex', gap:8 }}>
-        <FilterSelect value={cat} onChange={setCat}>
-          <option value="">전체 카테고리</option>
-          <option value="공통">공통</option><option value="팀별">팀별</option><option value="환경안전">환경안전</option><option value="일반상식">일반상식</option>
-        </FilterSelect>
-        <BtnOutlineSm onClick={load}>조회</BtnOutlineSm>
-      </div>
-    }>
-      <div style={{ padding:'9px 20px', background:'var(--bg)', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>
-        난이도 드롭다운을 변경하면 즉시 서버에 반영됩니다.
-      </div>
-      <div style={{ padding:'14px 20px' }}>
-        {!items ? (
-          <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>조회 버튼을 눌러 문제를 불러오세요.</p>
-        ) : items.length === 0 ? (
-          <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>문제가 없습니다.</p>
-        ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            {items.map(q => {
-              const d = q.difficulty_ai || q.difficulty_init
-              return (
-                <div key={q.question_id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', border:'1px solid var(--border)', borderRadius:7 }}>
-                  <div>
-                    <div style={{ fontSize:11, color:'var(--text-muted)' }}>{q.question_id} · {q.category}</div>
-                    <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4, marginTop:2 }}>{q.question}</div>
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
-                    <Badge type="blue">{d}</Badge>
-                    <select value={d} onChange={e => updateDiff(q.question_id, e.target.value)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', background:'white', outline:'none' }}>
-                      <option value="하">하</option><option value="중">중</option><option value="상">상</option>
-                    </select>
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        )}
-      </div>
-    </Card>
-  )
+  const m = map[status] || { type:'gray', label: status }
+  return <Badge type={m.type}>{m.label}</Badge>
 }
 
+/* ── 사용자 승인 ─────────────────────────────────────────────── */
 function Users({ toast }) {
   const [users, setUsers] = useState([])
   const [form, setForm] = useState({ empno:'', name:'', team:'T1', date:'' })
@@ -593,6 +1052,7 @@ function Users({ toast }) {
   )
 }
 
+/* ── 결과 분석 ───────────────────────────────────────────────── */
 function Results() {
   const resultData = [
     { name:'홍길동', dept:'생산팀', score:92, pass:true,  date:'2026.06.14' },
@@ -687,6 +1147,7 @@ function Results() {
   )
 }
 
+/* ── 설정 ────────────────────────────────────────────────────── */
 function Settings() {
   const [driveStatus, setDriveStatus] = useState('확인 중...')
 
@@ -709,13 +1170,17 @@ function Settings() {
   ]
 
   const todos = [
-    'Google Drive Service Account 연동',
-    'Claude API 문제 생성 JSON 파싱',
-    'Drive 문제은행 Excel 파싱',
-    'Drive 결과로그 저장',
-    '난이도 AI 자동 확정 피드백 루프',
-    '결과 리포트 PDF 내보내기',
-    '비밀번호 초기화 기능',
+    { text: 'Google Drive Service Account 연동', done: true },
+    { text: '문제 상태 머신 (draft→reviewing→approved→rejected)', done: true },
+    { text: '규칙 게이트 7개 (V-01~V-07)', done: true },
+    { text: '시험지 스냅샷 저장 (보기 순서맵)', done: true },
+    { text: '결과 JSONL 영속화 (results.jsonl)', done: true },
+    { text: 'Admin UI 문제 생성 / 문제은행 / 시험지 생성 분리', done: true },
+    { text: 'Claude API 문제 생성 JSON 파싱', done: false },
+    { text: 'Drive 문제은행 Excel 파싱', done: false },
+    { text: '난이도 AI 자동 확정 피드백 루프', done: false },
+    { text: '결과 리포트 PDF 내보내기', done: false },
+    { text: 'Google Drive 결과 저장 연동', done: false },
   ]
 
   return (
@@ -739,13 +1204,21 @@ function Settings() {
           </div>
         ))}
       </Card>
-      <Card title="향후 구현 항목 (TODO)" noPad>
+      <Card title="구현 현황 (TODO)" noPad>
         {todos.map((t, i) => (
           <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 20px', borderBottom: i < todos.length-1 ? '1px solid var(--border)' : 'none' }}>
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
-              <rect x="1" y="1" width="12" height="12" rx="2" stroke="#CBD5E1" strokeWidth="1.5"/>
-            </svg>
-            <span style={{ fontSize:13, color:'var(--text-muted)' }}>{t}</span>
+            {t.done ? (
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="1" y="1" width="12" height="12" rx="2" fill="var(--success)" stroke="var(--success)" strokeWidth="1.5"/>
+                <polyline points="3,7 6,10 11,4" stroke="white" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                <rect x="1" y="1" width="12" height="12" rx="2" stroke="#CBD5E1" strokeWidth="1.5"/>
+              </svg>
+            )}
+            <span style={{ fontSize:13, color: t.done ? 'var(--text)' : 'var(--text-muted)', fontWeight: t.done ? 500 : 400 }}>{t.text}</span>
+            {t.done && <span style={{ marginLeft:'auto', fontSize:10, fontWeight:700, color:'var(--success)', background:'var(--success-light)', padding:'2px 7px', borderRadius:10 }}>완료</span>}
           </div>
         ))}
       </Card>
@@ -755,43 +1228,51 @@ function Settings() {
 
 /* ── Admin Layout ───────────────────────────────────────────── */
 const NAV_META = {
-  dashboard:     { bc:['홈','대시보드'],              title:'관리자 대시보드' },
-  'exam-create': { bc:['홈','시험 관리','시험 생성'], title:'시험 생성' },
-  'exam-review': { bc:['홈','시험 관리','검토·수정'], title:'검토 · 수정' },
-  history:       { bc:['홈','응시 이력'],             title:'응시 이력' },
-  questions:     { bc:['홈','문제 관리'],             title:'문제 관리 · 난이도 조정' },
-  users:         { bc:['홈','사용자 승인'],           title:'사용자 승인' },
-  results:       { bc:['홈','결과 분석'],             title:'결과 분석' },
-  settings:      { bc:['홈','설정'],                  title:'시스템 설정' },
+  dashboard:    { bc:['홈','대시보드'],                    title:'관리자 대시보드' },
+  'q-generate': { bc:['홈','문제 관리','문제 생성'],       title:'문제 생성' },
+  'q-review':   { bc:['홈','문제 관리','검토·검증'],       title:'검토 · 검증' },
+  'q-bank':     { bc:['홈','문제 관리','문제은행'],        title:'문제은행' },
+  'exam-sheet': { bc:['홈','시험지 생성'],                 title:'시험지 생성' },
+  history:      { bc:['홈','응시 이력'],                   title:'응시 이력' },
+  users:        { bc:['홈','사용자 승인'],                 title:'사용자 승인' },
+  results:      { bc:['홈','결과 분석'],                   title:'결과 분석' },
+  settings:     { bc:['홈','설정'],                        title:'시스템 설정' },
 }
 
 export default function Admin() {
   const navigate = useNavigate()
   const [view, setView] = useState('dashboard')
-  const [examSubOpen, setExamSubOpen] = useState(false)
+  const [qSubOpen, setQSubOpen] = useState(false)
   const { toast, ToastContainer } = useToast()
 
   const meta = NAV_META[view] || NAV_META.dashboard
 
   function goView(v) {
     setView(v)
-    if (v === 'exam-create' || v === 'exam-review') setExamSubOpen(true)
+    if (v === 'q-generate' || v === 'q-review' || v === 'q-bank') setQSubOpen(true)
   }
 
   const navItems = [
-    { id:'dashboard', icon:'grid',     label:'대시보드' },
-    { id:'exam',      icon:'file',     label:'시험 관리', sub:[{ id:'exam-create', icon:'plus',  label:'시험 생성' },{ id:'exam-review', icon:'check', label:'검토 · 수정' }] },
-    { id:'history',   icon:'clock',    label:'응시 이력' },
-    { id:'questions', icon:'book',     label:'문제 관리' },
-    { id:'users',     icon:'users',    label:'사용자 승인' },
-    { id:'results',   icon:'chart',    label:'결과 분석' },
-    { id:'settings',  icon:'settings', label:'설정' },
+    { id:'dashboard',  icon:'grid',     label:'대시보드' },
+    { id:'q-manage',   icon:'book',     label:'문제 관리', sub:[
+      { id:'q-generate', icon:'ai',    label:'문제 생성' },
+      { id:'q-review',   icon:'check', label:'검토·검증' },
+      { id:'q-bank',     icon:'book',  label:'문제은행' },
+    ]},
+    { id:'exam-sheet', icon:'file',     label:'시험지 생성' },
+    { id:'history',    icon:'clock',    label:'응시 이력' },
+    { id:'users',      icon:'users',    label:'사용자 승인' },
+    { id:'results',    icon:'chart',    label:'결과 분석' },
+    { id:'settings',   icon:'settings', label:'설정' },
   ]
 
   const SIDEBAR_W = 220
   const HEADER_H  = 56
 
-  const isActive = id => view === id || (id === 'exam' && (view === 'exam-create' || view === 'exam-review'))
+  const isActive = id => {
+    if (id === 'q-manage') return ['q-generate','q-review','q-bank'].includes(view)
+    return view === id
+  }
 
   return (
     <div style={{ fontFamily:'var(--font)', fontSize:14, color:'var(--text)', background:'var(--bg)', height:'100vh', overflow:'hidden', display:'flex', flexDirection:'column' }}>
@@ -828,14 +1309,14 @@ export default function Admin() {
             {navItems.map(item => (
               <div key={item.id}>
                 <div
-                  onClick={() => item.sub ? setExamSubOpen(v => !v) : goView(item.id)}
+                  onClick={() => item.sub ? setQSubOpen(v => !v) : goView(item.id)}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 18px', color: isActive(item.id) ? 'white' : 'rgba(255,255,255,.60)', cursor:'pointer', fontSize:13, borderLeft:`2px solid ${isActive(item.id) ? 'var(--accent)' : 'transparent'}`, background: isActive(item.id) ? 'rgba(255,255,255,.10)' : 'transparent', fontWeight: isActive(item.id) ? 600 : 400 }}
                 >
                   <Icon name={item.icon} size={15} style={{ opacity: isActive(item.id) ? 1 : 0.65 }} />
                   <span>{item.label}</span>
-                  {item.sub && <span style={{ marginLeft:'auto', fontSize:11, color:'rgba(255,255,255,.30)', display:'inline-block', transform: examSubOpen ? 'rotate(90deg)' : 'none', transition:'transform .2s' }}>›</span>}
+                  {item.sub && <span style={{ marginLeft:'auto', fontSize:11, color:'rgba(255,255,255,.30)', display:'inline-block', transform: qSubOpen ? 'rotate(90deg)' : 'none', transition:'transform .2s' }}>›</span>}
                 </div>
-                {item.sub && examSubOpen && (
+                {item.sub && qSubOpen && (
                   <div style={{ background:'rgba(0,0,0,.15)' }}>
                     {item.sub.map(s => (
                       <div key={s.id} onClick={() => goView(s.id)}
@@ -874,14 +1355,15 @@ export default function Admin() {
             ))}
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:24 }}>
-            {view === 'dashboard'    && <Dashboard onNavigate={goView} />}
-            {view === 'exam-create'  && <ExamCreate toast={toast} />}
-            {view === 'exam-review'  && <ExamReview />}
-            {view === 'history'      && <History toast={toast} />}
-            {view === 'questions'    && <Questions toast={toast} />}
-            {view === 'users'        && <Users toast={toast} />}
-            {view === 'results'      && <Results />}
-            {view === 'settings'     && <Settings />}
+            {view === 'dashboard'   && <Dashboard onNavigate={goView} />}
+            {view === 'q-generate'  && <QuestionGenerate toast={toast} onNavigate={goView} />}
+            {view === 'q-review'    && <ExamReview toast={toast} />}
+            {view === 'q-bank'      && <QuestionBank toast={toast} onNavigate={goView} />}
+            {view === 'exam-sheet'  && <ExamSheet toast={toast} onNavigate={goView} />}
+            {view === 'history'     && <History toast={toast} />}
+            {view === 'users'       && <Users toast={toast} />}
+            {view === 'results'     && <Results />}
+            {view === 'settings'    && <Settings />}
           </div>
         </main>
       </div>
