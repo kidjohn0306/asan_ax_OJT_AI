@@ -503,11 +503,14 @@ function Questions({ toast }) {
   const [cat, setCat] = useState('')
   const [diff, setDiff] = useState('')
   const [openId, setOpenId] = useState(null)
+  const [page, setPage] = useState(0)
+  const [pageSize, setPageSize] = useState(10)
 
   async function load() {
     try {
       const data = await apiFetch('GET', `/api/admin/questions${cat ? `?category=${encodeURIComponent(cat)}` : ''}`)
       setItems(data.questions)
+      setPage(0)
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
   }
 
@@ -525,7 +528,7 @@ function Questions({ toast }) {
           <option value="">전체 카테고리</option>
           <option value="공통">공통</option><option value="팀별">팀별</option><option value="환경안전">환경안전</option><option value="일반상식">일반상식</option>
         </FilterSelect>
-        <FilterSelect value={diff} onChange={setDiff}>
+        <FilterSelect value={diff} onChange={v => { setDiff(v); setPage(0) }}>
           <option value="">전체 난이도</option>
           <option value="하">하</option><option value="중">중</option><option value="상">상</option>
         </FilterSelect>
@@ -540,9 +543,13 @@ function Questions({ toast }) {
           <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>조회 버튼을 눌러 문제를 불러오세요.</p>
         ) : items.length === 0 ? (
           <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>문제가 없습니다.</p>
-        ) : (
+        ) : (() => {
+          const filtered = diff ? items.filter(q => (q.difficulty_ai || q.difficulty_init) === diff) : items
+          const totalPages = pageSize === 0 ? 1 : Math.ceil(filtered.length / pageSize)
+          const paged = pageSize === 0 ? filtered : filtered.slice(page * pageSize, (page + 1) * pageSize)
+          return (<>
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            {(diff ? items.filter(q => (q.difficulty_ai || q.difficulty_init) === diff) : items).map(q => {
+            {paged.map(q => {
               const d = q.difficulty_ai || q.difficulty_init
               const isOpen = openId === q.question_id
               const opts = [['A', q.option_a], ['B', q.option_b], ['C', q.option_c], ['D', q.option_d]]
@@ -557,7 +564,7 @@ function Questions({ toast }) {
                       <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4, marginTop:2 }}>{q.question}</div>
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0, marginLeft:12 }}>
-                      <Badge type="blue">{d}</Badge>
+                      <span style={{ fontSize:11, fontWeight:700, padding:'3px 9px', borderRadius:20, ...({ 상:{background:'#fee2e2',color:'#b91c1c'}, 중:{background:'#fef3c7',color:'#b45309'}, 하:{background:'#d1fae5',color:'#065f46'} }[d] || {}) }}>{d}</span>
                       <select
                         value={d}
                         onClick={e => e.stopPropagation()}
@@ -593,7 +600,29 @@ function Questions({ toast }) {
               )
             })}
           </div>
-        )}
+          {filtered.length > 0 && (
+            <div style={{ position:'relative', marginTop:16, paddingTop:12, borderTop:'1px solid var(--border)' }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ height:30, padding:'0 10px', border:'1.5px solid var(--border)', borderRadius:6, background:'white', fontSize:12, cursor: page === 0 ? 'not-allowed' : 'pointer', opacity: page === 0 ? 0.4 : 1, fontFamily:'var(--font)' }}>이전</button>
+                {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => i).map(i => (
+                  <button key={i} onClick={() => setPage(i)} style={{ height:30, minWidth:30, padding:'0 6px', border:`1.5px solid ${page === i ? 'var(--accent)' : 'var(--border)'}`, borderRadius:6, background: page === i ? 'var(--accent)' : 'white', color: page === i ? 'white' : 'var(--text)', fontSize:12, fontWeight: page === i ? 700 : 400, cursor:'pointer', fontFamily:'var(--font)' }}>{i + 1}</button>
+                ))}
+                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1} style={{ height:30, padding:'0 10px', border:'1.5px solid var(--border)', borderRadius:6, background:'white', fontSize:12, cursor: page === totalPages - 1 ? 'not-allowed' : 'pointer', opacity: page === totalPages - 1 ? 0.4 : 1, fontFamily:'var(--font)' }}>다음</button>
+              </div>
+              <select
+                value={pageSize}
+                onChange={e => { setPageSize(Number(e.target.value)); setPage(0) }}
+                style={{ position:'absolute', right:0, top:'50%', transform:'translateY(-50%)', border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:12, background:'white', outline:'none', cursor:'pointer' }}
+              >
+                <option value={10}>10개씩 보기</option>
+                <option value={15}>15개씩 보기</option>
+                <option value={30}>30개씩 보기</option>
+                <option value={0}>전체 보기</option>
+              </select>
+            </div>
+          )}
+          </>)
+        })()}
       </div>
     </Card>
   )
