@@ -96,7 +96,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
     }
 
 
-def score_and_save(exam_id: str, answers: dict, response_times: dict) -> dict:
+def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_id: str = "", name: str = "") -> dict:
     q_repo, r_repo, s_repo = _get_repos()
 
     # 스냅샷 기준으로 채점 (라이브 문제 아님)
@@ -108,6 +108,11 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict) -> dict:
     meta = snapshot.get("_meta", {})
     results = []
     score = 0
+    difficulty_summary = {
+        "상": {"correct": 0, "incorrect": 0},
+        "중": {"correct": 0, "incorrect": 0},
+        "하": {"correct": 0, "incorrect": 0},
+    }
 
     for qid, user_ans in answers.items():
         q_snap = snapshot.get(qid)
@@ -116,19 +121,26 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict) -> dict:
         correct = isinstance(user_ans, str) and q_snap["answer"] == user_ans.upper()
         if correct:
             score += 4  # 25문항 × 4점 = 100점 만점
+        difficulty = q_snap.get("difficulty", "중")
+        if difficulty in difficulty_summary:
+            key = "correct" if correct else "incorrect"
+            difficulty_summary[difficulty][key] += 1
         results.append({
             "q_id": qid,
             "correct": correct,
             "answer": q_snap["answer"],
             "user_answer": user_ans,
-            "difficulty": q_snap.get("difficulty"),
+            "difficulty": difficulty,
             "response_time": response_times.get(qid, 0),
         })
 
     result_data = {
         "exam_id": exam_id,
+        "employee_id": employee_id,
+        "name": name,
         "score": score,
         "pass": score >= 70,
+        "difficulty_summary": difficulty_summary,
         "results": results,
         "team_code": meta.get("team_code", ""),
         "submitted_at": datetime.now(timezone.utc).isoformat(),
