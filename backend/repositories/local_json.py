@@ -55,7 +55,11 @@ class LocalQuestionRepository(QuestionRepository):
         if pool_key not in data:
             data[pool_key] = []
         data[pool_key].append(question)
-        self._save(data)
+        try:
+            self._save(data)
+        except OSError:
+            # Vercel read-only filesystem — 로컬 저장 불가, 호출부에서 처리
+            raise RuntimeError("questions.json 쓰기 실패: 읽기 전용 파일시스템입니다. DriveQuestionRepository가 필요합니다.")
 
     _CONTENT_FIELDS = {"question", "option_a", "option_b", "option_c", "option_d", "answer", "explanation"}
 
