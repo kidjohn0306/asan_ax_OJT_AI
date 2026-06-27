@@ -831,16 +831,16 @@ export default function Admin() {
               </div>
             ))}
           </div>
-          <div style={{ borderTop:'1px solid rgba(255,255,255,.07)', padding:'10px 12px' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 4px 10px' }}>
-              <div style={{ width:28, height:28, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:12, fontWeight:700, flexShrink:0 }}>김</div>
+          <div style={{ borderTop:'1px solid rgba(255,255,255,.07)', padding:'14px 16px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'8px 4px 14px' }}>
+              <div style={{ width:40, height:40, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:16, fontWeight:700, flexShrink:0 }}>김</div>
               <div style={{ overflow:'hidden' }}>
-                <div style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,.88)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>김흥길 과장</div>
-                <div style={{ fontSize:10, color:'rgba(255,255,255,.35)' }}>관리자</div>
+                <div style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,.88)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>김흥길 과장</div>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,.35)', marginTop:2 }}>관리자</div>
               </div>
             </div>
-            <button onClick={() => apiLogout(navigate)} style={{ width:'100%', background:'rgba(255,255,255,.07)', border:'1px solid rgba(255,255,255,.10)', borderRadius:7, padding:'7px 10px', fontFamily:'var(--font)', fontSize:12, color:'rgba(255,255,255,.55)', cursor:'pointer', display:'flex', alignItems:'center', gap:7 }}>
-              <Icon name="logout" size={13} style={{ color:'rgba(255,255,255,.5)' }} /> 로그아웃
+            <button onClick={() => apiLogout(navigate)} style={{ width:'100%', background:'rgba(255,255,255,.07)', border:'1px solid rgba(255,255,255,.10)', borderRadius:7, padding:'9px 10px', fontFamily:'var(--font)', fontSize:13, color:'rgba(255,255,255,.55)', cursor:'pointer', display:'flex', alignItems:'center', gap:7 }}>
+              <Icon name="logout" size={14} style={{ color:'rgba(255,255,255,.5)' }} /> 로그아웃
             </button>
           </div>
         </nav>

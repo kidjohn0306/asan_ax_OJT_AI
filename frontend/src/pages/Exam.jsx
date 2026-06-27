@@ -147,14 +147,14 @@ function ExamScreen({ questions, answers, currentQ, timerSeconds, onSelectAnswer
           ))}
         </div>
 
-        <div style={{ marginTop:'auto', borderTop:'1px solid rgba(255,255,255,0.07)', paddingTop:12 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'6px 4px 10px' }}>
-            <div style={{ width:28, height:28, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:12, fontWeight:700, flexShrink:0 }}>
+        <div style={{ marginTop:'auto', borderTop:'1px solid rgba(255,255,255,0.07)', paddingTop:14 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'8px 4px 14px' }}>
+            <div style={{ width:40, height:40, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:16, fontWeight:700, flexShrink:0 }}>
               {empInfo.name.charAt(0)}
             </div>
             <div style={{ overflow:'hidden' }}>
-              <div style={{ fontSize:11, fontWeight:700, color:'rgba(255,255,255,0.88)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{empInfo.name}</div>
-              <div style={{ fontSize:10, color:'rgba(255,255,255,0.35)' }}>{empInfo.empno} · {empInfo.team}</div>
+              <div style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,0.88)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{empInfo.name}</div>
+              <div style={{ fontSize:11, color:'rgba(255,255,255,0.35)', marginTop:2 }}>{empInfo.empno} · {empInfo.team}</div>
             </div>
           </div>
         </div>
