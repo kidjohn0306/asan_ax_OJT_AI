@@ -1,12 +1,15 @@
 """
 Gemini API 기반 문제 생성 모듈 (테스트용 — 무료 티어)
+google-generativeai gRPC 충돌 방지를 위해 REST API 직접 호출
 AI_PROVIDER=gemini 일 때 router.py에서 호출
 """
 import os
 import json
 import re
 
-import google.generativeai as genai
+import requests
+
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
 
 def generate_questions_from_material(
@@ -18,9 +21,6 @@ def generate_questions_from_material(
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
-
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-flash")
 
     prompt = f"""다음 OJT 교육자료를 바탕으로 {category} 분야 객관식 문제 {count}개를 생성하세요.
 난이도는 '{difficulty_hint}'을 기준으로 합니다.
@@ -41,10 +41,14 @@ def generate_questions_from_material(
   }}
 ]"""
 
-    response = model.generate_content(prompt)
-    raw = response.text.strip()
+    response = requests.post(
+        f"{GEMINI_URL}?key={api_key}",
+        json={"contents": [{"parts": [{"text": prompt}]}]},
+        timeout=60,
+    )
+    response.raise_for_status()
 
-    # 마크다운 코드블록 제거
+    raw = response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
 
