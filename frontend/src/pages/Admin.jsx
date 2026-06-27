@@ -268,6 +268,55 @@ function ExamCreate({ toast }) {
     finally { setLoading(false) }
   }
 
+  function handlePdf() {
+    if (!preview || preview.length === 0) { toast('먼저 문제를 생성해주세요.', 'error'); return }
+    const teamLabel = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }[team] || team
+    const rows = preview.map((q, i) => {
+      const opts = q.options || {}
+      return `
+        <div class="question">
+          <p class="q-text"><span class="q-num">${i + 1}.</span> ${q.question}</p>
+          <ol class="opts">
+            ${['A','B','C','D'].map(k => opts[k] ? `<li><span class="opt-label">${k}.</span>${opts[k]}</li>` : '').join('')}
+          </ol>
+        </div>`
+    }).join('')
+
+    const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<title>OJT 시험지 — (주)엑스티</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size: 10.5pt; color: #1a1a1a; }
+  h1 { font-size: 16pt; font-weight: 800; text-align: center; margin-bottom: 4px; }
+  .meta { text-align: center; font-size: 10pt; color: #555; margin-bottom: 24px; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 0 0 20px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+  .question { page-break-inside: avoid; margin-bottom: 14px; }
+  .q-text { font-size: 10.5pt; font-weight: 600; line-height: 1.55; margin: 0 0 6px 0; }
+  .q-num { font-weight: 800; color: #1e3a5f; }
+  .opts { list-style: none; padding: 0; margin: 0 0 0 14px; }
+  .opts li { display: flex; align-items: flex-start; gap: 6px; font-size: 10pt; padding: 2px 0; line-height: 1.45; }
+  .opt-label { font-weight: 700; min-width: 16px; color: #555; }
+</style>
+</head>
+<body>
+  <h1>(주)엑스티 OJT 기초고사</h1>
+  <p class="meta">${teamLabel} · ${preview.length}문항 · 응시일: ___년 ___월 ___일 &nbsp;&nbsp; 성명: ________________ &nbsp;&nbsp; 사원번호: ________________</p>
+  <hr/>
+  <div class="grid">${rows}</div>
+</body>
+</html>`
+
+    const win = window.open('', '_blank')
+    win.document.write(html)
+    win.document.close()
+    win.focus()
+    setTimeout(() => { win.print() }, 300)
+  }
+
   const teamOpts = [['T1','1팀 (주간)'],['T2','2팀 (4조3교대)'],['T3','3팀 (3조2교대)']]
   const diffOpts = ['초급','중급','고급']
   const countOpts = ['10문항','20문항','25문항']
@@ -324,7 +373,7 @@ function ExamCreate({ toast }) {
         )}
         <div style={{ height:1, background:'var(--border)', margin:'16px 0' }} />
         <div style={{ display:'flex', gap:8 }}>
-          <button style={{ flex:1, border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 14px', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>PDF 생성</button>
+          <button onClick={handlePdf} style={{ flex:1, border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 14px', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>PDF 생성</button>
           <button style={{ flex:1, background:'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'10px 16px', fontFamily:'var(--font)', fontSize:13, fontWeight:700, cursor:'pointer' }}>시험지 저장</button>
         </div>
       </Card>
