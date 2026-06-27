@@ -501,6 +501,8 @@ function History({ toast }) {
 function Questions({ toast }) {
   const [items, setItems] = useState(null)
   const [cat, setCat] = useState('')
+  const [diff, setDiff] = useState('')
+  const [openId, setOpenId] = useState(null)
 
   async function load() {
     try {
@@ -523,6 +525,10 @@ function Questions({ toast }) {
           <option value="">전체 카테고리</option>
           <option value="공통">공통</option><option value="팀별">팀별</option><option value="환경안전">환경안전</option><option value="일반상식">일반상식</option>
         </FilterSelect>
+        <FilterSelect value={diff} onChange={setDiff}>
+          <option value="">전체 난이도</option>
+          <option value="하">하</option><option value="중">중</option><option value="상">상</option>
+        </FilterSelect>
         <BtnOutlineSm onClick={load}>조회</BtnOutlineSm>
       </div>
     }>
@@ -536,20 +542,53 @@ function Questions({ toast }) {
           <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>문제가 없습니다.</p>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            {items.map(q => {
+            {(diff ? items.filter(q => (q.difficulty_ai || q.difficulty_init) === diff) : items).map(q => {
               const d = q.difficulty_ai || q.difficulty_init
+              const isOpen = openId === q.question_id
+              const opts = [['A', q.option_a], ['B', q.option_b], ['C', q.option_c], ['D', q.option_d]]
               return (
-                <div key={q.question_id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', border:'1px solid var(--border)', borderRadius:7 }}>
-                  <div>
-                    <div style={{ fontSize:11, color:'var(--text-muted)' }}>{q.question_id} · {q.category}</div>
-                    <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4, marginTop:2 }}>{q.question}</div>
+                <div key={q.question_id} style={{ border:'1px solid var(--border)', borderRadius:7, overflow:'hidden' }}>
+                  <div
+                    onClick={() => setOpenId(isOpen ? null : q.question_id)}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', cursor:'pointer', background: isOpen ? 'var(--accent-light)' : 'white' }}
+                  >
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:11, color:'var(--text-muted)' }}>{q.question_id} · {q.category}</div>
+                      <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4, marginTop:2 }}>{q.question}</div>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0, marginLeft:12 }}>
+                      <Badge type="blue">{d}</Badge>
+                      <select
+                        value={d}
+                        onClick={e => e.stopPropagation()}
+                        onChange={e => updateDiff(q.question_id, e.target.value)}
+                        style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', background:'white', outline:'none' }}
+                      >
+                        <option value="하">하</option><option value="중">중</option><option value="상">상</option>
+                      </select>
+                      <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition:'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', flexShrink:0 }}>
+                        <path d="M6 9l6 6 6-6"/>
+                      </svg>
+                    </div>
                   </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
-                    <Badge type="blue">{d}</Badge>
-                    <select value={d} onChange={e => updateDiff(q.question_id, e.target.value)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', background:'white', outline:'none' }}>
-                      <option value="하">하</option><option value="중">중</option><option value="상">상</option>
-                    </select>
-                  </div>
+                  {isOpen && (
+                    <div style={{ padding:'12px 16px', background:'var(--bg)', borderTop:'1px solid var(--border)' }}>
+                      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                        {opts.map(([label, text]) => (
+                          <div key={label} style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
+                            <span style={{
+                              width:22, height:22, borderRadius:'50%', flexShrink:0,
+                              background: q.answer === label ? 'var(--accent)' : 'var(--border)',
+                              color: q.answer === label ? 'white' : 'var(--text-muted)',
+                              display:'flex', alignItems:'center', justifyContent:'center',
+                              fontSize:11, fontWeight:700,
+                            }}>{label}</span>
+                            <span style={{ fontSize:12, color:'var(--text)', lineHeight:1.5, paddingTop:3 }}>{text}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )
             })}
