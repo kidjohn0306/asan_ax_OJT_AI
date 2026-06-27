@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { logout as apiLogout } from '../api'
 
 const MOCK_QUESTIONS = [
@@ -365,12 +365,15 @@ function ResultScreen({ empInfo, questions, answers, score, onFinish }) {
 /* ── Main Exam Page ─────────────────────────────────────────── */
 export default function Exam() {
   const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
   const empInfo = {
-    name:  searchParams.get('name')  || sessionStorage.getItem('name')  || '홍길동',
-    empno: searchParams.get('emp')   || sessionStorage.getItem('emp_id')|| '2024001',
-    team:  searchParams.get('team')  || sessionStorage.getItem('team')  || '1팀',
+    name:  sessionStorage.getItem('name')   || '',
+    empno: sessionStorage.getItem('emp_id') || '',
+    team:  sessionStorage.getItem('team')   || '',
   }
+
+  useEffect(() => {
+    if (!empInfo.name || !empInfo.empno) navigate('/', { replace: true })
+  }, [])
 
   const [screen, setScreen] = useState('identity')
   const [questions, setQuestions] = useState([...MOCK_QUESTIONS])
