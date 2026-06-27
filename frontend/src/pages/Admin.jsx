@@ -271,12 +271,15 @@ function QuestionGenerate({ toast, onNavigate }) {
   const [bulkCats, setBulkCats] = useState(['공통','팀별','환경안전','일반상식'])
   const [preview, setPreview] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [openPreviewId, setOpenPreviewId] = useState(null)
 
   async function generate() {
     setLoading(true)
+    setOpenPreviewId(null)
     try {
       const data = await apiFetch('POST', '/api/admin/preview-exam', { team_code: team })
-      setPreview(data.questions)
+      const num = parseInt(count)
+      setPreview(data.questions.slice(0, num))
       toast('문제 생성 완료! 검토·검증 탭에서 승인 후 문제은행에 등록됩니다.')
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
     finally { setLoading(false) }
@@ -348,14 +351,8 @@ function QuestionGenerate({ toast, onNavigate }) {
   })
 
   return (
-    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-      <Card title="AI 문제 생성">
-        <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>생성 방식</div>
-        <div style={{ display:'flex', border:'1.5px solid var(--border)', borderRadius:7, overflow:'hidden', marginBottom:16 }}>
-          <button onClick={() => setMode('preset')} style={modeTabStyle('preset')}>난이도별 생성</button>
-          <button onClick={() => setMode('bulk')}   style={{ ...modeTabStyle('bulk'), borderLeft:'1px solid var(--border)' }}>복합 생성</button>
-        </div>
-
+    <div style={{ display:'grid', gridTemplateColumns:'2fr 3fr', gap:14 }}>
+      <Card title="시험 생성" action={<BtnOutlineSm>이전 시험 불러오기</BtnOutlineSm>}>
         <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>1. 직무 / 팀 선택</div>
         <div style={{ display:'flex', gap:6, marginBottom:14 }}>
           {teamOpts.map(([val, label]) => (
@@ -414,35 +411,43 @@ function QuestionGenerate({ toast, onNavigate }) {
         </div>
       </Card>
 
-      <Card title="생성 결과 미리보기" action={
-        preview ? (
-          <BtnOutlineSm onClick={() => onNavigate('q-review')}>
-            <Icon name="check" size={11} /> 검토·검증으로 이동
-          </BtnOutlineSm>
-        ) : null
-      }>
+      <Card title="시험 문제 미리보기" action={<span style={{ fontSize:11, fontWeight:700, color:'var(--success)', background:'var(--success-light)', padding:'3px 8px', borderRadius:20 }}>{preview ? `${preview.length}문항 생성됨` : '—'}</span>}>
         {!preview ? (
           <p style={{ color:'var(--text-muted)', fontSize:13, textAlign:'center', padding:'24px 0' }}>팀을 선택하고 'AI 문제 생성'을 눌러주세요.</p>
         ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            {preview.slice(0,8).map((q, i) => (
-              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 12px', border:'1px solid var(--border)', borderRadius:7 }}>
-                <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ fontSize:11, color:'var(--text-muted)' }}>문항 {i+1} · {q.category}</div>
-                  <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4, marginTop:2,
-                    overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{q.question}</div>
+          <div style={{ display:'flex', flexDirection:'column', gap:4, maxHeight:600, overflowY:'auto' }}>
+            {preview.map((q, i) => {
+              const isOpen = openPreviewId === (q.id || i)
+              const opts = q.options || {}
+              return (
+                <div key={q.id || i} style={{ border:'1px solid var(--border)', borderRadius:7, overflow:'hidden' }}>
+                  <div
+                    onClick={() => setOpenPreviewId(isOpen ? null : (q.id || i))}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 12px', cursor:'pointer', background: isOpen ? 'var(--accent-light)' : 'white' }}
+                  >
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontSize:11, color:'var(--text-muted)' }}>문항 {i+1} · {q.category} · {q.difficulty}</div>
+                      <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4, marginTop:2 }}>{q.question}</div>
+                    </div>
+                    <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition:'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', flexShrink:0, marginLeft:8 }}>
+                      <path d="M6 9l6 6 6-6"/>
+                    </svg>
+                  </div>
+                  {isOpen && (
+                    <div style={{ padding:'10px 14px', background:'var(--bg)', borderTop:'1px solid var(--border)' }}>
+                      <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                        {['A','B','C','D'].map(k => opts[k] ? (
+                          <div key={k} style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
+                            <span style={{ width:20, height:20, borderRadius:'50%', flexShrink:0, background:'var(--border)', color:'var(--text-muted)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:10, fontWeight:700 }}>{k}</span>
+                            <span style={{ fontSize:12, color:'var(--text)', lineHeight:1.5, paddingTop:2 }}>{opts[k]}</span>
+                          </div>
+                        ) : null)}
+                      </div>
+                    </div>
+                  )}
                 </div>
-                <Badge type="blue">{q.difficulty_init || '중'}</Badge>
-              </div>
-            ))}
-            {preview.length > 8 && (
-              <p style={{ textAlign:'center', fontSize:12, color:'var(--text-muted)', padding:6 }}>
-                +{preview.length - 8}문항 더 있음
-              </p>
-            )}
-            <div style={{ marginTop:8, padding:'9px 12px', background:'var(--success-light)', borderRadius:7, fontSize:12, color:'var(--success)', fontWeight:600 }}>
-              총 {preview.length}문항 생성됨 — 검토·검증 탭에서 승인 처리해주세요.
-            </div>
+              )
+            })}
           </div>
         )}
         <div style={{ height:1, background:'var(--border)', margin:'16px 0' }} />
