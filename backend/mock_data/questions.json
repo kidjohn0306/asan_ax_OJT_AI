@@ -224,7 +224,7 @@
       "difficulty_init": "상",
       "difficulty_ai": "상",
       "admin_override": "",
-      "status": "reviewing",
+      "status": "approved",
       "version": 1,
       "explanation": "이상 소음은 설비 고장의 전조 증상일 수 있으므로 즉시 설비를 정지하고 점검해야 대형 사고를 예방할 수 있습니다.",
       "flags": {
