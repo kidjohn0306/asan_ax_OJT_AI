@@ -104,14 +104,31 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
     }
 
 
+def _build_snapshot_fallback(q_repo, question_ids) -> dict:
+    snapshot = {"_meta": {}}
+    for qid in question_ids:
+        q = q_repo.get_question(qid)
+        if q:
+            snapshot[qid] = {
+                "answer":     q["answer"],
+                "difficulty": q.get("admin_override") or q.get("difficulty_ai") or q.get("difficulty_init", "중"),
+                "question":   q["question"],
+                "option_a":   q["option_a"],
+                "option_b":   q["option_b"],
+                "option_c":   q["option_c"],
+                "option_d":   q["option_d"],
+                "version":    q.get("version", 1),
+            }
+    return snapshot
+
+
 def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_id: str = "", name: str = "") -> dict:
     q_repo, r_repo, s_repo = _get_repos()
 
-    # 스냅샷 기준으로 채점 (라이브 문제 아님)
+    # 스냅샷 기준으로 채점, 없으면 live questions로 폴백 (서버리스 콜드스타트 대응)
     snapshot = s_repo.get_snapshot(exam_id)
     if not snapshot:
-        from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="시험 세션을 찾을 수 없습니다.")
+        snapshot = _build_snapshot_fallback(q_repo, answers.keys())
 
     meta = snapshot.get("_meta", {})
     results = []

@@ -50,6 +50,13 @@ class LocalQuestionRepository(QuestionRepository):
                 return q
         return None
 
+    def add_question(self, pool_key: str, question: dict) -> None:
+        data = self._load()
+        if pool_key not in data:
+            data[pool_key] = []
+        data[pool_key].append(question)
+        self._save(data)
+
     _CONTENT_FIELDS = {"question", "option_a", "option_b", "option_c", "option_d", "answer", "explanation"}
 
     def update_question(self, question_id: str, fields: dict) -> None:
