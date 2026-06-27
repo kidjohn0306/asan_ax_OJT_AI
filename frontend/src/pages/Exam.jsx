@@ -101,7 +101,7 @@ function IdentityScreen({ empInfo, onStart }) {
 }
 
 /* ── ExamScreen ─────────────────────────────────────────────── */
-function ExamScreen({ questions, answers, currentQ, timerSeconds, onSelectAnswer, onPrev, onNext, onOpenConfirm }) {
+function ExamScreen({ questions, answers, currentQ, timerSeconds, onSelectAnswer, onPrev, onNext, onOpenConfirm, bookmarks, onToggleBookmark, empInfo }) {
   const q = questions[currentQ]
   const m = Math.floor(timerSeconds / 60)
   const s = timerSeconds % 60
@@ -128,22 +128,34 @@ function ExamScreen({ questions, answers, currentQ, timerSeconds, onSelectAnswer
               key={i}
               onClick={() => onSelectAnswer(i, null, true)}
               style={{
+                position:'relative',
                 aspectRatio:1, border:`1.5px solid ${i === currentQ ? 'white' : answers[i] !== null ? 'var(--accent)' : 'rgba(255,255,255,0.3)'}`,
                 borderRadius:8, background: i === currentQ ? 'white' : answers[i] !== null ? 'var(--accent)' : 'transparent',
                 color: i === currentQ ? 'var(--primary)' : answers[i] !== null ? 'white' : 'rgba(255,255,255,0.7)',
                 fontSize:12, fontWeight: i === currentQ ? 800 : 600, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', minHeight:44, fontFamily:'var(--font)',
               }}
-            >{i + 1}</button>
+            >
+              {i + 1}
+              {bookmarks[i] && (
+                <span style={{ position:'absolute', top:0, right:0, lineHeight:1, pointerEvents:'none' }}>
+                  <svg width={13} height={13} viewBox="0 0 24 24" fill="#f59e0b" stroke="#f59e0b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                  </svg>
+                </span>
+              )}
+            </button>
           ))}
         </div>
 
-        <div style={{ marginTop:'auto' }}>
-          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8 }}>
-            <span style={{ fontSize:12, color:'rgba(255,255,255,0.55)' }}>완료</span>
-            <strong style={{ fontSize:13, color:'white' }}>{answered} / {questions.length}</strong>
-          </div>
-          <div style={{ height:6, background:'rgba(255,255,255,0.15)', borderRadius:3, overflow:'hidden' }}>
-            <div style={{ height:'100%', background:'var(--accent)', borderRadius:3, width:`${(answered/questions.length)*100}%`, transition:'width 0.4s' }} />
+        <div style={{ marginTop:'auto', borderTop:'1px solid rgba(255,255,255,0.07)', paddingTop:14 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'8px 4px 14px' }}>
+            <div style={{ width:40, height:40, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:16, fontWeight:700, flexShrink:0 }}>
+              {empInfo.name.charAt(0)}
+            </div>
+            <div style={{ overflow:'hidden' }}>
+              <div style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,0.88)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{empInfo.name}</div>
+              <div style={{ fontSize:11, color:'rgba(255,255,255,0.35)', marginTop:2 }}>{empInfo.empno} · {empInfo.team}</div>
+            </div>
           </div>
         </div>
       </aside>
@@ -153,8 +165,16 @@ function ExamScreen({ questions, answers, currentQ, timerSeconds, onSelectAnswer
         <div style={{ flex:1, overflowY:'auto', padding:24, display:'flex', flexDirection:'column' }}>
           <div style={{ background:'white', borderRadius:12, boxShadow:'var(--shadow)', padding:'28px 32px', flex:1, display:'flex', flexDirection:'column' }}>
             <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:20, flexWrap:'wrap' }}>
+              <button
+                onClick={() => onToggleBookmark(currentQ)}
+                title={bookmarks[currentQ] ? '책갈피 해제' : '책갈피 표시'}
+                style={{ background:'none', border:'none', cursor:'pointer', padding:4, display:'flex', alignItems:'center', justifyContent:'center', borderRadius:6 }}
+              >
+                <svg width={22} height={22} viewBox="0 0 24 24" fill={bookmarks[currentQ] ? '#f59e0b' : 'none'} stroke={bookmarks[currentQ] ? '#f59e0b' : '#cbd5e1'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transition:'fill 0.15s, stroke 0.15s' }}>
+                  <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/>
+                </svg>
+              </button>
               <span style={{ fontSize:12, fontWeight:700, padding:'4px 10px', borderRadius:20, ...catBadgeStyle(q.cat) }}>{q.cat}</span>
-              <span style={{ fontSize:12, fontWeight:700, padding:'4px 10px', borderRadius:20, ...diffBadgeStyle(q.diff) }}>{q.diff}</span>
               <span style={{ marginLeft:'auto', fontSize:13, fontWeight:700, color:'var(--text-muted)' }}>문항 {currentQ+1} / {questions.length}</span>
             </div>
             <p style={{ fontSize:18, fontWeight:700, lineHeight:1.65, color:'var(--text)', marginBottom:24, letterSpacing:'-0.3px' }}>{q.q}</p>
@@ -353,8 +373,7 @@ function ResultScreen({ empInfo, questions, answers, score, onFinish }) {
 
       <div style={{ background:'white', borderTop:'1px solid var(--border)', padding:'20px 32px', flexShrink:0 }}>
         <div style={{ marginBottom:16 }}>
-          <p style={{ fontSize:12, color:'var(--text-muted)' }}>결과가 인사팀에 자동 전송되었습니다.</p>
-          <p style={{ fontSize:12, color:'var(--warning)', fontWeight:600, marginTop:4 }}>※ 이 화면을 닫으면 모든 응시 데이터가 삭제됩니다.</p>
+          <p style={{ fontSize:12, color:'var(--text-muted)' }}>결과가 인사팀에 자동 전송 및 저장되었습니다.</p>
         </div>
         <button onClick={onFinish} style={{ width:'100%', height:56, background:'var(--primary)', color:'white', border:'none', borderRadius:12, fontSize:16, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)' }}>확인 후 로그아웃</button>
       </div>
@@ -378,6 +397,7 @@ export default function Exam() {
   const [screen, setScreen] = useState('identity')
   const [questions, setQuestions] = useState([...MOCK_QUESTIONS])
   const [answers, setAnswers] = useState(new Array(25).fill(null))
+  const [bookmarks, setBookmarks] = useState(new Array(25).fill(false))
   const [currentQ, setCurrentQ] = useState(0)
   const [timerSeconds, setTimerSeconds] = useState(3600)
   const [examId, setExamId] = useState(null)
@@ -424,6 +444,7 @@ export default function Exam() {
         }))
         setQuestions(qs)
         setAnswers(new Array(qs.length).fill(null))
+        setBookmarks(new Array(qs.length).fill(false))
       }
     } catch { /* mock fallback */ }
     setScreen('exam')
@@ -435,6 +456,10 @@ export default function Exam() {
       setAnswers(prev => { const next = [...prev]; next[qIdx] = optIdx; return next })
     }
     setCurrentQ(qIdx)
+  }
+
+  function handleToggleBookmark(qIdx) {
+    setBookmarks(prev => { const next = [...prev]; next[qIdx] = !next[qIdx]; return next })
   }
 
   function calculateScore(qs, ans) {
@@ -456,7 +481,7 @@ export default function Exam() {
         const res = await fetch('/api/exam/submit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ exam_id: examId, answers: answersDict, response_times: timesDict }),
+          body: JSON.stringify({ exam_id: examId, answers: answersDict, response_times: timesDict, employee_id: empInfo.empno, name: empInfo.name }),
         })
         if (res.ok) {
           const data = await res.json()
@@ -489,6 +514,9 @@ export default function Exam() {
           onPrev={() => setCurrentQ(q => Math.max(0, q - 1))}
           onNext={() => setCurrentQ(q => Math.min(questions.length - 1, q + 1))}
           onOpenConfirm={() => setScreen('confirm')}
+          bookmarks={bookmarks}
+          onToggleBookmark={handleToggleBookmark}
+          empInfo={empInfo}
         />
       )}
       {screen === 'confirm' && (
