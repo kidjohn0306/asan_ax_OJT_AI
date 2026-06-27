@@ -164,10 +164,27 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
     rejected_examples = [q for q in rejected if q.get("reject_reason")]
 
     questions = generate_questions_from_material(material_text, category, count, difficulty_hint, rejected_examples)
+
+    from services.generation.gates import run_gates
+
+    passed, failed_list = [], []
+    for q in questions:
+        gate_result = run_gates(q)
+        if gate_result["pass"]:
+            q["status"] = "reviewing"
+            q["flags"] = gate_result["flags"]
+            q_repo.update_question(q["question_id"], q)
+            passed.append(q)
+        else:
+            q["status"] = "draft"
+            q["gate_errors"] = gate_result["failed"]
+            failed_list.append(q)
+
     return {
         "team_code": team_code,
         "provider": __import__("os").getenv("AI_PROVIDER", "mock"),
-        "count": len(questions),
+        "count": len(passed),
+        "failed_count": len(failed_list),
         "questions": [
             {
                 "id": q.get("question_id", ""),
@@ -180,8 +197,9 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
                     "D": q.get("option_d", ""),
                 },
                 "difficulty": q.get("difficulty_ai") or q.get("difficulty_init", "중"),
+                "gate_errors": q.get("gate_errors", []),
             }
-            for q in questions
+            for q in passed + failed_list
         ],
     }
 
