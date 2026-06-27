@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import Literal
+from typing import Literal, Optional
 
 router = APIRouter()
 security = HTTPBearer()
@@ -17,6 +17,8 @@ class SubmitRequest(BaseModel):
     exam_id: str
     answers: dict[str, str]          # { "C-001": "A", "T1-001": "C", ... }
     response_times: dict[str, float]  # { "C-001": 12.5, ... }  단위: 초
+    employee_id: Optional[str] = ""
+    name: Optional[str] = ""
 
 
 @router.post("/generate")
@@ -38,7 +40,7 @@ def submit_exam(body: SubmitRequest):
     USE_MOCK_DATA=true 이면 Drive 저장 건너뜀
     """
     from services.exam_service import score_and_save
-    return score_and_save(body.exam_id, body.answers, body.response_times)
+    return score_and_save(body.exam_id, body.answers, body.response_times, body.employee_id, body.name)
 
 
 @router.get("/result/{exam_id}")
