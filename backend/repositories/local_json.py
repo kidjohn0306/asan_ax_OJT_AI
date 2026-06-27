@@ -104,7 +104,7 @@ class LocalResultRepository(ResultRepository):
 
 
 class LocalSnapshotRepository(SnapshotRepository):
-    _file = MOCK_DIR / "snapshots.jsonl"
+    _file = Path("/tmp") / "snapshots.jsonl"
 
     def save_snapshot(self, exam_id: str, snapshot: dict) -> None:
         record = {"exam_id": exam_id, "snapshot": snapshot,
