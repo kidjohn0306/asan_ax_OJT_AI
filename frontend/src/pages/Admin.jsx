@@ -267,19 +267,29 @@ function QuestionGenerate({ toast, onNavigate }) {
   const [team, setTeam] = useState('T1')
   const [diff, setDiff] = useState('중급')
   const [count, setCount] = useState('25문항')
+  const [material, setMaterial] = useState('')
   const [bulkCount, setBulkCount] = useState(50)
   const [bulkCats, setBulkCats] = useState(['공통','팀별','환경안전','일반상식'])
   const [preview, setPreview] = useState(null)
+  const [provider, setProvider] = useState(null)
   const [loading, setLoading] = useState(false)
   const [openPreviewId, setOpenPreviewId] = useState(null)
+
+  const DIFF_MAP = { '초급': '하', '중급': '중', '고급': '상' }
+  const COUNT_MAP = { '10문항': 10, '20문항': 20, '25문항': 25 }
 
   async function generate() {
     setLoading(true)
     setOpenPreviewId(null)
     try {
-      const data = await apiFetch('POST', '/api/admin/preview-exam', { team_code: team })
-      const num = parseInt(count)
-      setPreview(data.questions.slice(0, num))
+      const data = await apiFetch('POST', '/api/admin/generate-ai-questions', {
+        team_code: team,
+        material_text: material,
+        count: COUNT_MAP[count],
+        difficulty_hint: DIFF_MAP[diff],
+      })
+      setPreview(data.questions)
+      setProvider(data.provider)
       toast('문제 생성 완료! 검토·검증 탭에서 승인 후 문제은행에 등록됩니다.')
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
     finally { setLoading(false) }
@@ -376,6 +386,13 @@ function QuestionGenerate({ toast, onNavigate }) {
               <button key={c} onClick={() => setCount(c)} style={{ flex:1, border:'none', borderRight:'1px solid var(--border)', padding:'9px 4px', cursor:'pointer', fontFamily:'var(--font)', fontSize:13, background: count===c ? 'var(--accent)' : 'white', color: count===c ? 'white' : 'var(--text-muted)', fontWeight: count===c ? 700 : 400 }}>{c}</button>
             ))}
           </div>
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>4. 교육자료 입력 (선택)</div>
+          <textarea
+            value={material}
+            onChange={e => setMaterial(e.target.value)}
+            placeholder="교육자료 텍스트를 붙여넣으세요. 비워두면 Mock 문항을 반환합니다."
+            style={{ width:'100%', minHeight:88, border:'1.5px solid var(--border)', borderRadius:7, padding:'9px 10px', fontFamily:'var(--font)', fontSize:12, color:'var(--text)', resize:'vertical', boxSizing:'border-box', marginBottom:14, outline:'none' }}
+          />
         </>)}
 
         {mode === 'bulk' && (<>
@@ -407,7 +424,7 @@ function QuestionGenerate({ toast, onNavigate }) {
           {loading ? '생성 중...' : mode === 'bulk' ? `${bulkCount}문항 일괄 생성` : 'AI 문제 생성'}
         </BtnPrimary>
         <div style={{ fontSize:11, color:'var(--warning)', background:'var(--warning-light)', border:'1px solid #FDE68A', borderRadius:6, padding:'7px 10px' }}>
-          생성된 문제는 <strong>검토·검증</strong> 탭에서 승인 후 문제은행에 등록됩니다.
+          생성된 문제는 <strong>검토·검증</strong> 탭에서 승인 후 문제은행에 등록됩니다.{provider && ` (${provider.toUpperCase()} 모드)`}
         </div>
       </Card>
 

@@ -155,6 +155,37 @@ def override_difficulty(question_id: str, new_difficulty: str, reason_code: str 
     }
 
 
+def generate_ai_questions(team_code: str, material_text: str, count: int, difficulty_hint: str) -> dict:
+    from ai_engine.router import generate_questions_from_material
+    category = TEAM_KEY_MAP.get(team_code, "team1")
+
+    q_repo, _, _ = _get_repos()
+    rejected = q_repo.list_by_status("rejected")
+    rejected_examples = [q for q in rejected if q.get("reject_reason")]
+
+    questions = generate_questions_from_material(material_text, category, count, difficulty_hint, rejected_examples)
+    return {
+        "team_code": team_code,
+        "provider": __import__("os").getenv("AI_PROVIDER", "mock"),
+        "count": len(questions),
+        "questions": [
+            {
+                "id": q.get("question_id", ""),
+                "category": q.get("category", ""),
+                "question": q.get("question", ""),
+                "options": {
+                    "A": q.get("option_a", ""),
+                    "B": q.get("option_b", ""),
+                    "C": q.get("option_c", ""),
+                    "D": q.get("option_d", ""),
+                },
+                "difficulty": q.get("difficulty_ai") or q.get("difficulty_init", "중"),
+            }
+            for q in questions
+        ],
+    }
+
+
 def approve_question(question_id: str) -> dict:
     q_repo, _, _ = _get_repos()
     q = q_repo.get_question(question_id)

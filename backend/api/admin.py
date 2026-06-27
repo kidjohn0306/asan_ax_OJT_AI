@@ -32,6 +32,13 @@ class PreviewExamRequest(BaseModel):
     config: Optional[dict] = None
 
 
+class GenerateAIRequest(BaseModel):
+    team_code: TeamCode
+    material_text: str = ""
+    count: int = 10
+    difficulty_hint: str = "중"
+
+
 class ApproveUserRequest(BaseModel):
     employee_id: str
     name: str
@@ -126,6 +133,12 @@ def preview_exam(body: PreviewExamRequest, _: dict = Depends(require_admin)):
         body.team_code, preview=True, config=body.config,
         total_count=body.total_count, manual_dist=body.manual_dist
     )
+
+
+@router.post("/generate-ai-questions")
+def generate_ai_questions(body: GenerateAIRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import generate_ai_questions as _generate
+    return _generate(body.team_code, body.material_text, body.count, body.difficulty_hint)
 
 
 @router.post("/approve-user")
