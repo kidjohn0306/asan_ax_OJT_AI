@@ -17,14 +17,23 @@ def generate_questions_from_material(
     category: str,
     count: int = 10,
     difficulty_hint: str = "중",
+    rejected_examples: list[dict] = None,
 ) -> list[dict]:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
 
+    rejection_block = ""
+    if rejected_examples:
+        lines = "\n".join(
+            f'  - 문제: "{q["question"]}" → 반려 사유: {q.get("reject_reason", "미기재")}'
+            for q in rejected_examples[:5]
+        )
+        rejection_block = f"\n[반드시 피해야 할 문제 유형 (과거 반려 사례)]\n{lines}\n위 사례와 유사한 문제는 절대 생성하지 마세요.\n"
+
     prompt = f"""다음 OJT 교육자료를 바탕으로 {category} 분야 객관식 문제 {count}개를 생성하세요.
 난이도는 '{difficulty_hint}'을 기준으로 합니다.
-
+{rejection_block}
 [교육자료]
 {material_text}
 
