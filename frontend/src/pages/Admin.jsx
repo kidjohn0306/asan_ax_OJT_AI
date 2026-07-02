@@ -1010,7 +1010,7 @@ function ExamSheet({ toast, onNavigate }) {
               const diff = q.difficulty || '중'
               const isSwapOpen = swapTargetIdx === i
               return (
-                <div key={q.question_id + i} style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, overflow:'hidden', transition:'border-color .15s' }}>
+                <div key={`${q.question_id ?? i}-${i}`} style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, overflow:'hidden', transition:'border-color .15s' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px' }}>
                     {/* 순서 번호 */}
                     <span style={{ width:24, height:24, borderRadius:'50%', background:'var(--accent)', color:'white', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{i + 1}</span>
