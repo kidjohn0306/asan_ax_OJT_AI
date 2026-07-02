@@ -1,7 +1,6 @@
 import json
 import os
 from pathlib import Path
-from datetime import datetime, timezone
 from services.difficulty import update_difficulty_from_feedback
 
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
