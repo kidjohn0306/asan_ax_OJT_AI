@@ -198,9 +198,20 @@ def debug_storage(_: dict = Depends(require_admin)):
     import os
     from repositories import exam_set_repo
     all_keys = [k for k in os.environ.keys() if not k.startswith("PATH") and not k.startswith("PYTHON")]
+
+    sheets_error = None
+    if type(exam_set_repo).__name__ != "SheetsExamSetRepository":
+        try:
+            from repositories.sheets_repo import SheetsExamSetRepository
+            SheetsExamSetRepository()
+        except Exception as e:
+            sheets_error = str(e)
+
     return {
         "EXAM_SET_STORAGE": os.getenv("EXAM_SET_STORAGE", "(not set)"),
         "GOOGLE_EXAM_SETS_SHEET_ID": os.getenv("GOOGLE_EXAM_SETS_SHEET_ID", "(not set)"),
+        "GOOGLE_SERVICE_ACCOUNT_JSON_SET": bool(os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")),
         "exam_set_repo_class": type(exam_set_repo).__name__,
+        "sheets_init_error": sheets_error,
         "all_env_keys": sorted(all_keys),
     }

@@ -20,8 +20,13 @@ else:
     _use_sheets = bool(os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON"))
 
 if _use_sheets:
-    from repositories.sheets_repo import SheetsExamSetRepository
-    exam_set_repo = SheetsExamSetRepository()
+    try:
+        from repositories.sheets_repo import SheetsExamSetRepository
+        exam_set_repo = SheetsExamSetRepository()
+    except Exception as _sheets_err:
+        import logging
+        logging.warning(f"SheetsExamSetRepository 초기화 실패, LocalExamSetRepository로 폴백: {_sheets_err}")
+        exam_set_repo = LocalExamSetRepository()
 else:
     exam_set_repo = LocalExamSetRepository()
 
