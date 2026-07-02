@@ -26,9 +26,10 @@ def _build_sheets_service():
 
 class SheetsExamSetRepository(ExamSetRepository):
     def __init__(self):
-        self._spreadsheet_id = os.getenv("GOOGLE_EXAM_SETS_SHEET_ID")
-        if not self._spreadsheet_id:
-            raise RuntimeError("GOOGLE_EXAM_SETS_SHEET_ID 환경변수가 필요합니다.")
+        self._spreadsheet_id = os.getenv(
+            "GOOGLE_EXAM_SETS_SHEET_ID",
+            "1l-79bi-ZctkIN3NNrKuQuyDJ8hJjEyOmTWPfoDsZl8E",
+        )
         self._svc = _build_sheets_service()
         self._ensure_tab()
 
