@@ -274,6 +274,7 @@ function QuestionGenerate({ toast, onNavigate }) {
   const [provider, setProvider] = useState(null)
   const [loading, setLoading] = useState(false)
   const [openPreviewId, setOpenPreviewId] = useState(null)
+  const [examName, setExamName] = useState('')
 
   const DIFF_MAP = { '초급': '하', '중급': '중', '고급': '상' }
   const COUNT_MAP = { '10문항': 10, '20문항': 20, '25문항': 25 }
@@ -293,6 +294,16 @@ function QuestionGenerate({ toast, onNavigate }) {
       toast('문제 생성 완료! 검토·검증 탭에서 승인 후 문제은행에 등록됩니다.')
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
     finally { setLoading(false) }
+  }
+
+  async function handleSave() {
+    if (!examName.trim()) { toast('시험지 이름을 입력해주세요.', 'error'); return }
+    if (!preview || preview.length === 0) { toast('먼저 문제를 생성해주세요.', 'error'); return }
+    try {
+      const question_ids = preview.map(q => q.id || q.question_id).filter(Boolean)
+      await apiFetch('POST', '/api/admin/exam-sets', { name: examName.trim(), team_code: team, question_ids })
+      toast('시험지가 저장됐습니다.')
+    } catch (e) { toast(`저장 실패: ${e.message}`, 'error') }
   }
 
   function handlePdf() {
@@ -468,8 +479,15 @@ function QuestionGenerate({ toast, onNavigate }) {
           </div>
         )}
         <div style={{ height:1, background:'var(--border)', margin:'16px 0' }} />
+        <input
+          value={examName}
+          onChange={e => setExamName(e.target.value)}
+          placeholder="시험지 이름 입력"
+          style={{ width:'100%', border:'1.5px solid var(--border)', borderRadius:7, padding:'9px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', boxSizing:'border-box', marginBottom:8, outline:'none' }}
+        />
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={handlePdf} style={{ width:'100%', border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 14px', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>PDF 생성</button>
+          <button onClick={handlePdf} style={{ flex:1, border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 14px', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>PDF 생성</button>
+          <button onClick={handleSave} style={{ flex:1, background:'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'10px 16px', fontFamily:'var(--font)', fontSize:13, fontWeight:700, cursor:'pointer' }}>시험지 저장</button>
         </div>
       </Card>
     </div>
