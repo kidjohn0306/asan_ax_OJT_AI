@@ -181,17 +181,25 @@ class LocalFeedbackRepository(FeedbackRepository):
 
 class LocalExamSetRepository(ExamSetRepository):
     EXAM_SETS_FILE = MOCK_DIR / "exam_sets.json"
+    _TMP_FILE = Path("/tmp/exam_sets.json")
 
     def _load(self) -> dict:
-        if not self.EXAM_SETS_FILE.exists():
+        # Vercel read-only FS: prefer /tmp copy if it exists (contains runtime mutations)
+        target = self._TMP_FILE if self._TMP_FILE.exists() else self.EXAM_SETS_FILE
+        if not target.exists():
             return {"sets": []}
-        with open(self.EXAM_SETS_FILE, encoding="utf-8") as f:
+        with open(target, encoding="utf-8") as f:
             return json.load(f)
 
     def _save(self, data: dict) -> None:
-        os.makedirs(self.EXAM_SETS_FILE.parent, exist_ok=True)
-        with open(self.EXAM_SETS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        try:
+            os.makedirs(self.EXAM_SETS_FILE.parent, exist_ok=True)
+            with open(self.EXAM_SETS_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except OSError:
+            # Vercel: filesystem is read-only, fall back to /tmp
+            with open(self._TMP_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
 
     def list_exam_sets(self) -> list:
         return self._load().get("sets", [])
