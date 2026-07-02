@@ -13,6 +13,7 @@ export async function apiFetch(method, path, body = null) {
   const res = await fetch(API + path, opts)
   if (res.status === 403) {
     sessionStorage.clear()
+    sessionStorage.setItem('popup_msg', '관리자 권한이 없습니다.\n접근이 차단되었습니다.')
     window.location.replace('/login')
     return
   }

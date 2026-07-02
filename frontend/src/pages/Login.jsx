@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 const styles = {
@@ -86,6 +86,15 @@ export default function Login() {
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [popupMsg, setPopupMsg] = useState('')
+
+  useEffect(() => {
+    const msg = sessionStorage.getItem('popup_msg')
+    if (msg) {
+      setPopupMsg(msg)
+      sessionStorage.removeItem('popup_msg')
+    }
+  }, [])
 
   async function handleLogin(e) {
     e.preventDefault()
@@ -127,6 +136,18 @@ export default function Login() {
 
   return (
     <div style={styles.body}>
+      {popupMsg && (
+        <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:50 }}>
+          <div style={{ background:'white', borderRadius:20, padding:'40px 36px', width:'90%', maxWidth:380, boxShadow:'0 20px 60px rgba(0,0,0,0.25)', textAlign:'center' }}>
+            <div style={{ width:52, height:52, borderRadius:'50%', background:'#fee2e2', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 20px' }}>
+              <svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#b91c1c" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <h2 style={{ fontSize:18, fontWeight:800, color:'#1e293b', marginBottom:12, letterSpacing:'-0.4px' }}>접근 차단</h2>
+            <p style={{ fontSize:14, color:'#64748b', marginBottom:28, lineHeight:1.7, whiteSpace:'pre-line' }}>{popupMsg}</p>
+            <button onClick={() => setPopupMsg('')} style={{ width:'100%', height:48, background:'#1e3a5f', color:'white', border:'none', borderRadius:10, fontSize:15, fontWeight:700, cursor:'pointer' }}>확인</button>
+          </div>
+        </div>
+      )}
       <div style={styles.wrap}>
         <div style={styles.logoArea}>
           <div style={styles.company}>(주)엑스티</div>
