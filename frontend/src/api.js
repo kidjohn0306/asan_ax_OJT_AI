@@ -11,6 +11,11 @@ export async function apiFetch(method, path, body = null) {
   }
   if (body) opts.body = JSON.stringify(body)
   const res = await fetch(API + path, opts)
+  if (res.status === 403) {
+    sessionStorage.clear()
+    window.location.replace('/login')
+    return
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }))
     throw new Error(err.detail)
