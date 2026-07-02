@@ -277,6 +277,24 @@ function ConfirmScreen({ answers, onBack, onSubmit }) {
   )
 }
 
+/* ── ExitConfirmModal ───────────────────────────────────────── */
+function ExitConfirmModal({ onLeave, onCancel }) {
+  return (
+    <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:30 }}>
+      <div style={{ background:'white', borderRadius:20, padding:'40px 36px', width:'90%', maxWidth:400, boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}>
+        <h2 style={{ fontSize:18, fontWeight:800, color:'var(--text)', marginBottom:12, letterSpacing:'-0.4px' }}>시험 진행 중</h2>
+        <p style={{ fontSize:15, color:'var(--text-muted)', marginBottom:28, lineHeight:1.6 }}>
+          이대로 나가실 시 시험 응시가 초기화 될 수 있습니다.
+        </p>
+        <div style={{ display:'flex', gap:12 }}>
+          <button onClick={onLeave} style={{ flex:1, height:52, fontSize:15, fontWeight:700, cursor:'pointer', border:'2px solid var(--border)', background:'white', color:'var(--text)', borderRadius:10, fontFamily:'var(--font)' }}>나가기</button>
+          <button onClick={onCancel} style={{ flex:1, height:52, fontSize:15, fontWeight:700, cursor:'pointer', border:'none', background:'var(--accent)', color:'white', borderRadius:10, fontFamily:'var(--font)' }}>취소</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 /* ── ScoringScreen ──────────────────────────────────────────── */
 function ScoringScreen({ title, sub }) {
   return (
@@ -395,6 +413,7 @@ export default function Exam() {
   }, [])
 
   const [screen, setScreen] = useState('identity')
+  const [showExitConfirm, setShowExitConfirm] = useState(false)
   const [questions, setQuestions] = useState([...MOCK_QUESTIONS])
   const [answers, setAnswers] = useState(new Array(25).fill(null))
   const [bookmarks, setBookmarks] = useState(new Array(25).fill(false))
@@ -423,6 +442,23 @@ export default function Exam() {
   }, [stopTimer])
 
   useEffect(() => () => stopTimer(), [])
+
+  useEffect(() => {
+    if (screen !== 'exam') return
+    const handleBeforeUnload = (e) => { e.preventDefault(); e.returnValue = '' }
+    const handleKeyDown = (e) => {
+      if (e.key === 'F5' || (e.ctrlKey && e.key === 'r') || (e.metaKey && e.key === 'r')) {
+        e.preventDefault()
+        setShowExitConfirm(true)
+      }
+    }
+    window.addEventListener('beforeunload', handleBeforeUnload)
+    window.addEventListener('keydown', handleKeyDown)
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [screen])
 
   async function handleStart() {
     setScreen('scoring')
@@ -523,6 +559,12 @@ export default function Exam() {
         <ConfirmScreen answers={answers} onBack={() => setScreen('exam')} onSubmit={handleSubmit} />
       )}
       {screen === 'scoring' && <ScoringScreen title="채점 중입니다..." sub="잠시만 기다려주세요" />}
+      {showExitConfirm && (
+        <ExitConfirmModal
+          onLeave={() => { setShowExitConfirm(false); window.location.reload() }}
+          onCancel={() => setShowExitConfirm(false)}
+        />
+      )}
       {screen === 'result' && score !== null && (
         <ResultScreen empInfo={empInfo} questions={questions} answers={answers} score={score} onFinish={handleFinish} />
       )}
