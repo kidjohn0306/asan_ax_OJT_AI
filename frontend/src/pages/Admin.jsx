@@ -1531,6 +1531,13 @@ function ExamAssign({ toast }) {
     apiFetch('GET', '/api/admin/users').then(d => setUsers(d.users || [])).catch(() => {})
   }, [])
 
+  useEffect(() => {
+    if (!viewedSetId) return
+    loadAssignees(viewedSetId)
+    const id = setInterval(() => loadAssignees(viewedSetId), 1000)
+    return () => clearInterval(id)
+  }, [viewedSetId])
+
   async function loadAssignees(setId) {
     if (!setId) { setAssignees([]); return }
     try {
