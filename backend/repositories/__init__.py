@@ -11,8 +11,11 @@ _backend = os.getenv("STORAGE_BACKEND", "local")
 _exam_backend = os.getenv("EXAM_SET_STORAGE", _backend)
 
 if _exam_backend == "sheets":
-    from repositories.sheets_repo import SheetsExamSetRepository
-    exam_set_repo = SheetsExamSetRepository()
+    try:
+        from repositories.sheets_repo import SheetsExamSetRepository
+        exam_set_repo = SheetsExamSetRepository()
+    except Exception:
+        exam_set_repo = LocalExamSetRepository()
 else:
     exam_set_repo = LocalExamSetRepository()
 
