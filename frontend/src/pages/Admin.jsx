@@ -469,8 +469,7 @@ function QuestionGenerate({ toast, onNavigate }) {
         )}
         <div style={{ height:1, background:'var(--border)', margin:'16px 0' }} />
         <div style={{ display:'flex', gap:8 }}>
-          <button onClick={handlePdf} style={{ flex:1, border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 14px', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>PDF 생성</button>
-          <button onClick={handleSave} style={{ flex:1, background:'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'10px 16px', fontFamily:'var(--font)', fontSize:13, fontWeight:700, cursor:'pointer' }}>시험지 저장</button>
+          <button onClick={handlePdf} style={{ width:'100%', border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 14px', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>PDF 생성</button>
         </div>
       </Card>
     </div>
