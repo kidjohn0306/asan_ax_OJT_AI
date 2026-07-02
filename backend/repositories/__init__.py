@@ -22,8 +22,8 @@ if _backend == "local":
     snapshot_repo = LocalSnapshotRepository()
     feedback_repo = LocalFeedbackRepository()
 elif _backend == "drive":
-    from repositories.drive_repo import DriveResultRepository, DriveSnapshotRepository
-    question_repo = LocalQuestionRepository()
+    from repositories.drive_repo import DriveQuestionRepository, DriveResultRepository, DriveSnapshotRepository
+    question_repo = DriveQuestionRepository()
     result_repo = DriveResultRepository()
     snapshot_repo = DriveSnapshotRepository()
     feedback_repo = LocalFeedbackRepository()
