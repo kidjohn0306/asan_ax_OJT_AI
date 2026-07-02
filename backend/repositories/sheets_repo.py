@@ -31,7 +31,12 @@ class SheetsExamSetRepository(ExamSetRepository):
             "1l-79bi-ZctkIN3NNrKuQuyDJ8hJjEyOmTWPfoDsZl8E",
         )
         self._svc = _build_sheets_service()
-        self._ensure_tab()
+        self._tab_ready = False
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            self._ensure_tab()
+            self._tab_ready = True
 
     # ── 내부 헬퍼 ────────────────────────────────────────────────────────────
 
@@ -114,9 +119,11 @@ class SheetsExamSetRepository(ExamSetRepository):
     # ── 공개 인터페이스 ──────────────────────────────────────────────────────
 
     def list_exam_sets(self) -> list:
+        self._maybe_ensure_tab()
         return [self._row_to_dict(r) for r in self._read_all_rows()]
 
     def get_exam_set(self, exam_set_id: str) -> dict | None:
+        self._maybe_ensure_tab()
         for row in self._read_all_rows():
             d = self._row_to_dict(row)
             if d["exam_set_id"] == exam_set_id:
@@ -124,6 +131,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         return None
 
     def create_exam_set(self, data: dict) -> dict:
+        self._maybe_ensure_tab()
         data.setdefault("assigned_users", [])
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
         self._values().append(
@@ -136,6 +144,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         return data
 
     def assign_user(self, exam_set_id: str, employee_id: str) -> bool:
+        self._maybe_ensure_tab()
         row_idx = self._find_sheet_row(exam_set_id)
         if row_idx == -1:
             return False
@@ -151,6 +160,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         return True
 
     def unassign_user(self, exam_set_id: str, employee_id: str) -> bool:
+        self._maybe_ensure_tab()
         row_idx = self._find_sheet_row(exam_set_id)
         if row_idx == -1:
             return False
