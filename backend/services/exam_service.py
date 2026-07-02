@@ -104,7 +104,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
     }
 
 
-def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_id: str = "", name: str = "") -> dict:
+def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_id: str = "", name: str = "", skip_save: bool = False) -> dict:
     q_repo, r_repo, s_repo = _get_repos()
 
     snapshot = s_repo.get_snapshot(exam_id)
@@ -157,7 +157,8 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_i
         "submitted_at": datetime.now(timezone.utc).isoformat(),
     }
 
-    r_repo.append_result(result_data)
+    if not skip_save:
+        r_repo.append_result(result_data)
     return result_data
 
 

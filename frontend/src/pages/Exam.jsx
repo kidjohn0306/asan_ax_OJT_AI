@@ -413,6 +413,7 @@ export default function Exam() {
   }, [])
 
   const [screen, setScreen] = useState('identity')
+  const [showAdminNotice, setShowAdminNotice] = useState(sessionStorage.getItem('role') === 'admin')
   const [showExitConfirm, setShowExitConfirm] = useState(false)
   const [questions, setQuestions] = useState([...MOCK_QUESTIONS])
   const [answers, setAnswers] = useState(new Array(25).fill(null))
@@ -559,6 +560,18 @@ export default function Exam() {
         <ConfirmScreen answers={answers} onBack={() => setScreen('exam')} onSubmit={handleSubmit} />
       )}
       {screen === 'scoring' && <ScoringScreen title="채점 중입니다..." sub="잠시만 기다려주세요" />}
+      {showAdminNotice && (
+        <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:100 }}>
+          <div style={{ background:'white', borderRadius:20, padding:'40px 36px', width:'90%', maxWidth:380, boxShadow:'0 20px 60px rgba(0,0,0,0.25)', textAlign:'center' }}>
+            <div style={{ width:52, height:52, borderRadius:'50%', background:'#fef3c7', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 20px' }}>
+              <svg width={26} height={26} viewBox="0 0 24 24" fill="none" stroke="#b45309" strokeWidth="2.5" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <h2 style={{ fontSize:18, fontWeight:800, color:'#1e293b', marginBottom:12 }}>관리자 계정 응시 안내</h2>
+            <p style={{ fontSize:14, color:'#64748b', marginBottom:28, lineHeight:1.7 }}>관리자 계정으로 응시 시<br/>결과가 저장되지 않습니다.</p>
+            <button onClick={() => setShowAdminNotice(false)} style={{ width:'100%', height:48, background:'#1e3a5f', color:'white', border:'none', borderRadius:10, fontSize:15, fontWeight:700, cursor:'pointer' }}>확인</button>
+          </div>
+        </div>
+      )}
       {showExitConfirm && (
         <ExitConfirmModal
           onLeave={() => { setShowExitConfirm(false); window.location.reload() }}
