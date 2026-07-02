@@ -37,6 +37,9 @@ class ResultRepository(ABC):
     @abstractmethod
     def count(self) -> int: ...
 
+    @abstractmethod
+    def list_results_by_set(self, exam_set_id: str) -> list: ...
+
 
 class SnapshotRepository(ABC):
     @abstractmethod

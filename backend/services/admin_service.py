@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 from services.difficulty import update_difficulty_from_feedback
@@ -12,14 +13,23 @@ def _get_repos():
     return question_repo, result_repo, feedback_repo
 
 
+_USERS_TMP = Path("/tmp/users.json")
+_USERS_FILE = MOCK_DIR / "users.json"
+
+
 def _load_users() -> dict:
-    with open(MOCK_DIR / "users.json", encoding="utf-8") as f:
+    target = _USERS_TMP if _USERS_TMP.exists() else _USERS_FILE
+    with open(target, encoding="utf-8") as f:
         return json.load(f)
 
 
 def _save_users(data: dict):
-    with open(MOCK_DIR / "users.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+    try:
+        with open(_USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except OSError:
+        with open(_USERS_TMP, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 def fetch_users() -> dict:
@@ -182,7 +192,7 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
 
     return {
         "team_code": team_code,
-        "provider": __import__("os").getenv("AI_PROVIDER", "mock"),
+        "provider": os.getenv("AI_PROVIDER", "mock"),
         "count": len(passed),
         "failed_count": len(failed_list),
         "questions": [
@@ -302,13 +312,3 @@ def get_exam_set_assignees(exam_set_id: str) -> list:
     return [u for u in all_users if u.get("employee_id") in assigned_ids]
 
 
-def get_difficulty_overrides() -> dict:
-    # 인메모리 제거 → questions.json의 admin_override 필드가 진실의 원본
-    q_repo, _, _ = _get_repos()
-    data = q_repo.get_all_questions()
-    overrides = {}
-    for pool in data.values():
-        for q in pool:
-            if q.get("admin_override"):
-                overrides[q["question_id"]] = q["admin_override"]
-    return overrides
