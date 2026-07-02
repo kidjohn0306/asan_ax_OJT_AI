@@ -241,6 +241,20 @@ class DriveResultRepository(ResultRepository):
             return 0
         return len(self._download_lines(svc, fid))
 
+    def list_results_by_set(self, exam_set_id: str) -> list:
+        if not self._folder_id:
+            return []
+        svc = self._service()
+        fid = self._find_file_id(svc)
+        if not fid:
+            return []
+        results = []
+        for line in self._download_lines(svc, fid):
+            r = json.loads(line)
+            if r.get("exam_set_id") == exam_set_id:
+                results.append(r)
+        return results
+
 
 class DriveSnapshotRepository(SnapshotRepository):
     """시험 스냅샷을 Google Drive에 저장 — 서버리스 콜드스타트 대응."""

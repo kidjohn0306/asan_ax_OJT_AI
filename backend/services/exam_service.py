@@ -1,9 +1,6 @@
 import random
 import uuid
-import os
 from datetime import datetime, timezone
-
-USE_MOCK = os.getenv("USE_MOCK_DATA", "true").lower() == "true"
 
 TEAM_KEY_MAP = {"T1": "team1", "T2": "team2", "T3": "team3"}
 

@@ -91,23 +91,31 @@ class LocalResultRepository(ResultRepository):
 
     results/{exam_set_id}/{employee_id}.json 구조로 저장한다.
     employee_id가 없는 구형 데이터는 results/legacy/{exam_id}.json에 존재한다.
+    Vercel 읽기전용 FS 대응: /tmp/results/ 에 저장, mock_data/results/ 에서 읽기 폴백.
     """
 
     RESULTS_DIR = MOCK_DIR / "results"
+    _TMP_RESULTS_DIR = Path("/tmp/results")
 
     def _result_path(self, exam_set_id: str, employee_id: str) -> Path:
-        set_dir = self.RESULTS_DIR / exam_set_id
-        os.makedirs(set_dir, exist_ok=True)
-        return set_dir / f"{employee_id}.json"
+        try:
+            set_dir = self.RESULTS_DIR / exam_set_id
+            os.makedirs(set_dir, exist_ok=True)
+            return set_dir / f"{employee_id}.json"
+        except OSError:
+            set_dir = self._TMP_RESULTS_DIR / exam_set_id
+            os.makedirs(set_dir, exist_ok=True)
+            return set_dir / f"{employee_id}.json"
 
     def _iter_result_files(self):
-        if not self.RESULTS_DIR.exists():
-            return
-        for set_dir in self.RESULTS_DIR.iterdir():
-            if not set_dir.is_dir():
+        # RESULTS_DIR 먼저, _TMP_RESULTS_DIR 나중에 — get_all_results에서 dict 덮어쓰기 시 /tmp(런타임 변경) 우선
+        for base in (self.RESULTS_DIR, self._TMP_RESULTS_DIR):
+            if not base.exists():
                 continue
-            for f in set_dir.glob("*.json"):
-                yield f
+            for set_dir in base.iterdir():
+                if not set_dir.is_dir():
+                    continue
+                yield from set_dir.glob("*.json")
 
     def _read(self, path: Path) -> dict:
         with open(path, encoding="utf-8") as f:
@@ -133,10 +141,12 @@ class LocalResultRepository(ResultRepository):
         return None
 
     def list_results_by_set(self, exam_set_id: str) -> list:
-        set_dir = self.RESULTS_DIR / exam_set_id
-        if not set_dir.exists():
-            return []
-        return [self._read(f) for f in set_dir.glob("*.json")]
+        results = []
+        for base in (self.RESULTS_DIR, self._TMP_RESULTS_DIR):
+            set_dir = base / exam_set_id
+            if set_dir.exists():
+                results.extend(self._read(f) for f in set_dir.glob("*.json"))
+        return results
 
     def get_all_results(self) -> dict:
         results = {}
@@ -172,11 +182,16 @@ class LocalSnapshotRepository(SnapshotRepository):
 
 class LocalFeedbackRepository(FeedbackRepository):
     _file = MOCK_DIR / "difficulty_feedback.jsonl"
+    _tmp_file = Path("/tmp/difficulty_feedback.jsonl")
 
     def append_feedback(self, record: dict) -> None:
         record.setdefault("recorded_at", datetime.now(timezone.utc).isoformat())
-        with open(self._file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        try:
+            with open(self._file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError:
+            with open(self._tmp_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
 class LocalExamSetRepository(ExamSetRepository):
