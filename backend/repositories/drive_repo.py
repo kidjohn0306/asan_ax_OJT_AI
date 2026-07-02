@@ -24,7 +24,10 @@ class DriveQuestionRepository(QuestionRepository):
 
     DRIVE_RESULTS_FOLDER_ID 폴더에 questions.json을 저장.
     Drive 파일이 없으면 mock_data/questions.json을 시드로 사용.
+    Drive 쓰기 실패(storageQuotaExceeded 등) 시 /tmp/questions_drive.json으로 폴백.
     """
+
+    _TMP_FILE = Path("/tmp/questions_drive.json")
 
     def __init__(self):
         self._folder_id = os.getenv("DRIVE_RESULTS_FOLDER_ID", "")
@@ -69,8 +72,18 @@ class DriveQuestionRepository(QuestionRepository):
                 body=meta, media_body=media, fields="id", supportsAllDrives=True,
             ).execute()
 
+    def _save_tmp(self, data: dict) -> None:
+        with open(self._TMP_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
     def _load(self) -> tuple[dict, any, str | None]:
-        """(data, service, file_id) 반환. Drive 파일 없으면 mock_data를 시드로."""
+        """(data, service, file_id) 반환.
+        우선순위: /tmp 캐시 > Drive > mock_data 시드.
+        /tmp가 있으면 Drive 호출 없이 즉시 반환 (quota 절약).
+        """
+        if self._TMP_FILE.exists():
+            with open(self._TMP_FILE, encoding="utf-8") as f:
+                return json.load(f), None, None
         if not self._folder_id:
             with open(_MOCK_DIR / _QUESTIONS_FILENAME, encoding="utf-8") as f:
                 return json.load(f), None, None
@@ -115,6 +128,20 @@ class DriveQuestionRepository(QuestionRepository):
                 return q
         return None
 
+    def _upload_or_tmp(self, svc, data: dict, fid: str | None) -> None:
+        """Drive 업로드 시도, quota 초과 시 /tmp 폴백."""
+        if svc is None:
+            self._save_tmp(data)
+            return
+        try:
+            self._upload(svc, data, fid)
+        except Exception as e:
+            err_str = str(e)
+            if "storageQuotaExceeded" in err_str or "storage quota" in err_str.lower():
+                self._save_tmp(data)
+            else:
+                raise
+
     def add_question(self, pool_key: str, question: dict) -> None:
         if not self._folder_id:
             raise RuntimeError("DRIVE_RESULTS_FOLDER_ID 환경변수가 설정되지 않았습니다.")
@@ -122,7 +149,7 @@ class DriveQuestionRepository(QuestionRepository):
         if pool_key not in data:
             data[pool_key] = []
         data[pool_key].append(question)
-        self._upload(svc, data, fid)
+        self._upload_or_tmp(svc, data, fid)
 
     _CONTENT_FIELDS = {"question", "option_a", "option_b", "option_c", "option_d", "answer", "explanation"}
 
@@ -136,7 +163,7 @@ class DriveQuestionRepository(QuestionRepository):
                     q.update(fields)
                     if any(k in self._CONTENT_FIELDS for k in fields):
                         q["version"] = q.get("version", 1) + 1
-                    self._upload(svc, data, fid)
+                    self._upload_or_tmp(svc, data, fid)
                     return
 
     def count_by_status(self, status: str) -> int:
