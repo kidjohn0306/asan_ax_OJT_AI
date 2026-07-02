@@ -8,8 +8,13 @@ from repositories.local_json import (
 )
 
 _backend = os.getenv("STORAGE_BACKEND", "local")
+_exam_backend = os.getenv("EXAM_SET_STORAGE", _backend)
 
-exam_set_repo = LocalExamSetRepository()
+if _exam_backend == "sheets":
+    from repositories.sheets_repo import SheetsExamSetRepository
+    exam_set_repo = SheetsExamSetRepository()
+else:
+    exam_set_repo = LocalExamSetRepository()
 
 if _backend == "local":
     question_repo = LocalQuestionRepository()
