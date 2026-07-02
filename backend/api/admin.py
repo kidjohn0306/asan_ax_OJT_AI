@@ -175,6 +175,18 @@ def assign_user(exam_set_id: str, body: AssignUserRequest, _: dict = Depends(req
     return assign_user_to_exam_set(body.employee_id, exam_set_id)
 
 
+@router.get("/exam-sets/{exam_set_id}/assignees")
+def get_exam_set_assignees(exam_set_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import get_exam_set_assignees as _get
+    return {"assignees": _get(exam_set_id)}
+
+
+@router.delete("/exam-sets/{exam_set_id}/assign/{employee_id}")
+def unassign_user(exam_set_id: str, employee_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import unassign_user_from_exam_set
+    return unassign_user_from_exam_set(employee_id, exam_set_id)
+
+
 @router.get("/exam-sets/{exam_set_id}/results")
 def get_exam_set_results(exam_set_id: str, _: dict = Depends(require_admin)):
     from repositories import result_repo

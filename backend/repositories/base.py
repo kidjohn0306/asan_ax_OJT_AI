@@ -63,3 +63,6 @@ class ExamSetRepository(ABC):
 
     @abstractmethod
     def assign_user(self, exam_set_id: str, employee_id: str) -> bool: ...
+
+    @abstractmethod
+    def unassign_user(self, exam_set_id: str, employee_id: str) -> bool: ...
