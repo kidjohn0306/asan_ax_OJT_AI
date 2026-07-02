@@ -108,7 +108,8 @@ class LocalResultRepository(ResultRepository):
             return set_dir / f"{employee_id}.json"
 
     def _iter_result_files(self):
-        for base in (self._TMP_RESULTS_DIR, self.RESULTS_DIR):
+        # RESULTS_DIR 먼저, _TMP_RESULTS_DIR 나중에 — get_all_results에서 dict 덮어쓰기 시 /tmp(런타임 변경) 우선
+        for base in (self.RESULTS_DIR, self._TMP_RESULTS_DIR):
             if not base.exists():
                 continue
             for set_dir in base.iterdir():
@@ -141,7 +142,7 @@ class LocalResultRepository(ResultRepository):
 
     def list_results_by_set(self, exam_set_id: str) -> list:
         results = []
-        for base in (self._TMP_RESULTS_DIR, self.RESULTS_DIR):
+        for base in (self.RESULTS_DIR, self._TMP_RESULTS_DIR):
             set_dir = base / exam_set_id
             if set_dir.exists():
                 results.extend(self._read(f) for f in set_dir.glob("*.json"))
