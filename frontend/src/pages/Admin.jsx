@@ -1513,50 +1513,192 @@ function Settings() {
 }
 
 /* ── Admin Layout ───────────────────────────────────────────── */
+/* ── 시험 배정 ──────────────────────────────────────────────── */
+function ExamAssign({ toast }) {
+  const [sets, setSets] = useState([])
+  const [users, setUsers] = useState([])
+  const [selectedSet, setSelectedSet] = useState('')
+  const [selectedUser, setSelectedUser] = useState('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
+    apiFetch('GET', '/api/admin/users').then(d => setUsers(d.users || [])).catch(() => {})
+  }, [])
+
+  async function handleAssign() {
+    if (!selectedSet || !selectedUser) { toast('시험세트와 응시자를 선택하세요.', 'error'); return }
+    setLoading(true)
+    try {
+      await apiFetch('POST', `/api/admin/exam-sets/${selectedSet}/assign`, { employee_id: selectedUser })
+      toast('배정 완료!')
+      setSelectedUser('')
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+      <Card title="시험 배정">
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험세트 선택</label>
+            <select value={selectedSet} onChange={e => setSelectedSet(e.target.value)}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
+              <option value="">-- 시험세트 선택 --</option>
+              {sets.map(s => <option key={s.exam_set_id} value={s.exam_set_id}>{s.name} ({s.team_code})</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>응시자 선택</label>
+            <select value={selectedUser} onChange={e => setSelectedUser(e.target.value)}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
+              <option value="">-- 응시자 선택 --</option>
+              {users.map(u => <option key={u.employee_id} value={u.employee_id}>{u.name} ({u.employee_id}) · {u.team}</option>)}
+            </select>
+          </div>
+          <button onClick={handleAssign} disabled={loading}
+            style={{ height:48, background:'var(--accent)', color:'white', border:'none', borderRadius:10, fontSize:15, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', opacity: loading ? 0.6 : 1 }}>
+            {loading ? '배정 중...' : '배정하기'}
+          </button>
+        </div>
+      </Card>
+
+      {sets.length > 0 && (
+        <Card title="시험세트 목록">
+          <DataTable headers={['세트 ID','이름','팀','문항 수','생성일']}>
+            {sets.map(s => (
+              <tr key={s.exam_set_id}>
+                <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)', fontFamily:'monospace' }}>{s.exam_set_id}</td>
+                <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{s.name}</td>
+                <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.team_code}</td>
+                <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{(s.question_ids || []).length}문항</td>
+                <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.created_at ? s.created_at.slice(0,10) : '-'}</td>
+              </tr>
+            ))}
+          </DataTable>
+        </Card>
+      )}
+    </div>
+  )
+}
+
+/* ── 응시 현황 ──────────────────────────────────────────────── */
+function ExamStatus({ toast }) {
+  const [sets, setSets] = useState([])
+  const [selectedSet, setSelectedSet] = useState('')
+  const [results, setResults] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
+  }, [])
+
+  async function loadResults(setId) {
+    setSelectedSet(setId)
+    if (!setId) { setResults([]); return }
+    setLoading(true)
+    try {
+      const d = await apiFetch('GET', `/api/admin/exam-sets/${setId}/results`)
+      setResults(d.results || [])
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+    finally { setLoading(false) }
+  }
+
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+      <Card title="응시 현황 조회">
+        <select value={selectedSet} onChange={e => loadResults(e.target.value)}
+          style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
+          <option value="">-- 시험세트 선택 --</option>
+          {sets.map(s => <option key={s.exam_set_id} value={s.exam_set_id}>{s.name} ({s.team_code})</option>)}
+        </select>
+      </Card>
+
+      {selectedSet && (
+        <Card title={`응시 결과 (${results.length}명)`}>
+          {loading ? (
+            <p style={{ color:'var(--text-muted)', fontSize:14 }}>불러오는 중...</p>
+          ) : results.length === 0 ? (
+            <p style={{ color:'var(--text-muted)', fontSize:14 }}>아직 응시 결과가 없습니다.</p>
+          ) : (
+            <DataTable headers={['응시자 ID','점수','합격 여부','응시일']}>
+              {results.map((r, i) => (
+                <tr key={i}>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontFamily:'monospace' }}>{r.employee_id || '-'}</td>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700 }}>{r.score}점</td>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>
+                    <span style={{ fontSize:12, fontWeight:700, padding:'3px 10px', borderRadius:20, background: r.pass ? 'var(--success-light)' : 'var(--danger-light)', color: r.pass ? 'var(--success)' : 'var(--danger)' }}>
+                      {r.pass ? '합격' : '불합격'}
+                    </span>
+                  </td>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{r.submitted_at ? r.submitted_at.slice(0,10) : '-'}</td>
+                </tr>
+              ))}
+            </DataTable>
+          )}
+        </Card>
+      )}
+    </div>
+  )
+}
+
 const NAV_META = {
-  dashboard:    { bc:['홈','대시보드'],                    title:'관리자 대시보드' },
-  'q-generate': { bc:['홈','문제 관리','문제 생성'],       title:'문제 생성' },
-  'q-review':   { bc:['홈','문제 관리','검토·검증'],       title:'검토 · 검증' },
-  'q-bank':     { bc:['홈','문제 관리','문제은행'],        title:'문제은행' },
-  'exam-sheet': { bc:['홈','시험 생성'],                   title:'시험 생성' },
-  history:      { bc:['홈','응시 이력'],                   title:'응시 이력' },
-  users:        { bc:['홈','사용자 승인'],                 title:'사용자 승인' },
-  results:      { bc:['홈','결과 분석'],                   title:'결과 분석' },
-  settings:     { bc:['홈','설정'],                        title:'시스템 설정' },
+  dashboard:      { bc:['홈','대시보드'],                          title:'관리자 대시보드' },
+  'q-generate':   { bc:['홈','문제 관리','문제 생성'],             title:'문제 생성' },
+  'q-review':     { bc:['홈','문제 관리','검토·검증'],             title:'검토 · 검증' },
+  'q-bank':       { bc:['홈','문제 관리','문제은행'],              title:'문제은행' },
+  'exam-sheet':   { bc:['홈','시험 관리','시험 생성'],             title:'시험 생성' },
+  'exam-assign':  { bc:['홈','시험 관리','시험 배정'],             title:'시험 배정' },
+  'exam-status':  { bc:['홈','시험 관리','응시 현황'],             title:'응시 현황' },
+  history:        { bc:['홈','응시 이력'],                         title:'응시 이력' },
+  users:          { bc:['홈','사용자 승인'],                       title:'사용자 승인' },
+  results:        { bc:['홈','결과 분석'],                         title:'결과 분석' },
+  settings:       { bc:['홈','설정'],                              title:'시스템 설정' },
 }
 
 export default function Admin() {
   const navigate = useNavigate()
   const [view, setView] = useState('dashboard')
   const [qSubOpen, setQSubOpen] = useState(false)
+  const [examSubOpen, setExamSubOpen] = useState(false)
   const { toast, ToastContainer } = useToast()
 
   const meta = NAV_META[view] || NAV_META.dashboard
 
+  const Q_VIEWS    = ['q-generate','q-review','q-bank']
+  const EXAM_VIEWS = ['exam-sheet','exam-assign','exam-status']
+
   function goView(v) {
     setView(v)
-    if (v === 'q-generate' || v === 'q-review' || v === 'q-bank') setQSubOpen(true)
+    if (Q_VIEWS.includes(v))    setQSubOpen(true)
+    if (EXAM_VIEWS.includes(v)) setExamSubOpen(true)
   }
 
   const navItems = [
-    { id:'dashboard',  icon:'grid',     label:'대시보드' },
-    { id:'q-manage',   icon:'book',     label:'문제 관리', sub:[
+    { id:'dashboard',   icon:'grid',  label:'대시보드' },
+    { id:'q-manage',    icon:'book',  label:'문제 관리', sub:[
       { id:'q-generate', icon:'ai',    label:'문제 생성' },
       { id:'q-review',   icon:'check', label:'검토·검증' },
       { id:'q-bank',     icon:'book',  label:'문제은행' },
     ]},
-    { id:'exam-sheet', icon:'file',     label:'시험 생성' },
-    { id:'history',    icon:'clock',    label:'응시 이력' },
-    { id:'users',      icon:'users',    label:'사용자 승인' },
-    { id:'results',    icon:'chart',    label:'결과 분석' },
-    { id:'settings',   icon:'settings', label:'설정' },
+    { id:'exam-manage', icon:'file',  label:'시험 관리', sub:[
+      { id:'exam-sheet',  icon:'file',  label:'시험 생성' },
+      { id:'exam-assign', icon:'users', label:'시험 배정' },
+      { id:'exam-status', icon:'chart', label:'응시 현황' },
+    ]},
+    { id:'history',     icon:'clock',    label:'응시 이력' },
+    { id:'users',       icon:'users',    label:'사용자 승인' },
+    { id:'results',     icon:'chart',    label:'결과 분석' },
+    { id:'settings',    icon:'settings', label:'설정' },
   ]
 
   const SIDEBAR_W = 220
   const HEADER_H  = 56
 
   const isActive = id => {
-    if (id === 'q-manage') return ['q-generate','q-review','q-bank'].includes(view)
+    if (id === 'q-manage')    return Q_VIEWS.includes(view)
+    if (id === 'exam-manage') return EXAM_VIEWS.includes(view)
     return view === id
   }
 
@@ -1595,14 +1737,14 @@ export default function Admin() {
             {navItems.map(item => (
               <div key={item.id}>
                 <div
-                  onClick={() => item.sub ? setQSubOpen(v => !v) : goView(item.id)}
+                  onClick={() => item.id === 'q-manage' ? setQSubOpen(v => !v) : item.id === 'exam-manage' ? setExamSubOpen(v => !v) : goView(item.id)}
                   style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 18px', color: isActive(item.id) ? 'white' : 'rgba(255,255,255,.60)', cursor:'pointer', fontSize:13, borderLeft:`2px solid ${isActive(item.id) ? 'var(--accent)' : 'transparent'}`, background: isActive(item.id) ? 'rgba(255,255,255,.10)' : 'transparent', fontWeight: isActive(item.id) ? 600 : 400 }}
                 >
                   <Icon name={item.icon} size={15} style={{ opacity: isActive(item.id) ? 1 : 0.65 }} />
                   <span>{item.label}</span>
-                  {item.sub && <span style={{ marginLeft:'auto', fontSize:11, color:'rgba(255,255,255,.30)', display:'inline-block', transform: qSubOpen ? 'rotate(90deg)' : 'none', transition:'transform .2s' }}>›</span>}
+                  {item.sub && <span style={{ marginLeft:'auto', fontSize:11, color:'rgba(255,255,255,.30)', display:'inline-block', transform: (item.id === 'q-manage' ? qSubOpen : examSubOpen) ? 'rotate(90deg)' : 'none', transition:'transform .2s' }}>›</span>}
                 </div>
-                {item.sub && qSubOpen && (
+                {item.sub && (item.id === 'q-manage' ? qSubOpen : examSubOpen) && (
                   <div style={{ background:'rgba(0,0,0,.15)' }}>
                     {item.sub.map(s => (
                       <div key={s.id} onClick={() => goView(s.id)}
@@ -1646,6 +1788,8 @@ export default function Admin() {
             {view === 'q-review'    && <ExamReview toast={toast} />}
             {view === 'q-bank'      && <QuestionBank toast={toast} onNavigate={goView} />}
             {view === 'exam-sheet'  && <ExamSheet toast={toast} onNavigate={goView} />}
+            {view === 'exam-assign' && <ExamAssign toast={toast} />}
+            {view === 'exam-status' && <ExamStatus toast={toast} />}
             {view === 'history'     && <History toast={toast} />}
             {view === 'users'       && <Users toast={toast} />}
             {view === 'results'     && <Results />}

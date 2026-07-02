@@ -147,6 +147,7 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_i
     result_data = {
         "exam_id": exam_id,
         "employee_id": employee_id,
+        "exam_set_id": meta.get("exam_set_id", "legacy"),
         "name": name,
         "score": score,
         "pass": score >= 70,

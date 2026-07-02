@@ -4,9 +4,12 @@ from repositories.local_json import (
     LocalResultRepository,
     LocalSnapshotRepository,
     LocalFeedbackRepository,
+    LocalExamSetRepository,
 )
 
 _backend = os.getenv("STORAGE_BACKEND", "local")
+
+exam_set_repo = LocalExamSetRepository()
 
 if _backend == "local":
     question_repo = LocalQuestionRepository()

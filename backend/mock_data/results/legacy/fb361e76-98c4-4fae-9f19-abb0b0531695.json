@@ -1,0 +1,185 @@
+{
+  "exam_id": "fb361e76-98c4-4fae-9f19-abb0b0531695",
+  "score": 8,
+  "pass": false,
+  "results": [
+    {
+      "q_id": "C-002",
+      "correct": false,
+      "answer": "C",
+      "user_answer": "A",
+      "difficulty": "중",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "C-005",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "중",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "C-001",
+      "correct": true,
+      "answer": "A",
+      "user_answer": "A",
+      "difficulty": "하",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "C-003",
+      "correct": true,
+      "answer": "A",
+      "user_answer": "A",
+      "difficulty": "하",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "T1-002",
+      "correct": false,
+      "answer": "C",
+      "user_answer": "A",
+      "difficulty": "상",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "T1-006",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "상",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "T1-009",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "상",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "T1-005",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "중",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "T1-003",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "중",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "T1-001",
+      "correct": false,
+      "answer": "C",
+      "user_answer": "A",
+      "difficulty": "중",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "T1-010",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "중",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "T1-008",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "하",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "T1-004",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "D",
+      "difficulty": "하",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "S-005",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "상",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "S-003",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "상",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "S-002",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "중",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "S-004",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "중",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "S-001",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "하",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "G-003",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "중",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "G-001",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "D",
+      "difficulty": "중",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "G-002",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "하",
+      "response_time": 30.0
+    },
+    {
+      "q_id": "G-004",
+      "correct": false,
+      "answer": "B",
+      "user_answer": "A",
+      "difficulty": "하",
+      "response_time": 30.0
+    }
+  ],
+  "team_code": "T1",
+  "submitted_at": "2026-06-27T06:21:45.206079+00:00"
+}

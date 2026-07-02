@@ -49,3 +49,17 @@ class SnapshotRepository(ABC):
 class FeedbackRepository(ABC):
     @abstractmethod
     def append_feedback(self, record: dict) -> None: ...
+
+
+class ExamSetRepository(ABC):
+    @abstractmethod
+    def list_exam_sets(self) -> list: ...
+
+    @abstractmethod
+    def get_exam_set(self, exam_set_id: str) -> dict | None: ...
+
+    @abstractmethod
+    def create_exam_set(self, data: dict) -> dict: ...
+
+    @abstractmethod
+    def assign_user(self, exam_set_id: str, employee_id: str) -> bool: ...

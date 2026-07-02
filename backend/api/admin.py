@@ -50,6 +50,16 @@ class RejectQuestionRequest(BaseModel):
     reason: str
 
 
+class CreateExamSetRequest(BaseModel):
+    name: str
+    team_code: TeamCode
+    question_ids: list[str]
+
+
+class AssignUserRequest(BaseModel):
+    employee_id: str
+
+
 @router.get("/users")
 def get_users(_: dict = Depends(require_admin)):
     from services.admin_service import fetch_users
@@ -145,3 +155,27 @@ def generate_ai_questions(body: GenerateAIRequest, _: dict = Depends(require_adm
 def approve_user(body: ApproveUserRequest, _: dict = Depends(require_admin)):
     from services.admin_service import approve_new_user
     return approve_new_user(body.employee_id, body.name, body.team, body.exam_date)
+
+
+@router.get("/exam-sets")
+def list_exam_sets(_: dict = Depends(require_admin)):
+    from services.admin_service import list_exam_sets as _list
+    return {"sets": _list()}
+
+
+@router.post("/exam-sets")
+def create_exam_set(body: CreateExamSetRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import create_exam_set as _create
+    return _create(body.name, body.team_code, body.question_ids)
+
+
+@router.post("/exam-sets/{exam_set_id}/assign")
+def assign_user(exam_set_id: str, body: AssignUserRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import assign_user_to_exam_set
+    return assign_user_to_exam_set(body.employee_id, exam_set_id)
+
+
+@router.get("/exam-sets/{exam_set_id}/results")
+def get_exam_set_results(exam_set_id: str, _: dict = Depends(require_admin)):
+    from repositories import result_repo
+    return {"results": result_repo.list_results_by_set(exam_set_id)}

@@ -1,7 +1,14 @@
 import json
+import os
 from pathlib import Path
 from datetime import datetime, timezone
-from repositories.base import QuestionRepository, ResultRepository, SnapshotRepository, FeedbackRepository
+from repositories.base import (
+    QuestionRepository,
+    ResultRepository,
+    SnapshotRepository,
+    FeedbackRepository,
+    ExamSetRepository,
+)
 
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
 
@@ -80,38 +87,67 @@ class LocalQuestionRepository(QuestionRepository):
 
 
 class LocalResultRepository(ResultRepository):
-    _file = MOCK_DIR / "results.jsonl"
+    """폴더 기반 결과 저장소.
 
-    def append_result(self, result: dict) -> None:
+    results/{exam_set_id}/{employee_id}.json 구조로 저장한다.
+    employee_id가 없는 구형 데이터는 results/legacy/{exam_id}.json에 존재한다.
+    """
+
+    RESULTS_DIR = MOCK_DIR / "results"
+
+    def _result_path(self, exam_set_id: str, employee_id: str) -> Path:
+        set_dir = self.RESULTS_DIR / exam_set_id
+        os.makedirs(set_dir, exist_ok=True)
+        return set_dir / f"{employee_id}.json"
+
+    def _iter_result_files(self):
+        if not self.RESULTS_DIR.exists():
+            return
+        for set_dir in self.RESULTS_DIR.iterdir():
+            if not set_dir.is_dir():
+                continue
+            for f in set_dir.glob("*.json"):
+                yield f
+
+    def _read(self, path: Path) -> dict:
+        with open(path, encoding="utf-8") as f:
+            return json.load(f)
+
+    def save_result(self, result: dict) -> None:
         result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
-        with open(self._file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(result, ensure_ascii=False) + "\n")
+        exam_set_id = result.get("exam_set_id") or "legacy"
+        employee_id = result.get("employee_id") or result.get("exam_id")
+        path = self._result_path(exam_set_id, employee_id)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+
+    # base.py ResultRepository 시그니처 유지 (append_result -> save_result 위임)
+    def append_result(self, result: dict) -> None:
+        self.save_result(result)
 
     def get_result(self, exam_id: str) -> dict:
-        if not self._file.exists():
-            return None
-        with open(self._file, encoding="utf-8") as f:
-            for line in f:
-                r = json.loads(line.strip())
-                if r.get("exam_id") == exam_id:
-                    return r
+        for path in self._iter_result_files():
+            r = self._read(path)
+            if r.get("exam_id") == exam_id:
+                return r
         return None
 
+    def list_results_by_set(self, exam_set_id: str) -> list:
+        set_dir = self.RESULTS_DIR / exam_set_id
+        if not set_dir.exists():
+            return []
+        return [self._read(f) for f in set_dir.glob("*.json")]
+
     def get_all_results(self) -> dict:
-        if not self._file.exists():
-            return {}
         results = {}
-        with open(self._file, encoding="utf-8") as f:
-            for line in f:
-                r = json.loads(line.strip())
-                results[r["exam_id"]] = r
+        for path in self._iter_result_files():
+            r = self._read(path)
+            key = r.get("exam_id") or path.stem
+            results[key] = r
         return results
 
     def count(self) -> int:
-        if not self._file.exists():
-            return 0
-        with open(self._file, encoding="utf-8") as f:
-            return sum(1 for line in f if line.strip())
+        return sum(1 for _ in self._iter_result_files())
 
 
 class LocalSnapshotRepository(SnapshotRepository):
@@ -141,3 +177,46 @@ class LocalFeedbackRepository(FeedbackRepository):
         record.setdefault("recorded_at", datetime.now(timezone.utc).isoformat())
         with open(self._file, "a", encoding="utf-8") as f:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
+class LocalExamSetRepository(ExamSetRepository):
+    EXAM_SETS_FILE = MOCK_DIR / "exam_sets.json"
+
+    def _load(self) -> dict:
+        if not self.EXAM_SETS_FILE.exists():
+            return {"sets": []}
+        with open(self.EXAM_SETS_FILE, encoding="utf-8") as f:
+            return json.load(f)
+
+    def _save(self, data: dict) -> None:
+        os.makedirs(self.EXAM_SETS_FILE.parent, exist_ok=True)
+        with open(self.EXAM_SETS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def list_exam_sets(self) -> list:
+        return self._load().get("sets", [])
+
+    def get_exam_set(self, exam_set_id: str) -> dict | None:
+        for s in self.list_exam_sets():
+            if s.get("exam_set_id") == exam_set_id:
+                return s
+        return None
+
+    def create_exam_set(self, data: dict) -> dict:
+        stored = self._load()
+        data.setdefault("assigned_users", [])
+        data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        stored.setdefault("sets", []).append(data)
+        self._save(stored)
+        return data
+
+    def assign_user(self, exam_set_id: str, employee_id: str) -> bool:
+        stored = self._load()
+        for s in stored.get("sets", []):
+            if s.get("exam_set_id") == exam_set_id:
+                assigned = s.setdefault("assigned_users", [])
+                if employee_id not in assigned:
+                    assigned.append(employee_id)
+                self._save(stored)
+                return True
+        return False

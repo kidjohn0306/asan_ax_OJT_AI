@@ -7,7 +7,8 @@
       "team": "T1",
       "role": "examinee",
       "exam_date": "2026-06-20",
-      "approved": true
+      "approved": true,
+      "assigned_exam_set_id": null
     },
     {
       "employee_id": "2024002",
@@ -16,7 +17,8 @@
       "team": "T2",
       "role": "examinee",
       "exam_date": "2026-06-20",
-      "approved": true
+      "approved": true,
+      "assigned_exam_set_id": null
     }
   ],
   "admins": [
@@ -26,7 +28,8 @@
       "name": "김흥길 과장",
       "team": null,
       "role": "admin",
-      "approved": true
+      "approved": true,
+      "assigned_exam_set_id": null
     }
   ]
 }

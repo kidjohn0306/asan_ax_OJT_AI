@@ -370,6 +370,456 @@
         "warning": true,
         "security_hold": false
       }
+    },
+    {
+      "question_id": "T-MOCK-001",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 1번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-002",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 2번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-003",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 3번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-004",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 4번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-005",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 5번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-006",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 6번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-007",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 7번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-008",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 8번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-009",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 9번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-010",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 10번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-011",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 11번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-012",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 12번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-013",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 13번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-014",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 14번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-015",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 15번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-016",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 16번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-017",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 17번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-018",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 18번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-019",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 19번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-020",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 20번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-021",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 21번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-022",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 22번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-023",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 23번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-024",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 24번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
+    },
+    {
+      "question_id": "T-MOCK-025",
+      "category": "team1",
+      "question": "[Mock] team1 관련 문제 25번",
+      "option_a": "보기 A",
+      "option_b": "보기 B",
+      "option_c": "보기 C",
+      "option_d": "보기 D",
+      "answer": "A",
+      "difficulty_init": "중",
+      "difficulty_ai": "중",
+      "admin_override": "",
+      "status": "reviewing",
+      "flags": {
+        "warning": true,
+        "security_hold": false
+      }
     }
   ],
   "team2": [

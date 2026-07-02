@@ -254,6 +254,34 @@ def approve_new_user(employee_id: str, name: str, team: str, exam_date: str) -> 
     return {"approved": True, "employee_id": employee_id, "name": name, "team": team, "exam_date": exam_date}
 
 
+def list_exam_sets() -> list:
+    from repositories import exam_set_repo
+    return exam_set_repo.list_exam_sets()
+
+
+def create_exam_set(name: str, team_code: str, question_ids: list, created_by: str = "") -> dict:
+    import uuid
+    from repositories import exam_set_repo
+    data = {
+        "exam_set_id": f"set-{str(uuid.uuid4())[:8]}",
+        "name": name,
+        "team_code": team_code,
+        "question_ids": question_ids,
+        "created_by": created_by,
+        "status": "active",
+    }
+    return exam_set_repo.create_exam_set(data)
+
+
+def assign_user_to_exam_set(employee_id: str, exam_set_id: str) -> dict:
+    from repositories import exam_set_repo
+    success = exam_set_repo.assign_user(exam_set_id, employee_id)
+    if not success:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
+    return {"success": True, "employee_id": employee_id, "exam_set_id": exam_set_id}
+
+
 def get_difficulty_overrides() -> dict:
     # 인메모리 제거 → questions.json의 admin_override 필드가 진실의 원본
     q_repo, _, _ = _get_repos()
