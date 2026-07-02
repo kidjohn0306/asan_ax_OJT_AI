@@ -5,6 +5,7 @@ from typing import Literal, Optional
 
 router = APIRouter()
 security = HTTPBearer()
+_optional_bearer = HTTPBearer(auto_error=False)
 
 TeamCode = Literal["T1", "T2", "T3"]
 
@@ -34,13 +35,21 @@ def generate_exam(body: GenerateRequest):
 
 
 @router.post("/submit")
-def submit_exam(body: SubmitRequest):
+def submit_exam(body: SubmitRequest, creds: HTTPAuthorizationCredentials = Depends(_optional_bearer)):
     """
     답안 + 응답시간 → 자동 채점 → Google Drive 결과로그 저장
-    USE_MOCK_DATA=true 이면 Drive 저장 건너뜀
+    관리자 계정으로 제출 시 채점은 하되 결과 저장 생략
     """
+    skip_save = False
+    if creds:
+        try:
+            from services.auth_service import decode_token
+            payload = decode_token(creds.credentials)
+            skip_save = payload.get("role") == "admin"
+        except Exception:
+            pass
     from services.exam_service import score_and_save
-    return score_and_save(body.exam_id, body.answers, body.response_times, body.employee_id, body.name)
+    return score_and_save(body.exam_id, body.answers, body.response_times, body.employee_id, body.name, skip_save=skip_save)
 
 
 @router.get("/result/{exam_id}")

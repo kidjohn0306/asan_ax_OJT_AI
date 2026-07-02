@@ -1520,22 +1520,77 @@ function ExamAssign({ toast }) {
   const [selectedSet, setSelectedSet] = useState('')
   const [selectedUser, setSelectedUser] = useState('')
   const [loading, setLoading] = useState(false)
+  const [viewedSetId, setViewedSetId] = useState('')
+  const [assignees, setAssignees] = useState([])
+  const [userQuery, setUserQuery] = useState('')
+  const [dropdownOpen, setDropdownOpen] = useState(false)
+  const [focusedIdx, setFocusedIdx] = useState(-1)
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
     apiFetch('GET', '/api/admin/users').then(d => setUsers(d.users || [])).catch(() => {})
   }, [])
 
+  async function loadAssignees(setId) {
+    if (!setId) { setAssignees([]); return }
+    try {
+      const d = await apiFetch('GET', `/api/admin/exam-sets/${setId}/assignees`)
+      setAssignees(d.assignees || [])
+    } catch { setAssignees([]) }
+  }
+
   async function handleAssign() {
     if (!selectedSet || !selectedUser) { toast('시험세트와 응시자를 선택하세요.', 'error'); return }
+    const set = sets.find(s => s.exam_set_id === selectedSet)
+    if (set?.assigned_users?.includes(selectedUser)) { toast('이미 배정된 인원입니다.', 'error'); return }
     setLoading(true)
     try {
       await apiFetch('POST', `/api/admin/exam-sets/${selectedSet}/assign`, { employee_id: selectedUser })
       toast('배정 완료!')
       setSelectedUser('')
+      setUserQuery('')
+      setViewedSetId(selectedSet)
+      const [setsData] = await Promise.all([
+        apiFetch('GET', '/api/admin/exam-sets'),
+        loadAssignees(selectedSet),
+      ])
+      setSets(setsData.sets || [])
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
     finally { setLoading(false) }
   }
+
+  async function handleUnassign(employeeId) {
+    try {
+      await apiFetch('DELETE', `/api/admin/exam-sets/${viewedSetId}/assign/${employeeId}`)
+      toast('배정이 취소됐습니다.')
+      await loadAssignees(viewedSetId)
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+  }
+
+  const selectedUserObj = users.find(u => u.employee_id === selectedUser)
+  const filteredUsers = userQuery.trim()
+    ? users.filter(u =>
+        u.name.includes(userQuery) ||
+        u.employee_id.includes(userQuery)
+      )
+    : users
+
+  function selectUser(u) {
+    setSelectedUser(u.employee_id)
+    setUserQuery(`${u.name} (${u.employee_id})`)
+    setDropdownOpen(false)
+    setFocusedIdx(-1)
+  }
+
+  function handleUserKeyDown(e) {
+    if (!dropdownOpen) return
+    if (e.key === 'ArrowDown') { e.preventDefault(); setFocusedIdx(i => Math.min(i + 1, filteredUsers.length - 1)) }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); setFocusedIdx(i => Math.max(i - 1, 0)) }
+    else if (e.key === 'Enter') { e.preventDefault(); if (focusedIdx >= 0 && filteredUsers[focusedIdx]) selectUser(filteredUsers[focusedIdx]) }
+    else if (e.key === 'Escape') { setDropdownOpen(false) }
+  }
+
+  const viewedSet = sets.find(s => s.exam_set_id === viewedSetId)
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
@@ -1550,12 +1605,39 @@ function ExamAssign({ toast }) {
             </select>
           </div>
           <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>응시자 선택</label>
-            <select value={selectedUser} onChange={e => setSelectedUser(e.target.value)}
-              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
-              <option value="">-- 응시자 선택 --</option>
-              {users.map(u => <option key={u.employee_id} value={u.employee_id}>{u.name} ({u.employee_id}) · {u.team}</option>)}
-            </select>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>응시자 검색</label>
+            <div style={{ position:'relative' }}>
+              <input
+                type="text"
+                value={userQuery}
+                onChange={e => { setUserQuery(e.target.value); setSelectedUser(''); setDropdownOpen(true); setFocusedIdx(-1) }}
+                onFocus={() => setDropdownOpen(true)}
+                onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+                onKeyDown={handleUserKeyDown}
+                placeholder="이름 또는 사번 입력"
+                style={{ width:'100%', height:44, border:`1.5px solid ${selectedUser ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, padding:'0 36px 0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box', outline:'none' }}
+              />
+              {userQuery && (
+                <button onMouseDown={e => { e.preventDefault(); setUserQuery(''); setSelectedUser(''); setDropdownOpen(false) }}
+                  style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', width:20, height:20, borderRadius:'50%', background:'var(--border)', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', flexShrink:0 }}>
+                  <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              )}
+            {dropdownOpen && filteredUsers.length > 0 && (
+              <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'white', border:'1px solid var(--border)', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.1)', zIndex:50, maxHeight:200, overflowY:'auto', marginTop:2 }}>
+                {filteredUsers.map((u, i) => (
+                  <div key={u.employee_id}
+                    onMouseDown={() => selectUser(u)}
+                    style={{ padding:'10px 14px', cursor:'pointer', background: i === focusedIdx ? 'var(--accent-light)' : 'white', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <span style={{ fontSize:13, color: i === focusedIdx ? 'var(--accent-dark)' : 'var(--text)' }}>
+                      <span style={{ fontWeight:600 }}>{u.name}</span>
+                      <span style={{ fontWeight:400, color:'var(--text-muted)', marginLeft:4 }}>({u.employee_id} · {u.team})</span>
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+            </div>
           </div>
           <button onClick={handleAssign} disabled={loading}
             style={{ height:48, background:'var(--accent)', color:'white', border:'none', borderRadius:10, fontSize:15, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', opacity: loading ? 0.6 : 1 }}>
@@ -1565,19 +1647,45 @@ function ExamAssign({ toast }) {
       </Card>
 
       {sets.length > 0 && (
-        <Card title="시험세트 목록">
-          <DataTable headers={['세트 ID','이름','팀','문항 수','생성일']}>
-            {sets.map(s => (
-              <tr key={s.exam_set_id}>
-                <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)', fontFamily:'monospace' }}>{s.exam_set_id}</td>
-                <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600 }}>{s.name}</td>
-                <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.team_code}</td>
-                <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{(s.question_ids || []).length}문항</td>
-                <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.created_at ? s.created_at.slice(0,10) : '-'}</td>
-              </tr>
-            ))}
-          </DataTable>
-        </Card>
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
+          <Card title="시험세트 목록">
+            <DataTable headers={['이름','팀','문항 수','생성일']}>
+              {sets.map(s => (
+                <tr key={s.exam_set_id}
+                  onClick={() => { setViewedSetId(s.exam_set_id); loadAssignees(s.exam_set_id) }}
+                  style={{ cursor:'pointer', background: viewedSetId === s.exam_set_id ? 'var(--accent-light)' : 'white' }}>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600, color: viewedSetId === s.exam_set_id ? 'var(--accent-dark)' : 'var(--text)' }}>{s.name}</td>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.team_code}</td>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{(s.question_ids || []).length}문항</td>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.created_at ? s.created_at.slice(0,10) : '-'}</td>
+                </tr>
+              ))}
+            </DataTable>
+          </Card>
+
+          <Card title={viewedSetId ? `응시자 목록 (${assignees.length}명)` : '응시자 목록'} action={viewedSet ? <span style={{ fontSize:11, color:'var(--text-muted)' }}>{viewedSet.name} · {viewedSet.team_code}</span> : null}>
+            {!viewedSetId ? (
+              <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>왼쪽에서 시험세트를 선택하세요.</p>
+            ) : assignees.length === 0 ? (
+              <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>배정된 응시자가 없습니다.</p>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column' }}>
+                {assignees.map(u => (
+                  <div key={u.employee_id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>
+                    <div>
+                      <span style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{u.name}</span>
+                      <span style={{ fontSize:12, color:'var(--text-muted)', marginLeft:8 }}>{u.employee_id} · {u.team}</span>
+                    </div>
+                    <button onClick={() => handleUnassign(u.employee_id)}
+                      style={{ fontSize:12, color:'var(--danger)', background:'none', border:'1px solid var(--danger)', borderRadius:6, padding:'4px 10px', cursor:'pointer', fontFamily:'var(--font)', flexShrink:0 }}>
+                      삭제
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        </div>
       )}
     </div>
   )

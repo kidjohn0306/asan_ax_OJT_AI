@@ -220,3 +220,14 @@ class LocalExamSetRepository(ExamSetRepository):
                 self._save(stored)
                 return True
         return False
+
+    def unassign_user(self, exam_set_id: str, employee_id: str) -> bool:
+        stored = self._load()
+        for s in stored.get("sets", []):
+            if s.get("exam_set_id") == exam_set_id:
+                assigned = s.get("assigned_users", [])
+                if employee_id in assigned:
+                    assigned.remove(employee_id)
+                    self._save(stored)
+                return True
+        return False
