@@ -1563,7 +1563,11 @@ function ExamAssign({ toast }) {
     try {
       await apiFetch('DELETE', `/api/admin/exam-sets/${viewedSetId}/assign/${employeeId}`)
       toast('배정이 취소됐습니다.')
-      await loadAssignees(viewedSetId)
+      const [setsData] = await Promise.all([
+        apiFetch('GET', '/api/admin/exam-sets'),
+        loadAssignees(viewedSetId),
+      ])
+      setSets(setsData.sets || [])
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
   }
 
