@@ -1,0 +1,81 @@
+"""
+Gemini API 기반 문제 생성 모듈 (테스트용 — 무료 티어)
+google-generativeai gRPC 충돌 방지를 위해 REST API 직접 호출
+AI_PROVIDER=gemini 일 때 router.py에서 호출
+"""
+import os
+import json
+import re
+
+import requests
+
+GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+
+
+def generate_questions_from_material(
+    material_text: str,
+    category: str,
+    count: int = 10,
+    difficulty_hint: str = "중",
+    rejected_examples: list[dict] = None,
+) -> list[dict]:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
+
+    rejection_block = ""
+    if rejected_examples:
+        lines = "\n".join(
+            f'  - 문제: "{q["question"]}" → 반려 사유: {q.get("reject_reason", "미기재")}'
+            for q in rejected_examples[:5]
+        )
+        rejection_block = f"\n[반드시 피해야 할 문제 유형 (과거 반려 사례)]\n{lines}\n위 사례와 유사한 문제는 절대 생성하지 마세요.\n"
+
+    prompt = f"""다음 OJT 교육자료를 바탕으로 {category} 분야 객관식 문제 {count}개를 생성하세요.
+난이도는 '{difficulty_hint}'을 기준으로 합니다.
+{rejection_block}
+[교육자료]
+{material_text}
+
+반드시 아래 JSON 배열 형식으로만 출력하고, 설명이나 마크다운 없이 순수 JSON만 반환하세요:
+[
+  {{
+    "question": "문제 내용",
+    "option_a": "보기 A",
+    "option_b": "보기 B",
+    "option_c": "보기 C",
+    "option_d": "보기 D",
+    "answer": "A",
+    "difficulty_init": "{difficulty_hint}"
+  }}
+]"""
+
+    response = requests.post(
+        f"{GEMINI_URL}?key={api_key}",
+        json={"contents": [{"parts": [{"text": prompt}]}]},
+        timeout=60,
+    )
+    response.raise_for_status()
+
+    raw = response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    raw = re.sub(r"^```(?:json)?\s*", "", raw)
+    raw = re.sub(r"\s*```$", "", raw)
+
+    questions_raw = json.loads(raw)
+
+    return [
+        {
+            "question_id": f"{category[:1].upper()}-GEMINI-{i+1:03d}",
+            "category": category,
+            "question": q.get("question", ""),
+            "option_a": q.get("option_a", ""),
+            "option_b": q.get("option_b", ""),
+            "option_c": q.get("option_c", ""),
+            "option_d": q.get("option_d", ""),
+            "answer": q.get("answer", "A").upper(),
+            "difficulty_init": q.get("difficulty_init", difficulty_hint),
+            "difficulty_ai": q.get("difficulty_init", difficulty_hint),
+            "admin_override": "",
+        }
+        for i, q in enumerate(questions_raw[:count])
+    ]

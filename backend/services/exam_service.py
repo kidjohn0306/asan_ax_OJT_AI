@@ -107,11 +107,13 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
 def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_id: str = "", name: str = "") -> dict:
     q_repo, r_repo, s_repo = _get_repos()
 
-    # 스냅샷 기준으로 채점 (라이브 문제 아님)
     snapshot = s_repo.get_snapshot(exam_id)
     if not snapshot:
         from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="시험 세션을 찾을 수 없습니다.")
+        raise HTTPException(
+            status_code=410,
+            detail="시험 세션이 만료됐습니다. 시험을 다시 시작해주세요.",
+        )
 
     meta = snapshot.get("_meta", {})
     results = []
