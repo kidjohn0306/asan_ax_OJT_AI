@@ -197,8 +197,10 @@ def get_exam_set_results(exam_set_id: str, _: dict = Depends(require_admin)):
 def debug_storage(_: dict = Depends(require_admin)):
     import os
     from repositories import exam_set_repo
+    all_keys = [k for k in os.environ.keys() if not k.startswith("PATH") and not k.startswith("PYTHON")]
     return {
         "EXAM_SET_STORAGE": os.getenv("EXAM_SET_STORAGE", "(not set)"),
         "GOOGLE_EXAM_SETS_SHEET_ID": os.getenv("GOOGLE_EXAM_SETS_SHEET_ID", "(not set)"),
         "exam_set_repo_class": type(exam_set_repo).__name__,
+        "all_env_keys": sorted(all_keys),
     }
