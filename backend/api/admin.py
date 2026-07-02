@@ -191,3 +191,14 @@ def unassign_user(exam_set_id: str, employee_id: str, _: dict = Depends(require_
 def get_exam_set_results(exam_set_id: str, _: dict = Depends(require_admin)):
     from repositories import result_repo
     return {"results": result_repo.list_results_by_set(exam_set_id)}
+
+
+@router.get("/debug/storage")
+def debug_storage(_: dict = Depends(require_admin)):
+    import os
+    from repositories import exam_set_repo
+    return {
+        "EXAM_SET_STORAGE": os.getenv("EXAM_SET_STORAGE", "(not set)"),
+        "GOOGLE_EXAM_SETS_SHEET_ID": os.getenv("GOOGLE_EXAM_SETS_SHEET_ID", "(not set)"),
+        "exam_set_repo_class": type(exam_set_repo).__name__,
+    }
