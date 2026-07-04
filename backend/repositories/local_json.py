@@ -161,18 +161,28 @@ class LocalResultRepository(ResultRepository):
 
 
 class LocalSnapshotRepository(SnapshotRepository):
-    _file = Path("/tmp") / "snapshots.jsonl"
+    _file = MOCK_DIR / "snapshots.jsonl"
+    _tmp_file = Path("/tmp") / "snapshots.jsonl"
+
+    def _active_file(self) -> Path:
+        tmp = self._tmp_file
+        return tmp if tmp.exists() else self._file
 
     def save_snapshot(self, exam_id: str, snapshot: dict) -> None:
         record = {"exam_id": exam_id, "snapshot": snapshot,
                   "created_at": datetime.now(timezone.utc).isoformat()}
-        with open(self._file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        try:
+            with open(self._file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError:
+            with open(self._tmp_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def get_snapshot(self, exam_id: str) -> dict:
-        if not self._file.exists():
+        target = self._active_file()
+        if not target.exists():
             return None
-        with open(self._file, encoding="utf-8") as f:
+        with open(target, encoding="utf-8") as f:
             for line in f:
                 r = json.loads(line.strip())
                 if r.get("exam_id") == exam_id:
