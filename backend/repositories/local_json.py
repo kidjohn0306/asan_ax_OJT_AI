@@ -8,6 +8,8 @@ from repositories.base import (
     SnapshotRepository,
     FeedbackRepository,
     ExamSetRepository,
+    TeamRepository,
+    QuestionStatsRepository,
 )
 
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
@@ -263,3 +265,105 @@ class LocalExamSetRepository(ExamSetRepository):
                 self._save(stored)
                 return True
         return False
+
+
+_DEFAULT_TEAMS = [
+    {"team_id": "default-t1", "team_name": "1팀", "team_code": "T1", "created_at": "", "updated_at": ""},
+    {"team_id": "default-t2", "team_name": "2팀", "team_code": "T2", "created_at": "", "updated_at": ""},
+    {"team_id": "default-t3", "team_name": "3팀", "team_code": "T3", "created_at": "", "updated_at": ""},
+]
+_FREQUENT_THRESHOLD = 5
+
+
+class LocalTeamRepository(TeamRepository):
+    _file = MOCK_DIR / "teams.json"
+    _tmp_file = Path("/tmp/teams.json")
+
+    def _load(self) -> list:
+        target = self._tmp_file if self._tmp_file.exists() else self._file
+        if not target.exists():
+            return list(_DEFAULT_TEAMS)
+        with open(target, encoding="utf-8") as f:
+            return json.load(f).get("teams", list(_DEFAULT_TEAMS))
+
+    def _save(self, teams: list) -> None:
+        try:
+            with open(self._file, "w", encoding="utf-8") as f:
+                json.dump({"teams": teams}, f, ensure_ascii=False, indent=2)
+        except OSError:
+            with open(self._tmp_file, "w", encoding="utf-8") as f:
+                json.dump({"teams": teams}, f, ensure_ascii=False, indent=2)
+
+    def list_teams(self) -> list:
+        return self._load()
+
+    def get_team(self, team_id: str) -> dict | None:
+        return next((t for t in self._load() if t["team_id"] == team_id), None)
+
+    def create_team(self, data: dict) -> dict:
+        teams = self._load()
+        data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        data.setdefault("updated_at", data["created_at"])
+        teams.append(data)
+        self._save(teams)
+        return data
+
+    def update_team(self, team_id: str, fields: dict) -> dict | None:
+        teams = self._load()
+        for t in teams:
+            if t["team_id"] == team_id:
+                t.update({k: v for k, v in fields.items() if k != "team_code"})
+                t["updated_at"] = datetime.now(timezone.utc).isoformat()
+                self._save(teams)
+                return t
+        return None
+
+    def delete_team(self, team_id: str) -> bool:
+        teams = self._load()
+        new_teams = [t for t in teams if t["team_id"] != team_id]
+        if len(new_teams) == len(teams):
+            return False
+        self._save(new_teams)
+        return True
+
+
+class LocalQuestionStatsRepository(QuestionStatsRepository):
+    _file = MOCK_DIR / "question_stats.json"
+    _tmp_file = Path("/tmp/question_stats.json")
+
+    def _load(self) -> dict:
+        target = self._tmp_file if self._tmp_file.exists() else self._file
+        if not target.exists():
+            return {}
+        with open(target, encoding="utf-8") as f:
+            return json.load(f)
+
+    def _save(self, data: dict) -> None:
+        try:
+            with open(self._file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except OSError:
+            with open(self._tmp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def increment_batch(self, question_ids: list) -> None:
+        if not question_ids:
+            return
+        data = self._load()
+        now = datetime.now(timezone.utc).isoformat()
+        for qid in set(question_ids):
+            entry = data.get(qid, {"question_id": qid, "exam_count": 0, "last_used_at": "", "flagged_frequent": False})
+            entry["exam_count"] = entry.get("exam_count", 0) + 1
+            entry["last_used_at"] = now
+            entry["flagged_frequent"] = entry["exam_count"] >= _FREQUENT_THRESHOLD
+            data[qid] = entry
+        self._save(data)
+
+    def get_stats(self, question_id: str) -> dict | None:
+        return self._load().get(question_id)
+
+    def list_all_stats(self) -> dict:
+        return self._load()
+
+    def list_flagged(self) -> list:
+        return [v for v in self._load().values() if v.get("flagged_frequent")]

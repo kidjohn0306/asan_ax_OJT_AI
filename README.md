@@ -120,14 +120,15 @@ npm run dev   # http://localhost:5173
 
 | 뷰 | 상태 | 설명 |
 |---|---|---|
-| 대시보드 | ✅ | KPI, 시스템 상태 (Drive·API 실시간 표시) |
+| 대시보드 | ✅ | 4개 통계 카드(문제수/시험세트/응시예정/전체인원) + 더미 데이터 주입 버튼 |
 | 시험 생성 | ✅ | 팀·난이도 선택 → AI 생성 또는 mock 미리보기 |
 | 검토·수정 | ✅ | 생성된 문항 탭별 검토, gate 오류 표시 |
 | 응시 이력 | ⚠️ 더미 데이터 | 실 응시 데이터 없으면 하드코딩 5건 반환 |
 | 문제 관리 | ✅ | 난이도 드롭다운 즉시 반영 (`PATCH /api/admin/difficulty`) |
-| 사용자 승인 | ✅ | 신입사원 등록 폼 → users.json 저장 |
+| 사용자 승인 | ✅ | 신입사원 등록 폼 + CSV 대량 업로드 카드 |
 | 결과 분석 | ⚠️ 더미 데이터 | 통계·차트 하드코딩 (실데이터 부족) |
 | 설정 | ✅ | 외부 연동 현황 실시간 표시 |
+| 팀 관리 | ✅ | 팀 추가·팀명 수정·삭제 (Sheets `teams` 탭 연동) |
 
 ### 백엔드
 
@@ -135,12 +136,12 @@ npm run dev   # http://localhost:5173
 |---|---|---|
 | `auth_service.py` | ✅ 완료 | JWT 발급·검증, bcrypt 비밀번호 확인 |
 | `exam_service.py` | ✅ 완료 | 출제·채점·스냅샷 저장 (Repository 패턴). 스냅샷 없으면 HTTP 410 |
-| `admin_service.py` | ✅ 완료 | 이력 조회·사용자 승인·난이도 override·AI 생성+gate 검증 |
+| `admin_service.py` | ✅ 완료 | 이력 조회·사용자 승인·난이도 override·AI 생성·팀CRUD·CSV업로드·대시보드통계 |
 | `drive_service.py` | ✅ 완료 | 서비스 계정 인증, 파일 목록·다운로드·업로드 구현 |
 | `difficulty.py` | ✅ 완료 | 정답률(50%)·응답시간(30%)·백분위(20%) 규칙 기반, admin override 연결 |
 | `api/admin.py` | ✅ 완료 | 모든 라우트 `require_admin` JWT 의존성으로 보호 |
 | `repositories/` | ✅ 완료 | Repository 패턴. `STORAGE_BACKEND=local\|sheets\|drive` 선택 |
-| `repositories/sheets_repo.py` | ✅ 완료 | Google Sheets 저장 백엔드 (Drive 할당량 이슈 해결) |
+| `repositories/sheets_repo.py` | ✅ 완료 | Sheets 백엔드 — results/snapshots/exam_sets/teams/question_stats 탭 |
 | `api/deps.py` | ✅ 완료 | `require_admin()` 공유 의존성 — admin/drive 중복 제거 |
 | `ai_engine/gemini_generator.py` | ✅ 완료 | Gemini REST API 문제 생성, 함수 분리 + 예외처리 강화 |
 | `services/generation/gates.py` | ✅ 완료 | AI 생성 문제 7-gate 검증 후 reviewing 상태 저장 |
@@ -172,8 +173,15 @@ npm run dev   # http://localhost:5173
 | GET  | `/api/admin/users` | Admin JWT | 승인된 응시자 목록 |
 | POST | `/api/admin/approve-user` | Admin JWT | 신입사원 승인 등록 |
 | DELETE| `/api/admin/users/{id}` | Admin JWT | 응시자 삭제 |
-| GET  | `/api/admin/user-count` | Admin JWT | 승인된 응시자 수 (대시보드용) |
-| GET  | `/api/admin/exam-count` | Admin JWT | 총 응시 완료 수 (대시보드용) |
+| GET  | `/api/admin/stats` | Admin JWT | 대시보드 4개 집계 (문제수/시험세트/응시예정/전체인원) |
+| GET  | `/api/admin/teams` | Admin JWT | 팀 목록 조회 |
+| POST | `/api/admin/teams` | Admin JWT | 팀 추가 |
+| PATCH| `/api/admin/teams/{id}` | Admin JWT | 팀명 수정 |
+| DELETE| `/api/admin/teams/{id}` | Admin JWT | 팀 삭제 |
+| POST | `/api/admin/upload-users` | Admin JWT | CSV 대량 사원 업로드 (multipart) |
+| GET  | `/api/admin/question-stats` | Admin JWT | 전체 문제 출제 횟수 조회 |
+| GET  | `/api/admin/question-stats/flagged` | Admin JWT | 자주 출제 문제 목록 (exam_count≥5) |
+| POST | `/api/admin/seed-mock-data` | Admin JWT | 더미 사용자 주입 (테스트용) |
 | GET  | `/api/drive/status` | 없음 | Google Drive 연결 상태 확인 |
 | GET  | `/api/drive/files?folder_id={id}` | 없음 | 폴더 내 파일 목록 조회 |
 | POST | `/api/drive/download` | 없음 | Drive 파일 다운로드 |
@@ -215,11 +223,12 @@ npm run dev   # http://localhost:5173
 
 | 항목 | 상태 | 데이터 출처 |
 |---|---|---|
-| 승인된 응시자 | ✅ 실시간 | `users.json` (`GET /api/admin/user-count`) |
-| 총 응시 완료 | ✅ 실시간 | `results.jsonl` (`GET /api/admin/exam-count`) |
+| 문제은행 문제수 | ✅ 실시간 | `GET /api/admin/stats` |
+| 활성 시험세트 수 | ✅ 실시간 | `GET /api/admin/stats` |
+| 응시 예정 인원 | ✅ 실시간 | `GET /api/admin/stats` |
+| 전체 등록 인원 | ✅ 실시간 | `GET /api/admin/stats` |
 | Google Drive 상태 | ✅ 실시간 | `GET /api/drive/status` |
 | 합격률 | ⚠️ 하드코딩 60% | 실응시 데이터 쌓인 후 연동 예정 |
-| 평균 점수 | ⚠️ 하드코딩 80.8점 | 위 동일 |
 | 결과 분석 뷰 | ⚠️ 하드코딩 | 실 응시 데이터 부족 |
 
 ### 알려진 한계
@@ -257,6 +266,11 @@ npm run dev   # http://localhost:5173
 - [x] Gemini API 문제 생성 연동 (`AI_PROVIDER=gemini`)
 - [x] run_gates 연결 — AI 생성 문제 7-gate 검증 후 `reviewing` 저장
 - [x] Google Sheets 저장 백엔드 (`STORAGE_BACKEND=sheets`, 인스턴스 교체에도 안전)
+- [x] 팀 관리 CRUD (`teams` Sheets 탭 + `/api/admin/teams`)
+- [x] 문제 출제 횟수 트래킹 (`question_stats` 탭, `exam_count≥5` 자동 플래그)
+- [x] 대시보드 4개 통계 카드 (`GET /api/admin/stats`)
+- [x] CSV 대량 사원 업로드 (`POST /api/admin/upload-users`)
+- [x] AI 토큰 절약 — 교육자료 4000자 초과 시 자동 트런케이션
 - [ ] Claude API 문제 생성 (`question_generator.py`)
 - [ ] 응시자 전용 JWT 검증 (`/api/exam/*`)
 - [ ] 난이도 AI 자동 확정 피드백 루프

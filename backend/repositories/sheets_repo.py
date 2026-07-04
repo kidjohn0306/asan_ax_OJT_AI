@@ -17,6 +17,18 @@ SNAPSHOTS_HEADERS = ["exam_id", "created_at", "data_json"]
 
 _HTTP_TIMEOUT_SECONDS = 15
 
+TEAMS_TAB = "teams"
+TEAMS_HEADERS = ["team_id", "team_name", "team_code", "created_at", "updated_at"]
+DEFAULT_TEAMS = [
+    {"team_id": "default-t1", "team_name": "1팀", "team_code": "T1", "created_at": "", "updated_at": ""},
+    {"team_id": "default-t2", "team_name": "2팀", "team_code": "T2", "created_at": "", "updated_at": ""},
+    {"team_id": "default-t3", "team_name": "3팀", "team_code": "T3", "created_at": "", "updated_at": ""},
+]
+
+STATS_TAB = "question_stats"
+STATS_HEADERS = ["question_id", "exam_count", "last_used_at", "flagged_frequent"]
+FREQUENT_THRESHOLD = 5
+
 
 def _default_sheet_id():
     return (
@@ -356,3 +368,237 @@ class SheetsSnapshotRepository(SnapshotRepository):
                 data_json = row[2] if len(row) > 2 else ""
                 return json.loads(data_json) if data_json else None
         return None
+
+
+class SheetsTeamRepository:
+    def __init__(self):
+        self._spreadsheet_id = _default_sheet_id()
+        self._svc = _build_sheets_service()
+        self._tab_ready = False
+        self._sheet_id = None
+
+    def _values(self):
+        return self._svc.spreadsheets().values()
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            self._ensure_tab()
+            self._tab_ready = True
+
+    def _ensure_tab(self):
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        existing = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta.get("sheets", [])}
+        if TEAMS_TAB not in existing:
+            resp = self._svc.spreadsheets().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": TEAMS_TAB}}}]},
+            ).execute()
+            self._sheet_id = resp["replies"][0]["addSheet"]["properties"]["sheetId"]
+        else:
+            self._sheet_id = existing[TEAMS_TAB]
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{TEAMS_TAB}!A1:E1").execute()
+        if not res.get("values"):
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{TEAMS_TAB}!A1",
+                valueInputOption="RAW",
+                body={"values": [TEAMS_HEADERS]},
+            ).execute()
+
+    def _read_all_rows(self) -> list:
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{TEAMS_TAB}!A:E").execute()
+        rows = res.get("values", [])
+        return rows[1:] if len(rows) > 1 else []
+
+    @staticmethod
+    def _row_to_dict(row: list) -> dict:
+        def _get(i): return row[i] if len(row) > i else ""
+        return {
+            "team_id": _get(0),
+            "team_name": _get(1),
+            "team_code": _get(2),
+            "created_at": _get(3),
+            "updated_at": _get(4),
+        }
+
+    @staticmethod
+    def _dict_to_row(data: dict) -> list:
+        return [
+            data.get("team_id", ""),
+            data.get("team_name", ""),
+            data.get("team_code", ""),
+            data.get("created_at", ""),
+            data.get("updated_at", ""),
+        ]
+
+    def _find_row_index(self, team_id: str) -> int:
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{TEAMS_TAB}!A:A").execute()
+        for i, row in enumerate(res.get("values", []), start=1):
+            if row and row[0] == team_id:
+                return i
+        return -1
+
+    def list_teams(self) -> list:
+        self._maybe_ensure_tab()
+        teams = [self._row_to_dict(r) for r in self._read_all_rows() if r and r[0]]
+        return teams if teams else list(DEFAULT_TEAMS)
+
+    def get_team(self, team_id: str) -> dict | None:
+        self._maybe_ensure_tab()
+        for row in self._read_all_rows():
+            d = self._row_to_dict(row)
+            if d["team_id"] == team_id:
+                return d
+        return None
+
+    def create_team(self, data: dict) -> dict:
+        self._maybe_ensure_tab()
+        data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        data.setdefault("updated_at", data["created_at"])
+        self._values().append(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{TEAMS_TAB}!A:E",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [self._dict_to_row(data)]},
+        ).execute()
+        return data
+
+    def update_team(self, team_id: str, fields: dict) -> dict | None:
+        self._maybe_ensure_tab()
+        row_idx = self._find_row_index(team_id)
+        if row_idx == -1:
+            return None
+        team = self.get_team(team_id)
+        team.update({k: v for k, v in fields.items() if k != "team_code"})
+        team["updated_at"] = datetime.now(timezone.utc).isoformat()
+        self._values().update(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{TEAMS_TAB}!A{row_idx}:E{row_idx}",
+            valueInputOption="RAW",
+            body={"values": [self._dict_to_row(team)]},
+        ).execute()
+        return team
+
+    def delete_team(self, team_id: str) -> bool:
+        self._maybe_ensure_tab()
+        row_idx = self._find_row_index(team_id)
+        if row_idx == -1:
+            return False
+        self._svc.spreadsheets().batchUpdate(
+            spreadsheetId=self._spreadsheet_id,
+            body={"requests": [{"deleteDimension": {"range": {
+                "sheetId": self._sheet_id,
+                "dimension": "ROWS",
+                "startIndex": row_idx - 1,
+                "endIndex": row_idx,
+            }}}]},
+        ).execute()
+        return True
+
+
+class SheetsQuestionStatsRepository:
+    def __init__(self):
+        self._spreadsheet_id = _default_sheet_id()
+        self._svc = _build_sheets_service()
+        self._tab_ready = False
+
+    def _values(self):
+        return self._svc.spreadsheets().values()
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            self._ensure_tab()
+            self._tab_ready = True
+
+    def _ensure_tab(self):
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        existing = [s["properties"]["title"] for s in meta.get("sheets", [])]
+        if STATS_TAB not in existing:
+            self._svc.spreadsheets().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": STATS_TAB}}}]},
+            ).execute()
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{STATS_TAB}!A1:D1").execute()
+        if not res.get("values"):
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{STATS_TAB}!A1",
+                valueInputOption="RAW",
+                body={"values": [STATS_HEADERS]},
+            ).execute()
+
+    def _read_all_rows(self) -> list:
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{STATS_TAB}!A:D").execute()
+        rows = res.get("values", [])
+        return rows[1:] if len(rows) > 1 else []
+
+    @staticmethod
+    def _row_to_dict(row: list) -> dict:
+        def _get(i): return row[i] if len(row) > i else ""
+        try:
+            count = int(_get(1)) if _get(1) else 0
+        except ValueError:
+            count = 0
+        return {
+            "question_id": _get(0),
+            "exam_count": count,
+            "last_used_at": _get(2),
+            "flagged_frequent": _get(3) == "TRUE",
+        }
+
+    def get_stats(self, question_id: str) -> dict | None:
+        self._maybe_ensure_tab()
+        for row in self._read_all_rows():
+            if row and row[0] == question_id:
+                return self._row_to_dict(row)
+        return None
+
+    def list_all_stats(self) -> dict:
+        self._maybe_ensure_tab()
+        return {d["question_id"]: d for d in (self._row_to_dict(r) for r in self._read_all_rows()) if d["question_id"]}
+
+    def list_flagged(self) -> list:
+        self._maybe_ensure_tab()
+        return [d for d in (self._row_to_dict(r) for r in self._read_all_rows()) if d["flagged_frequent"]]
+
+    def increment_batch(self, question_ids: list) -> None:
+        if not question_ids:
+            return
+        self._maybe_ensure_tab()
+        ids = list(set(question_ids))
+        now = datetime.now(timezone.utc).isoformat()
+        all_rows = self._read_all_rows()
+        existing = {}
+        for i, row in enumerate(all_rows, start=2):
+            if row and row[0]:
+                try:
+                    count = int(row[1]) if len(row) > 1 and row[1] else 0
+                except ValueError:
+                    count = 0
+                existing[row[0]] = (i, count)
+        update_data, new_rows = [], []
+        for qid in ids:
+            if qid in existing:
+                row_idx, old_count = existing[qid]
+                new_count = old_count + 1
+                flagged = "TRUE" if new_count >= FREQUENT_THRESHOLD else "FALSE"
+                update_data.append({
+                    "range": f"{STATS_TAB}!A{row_idx}:D{row_idx}",
+                    "values": [[qid, str(new_count), now, flagged]],
+                })
+            else:
+                new_rows.append([qid, "1", now, "FALSE"])
+        if update_data:
+            self._values().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"valueInputOption": "RAW", "data": update_data},
+            ).execute()
+        if new_rows:
+            self._values().append(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{STATS_TAB}!A:D",
+                valueInputOption="RAW",
+                insertDataOption="INSERT_ROWS",
+                body={"values": new_rows},
+            ).execute()

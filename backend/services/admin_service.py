@@ -299,6 +299,103 @@ def set_exam_datetime(exam_set_id: str, exam_datetime: str) -> dict:
     return {"success": True, "exam_set_id": exam_set_id, "exam_datetime": exam_datetime}
 
 
+def seed_mock_data() -> dict:
+    data = _load_users()
+    existing_ids = {u["employee_id"] for u in data["approved_users"] + data["admins"]}
+    seed_users = [
+        {"employee_id": "2024001", "password_hash": "mock_hash", "name": "김테스트", "team": "T1", "role": "examinee", "exam_date": "2026-07-10", "approved": True},
+        {"employee_id": "2024002", "password_hash": "mock_hash", "name": "이테스트", "team": "T2", "role": "examinee", "exam_date": "2026-07-10", "approved": True},
+        {"employee_id": "2024003", "password_hash": "mock_hash", "name": "박테스트", "team": "T3", "role": "examinee", "exam_date": "2026-07-11", "approved": True},
+    ]
+    added = 0
+    for u in seed_users:
+        if u["employee_id"] not in existing_ids:
+            data["approved_users"].append(u)
+            existing_ids.add(u["employee_id"])
+            added += 1
+    _save_users(data)
+    return {"seeded_users": added, "message": f"더미 사용자 {added}명 추가 완료 (기존 계정 skip)"}
+
+
+def list_teams() -> list:
+    from repositories import team_repo
+    return team_repo.list_teams()
+
+
+def create_team(team_id: str, team_name: str, team_code: str) -> dict:
+    from repositories import team_repo
+    existing = team_repo.list_teams()
+    if any(t["team_id"] == team_id or t["team_code"] == team_code for t in existing):
+        raise HTTPException(status_code=409, detail="이미 존재하는 팀 ID 또는 코드입니다.")
+    return team_repo.create_team({"team_id": team_id, "team_name": team_name, "team_code": team_code})
+
+
+def update_team(team_id: str, team_name: str) -> dict:
+    from repositories import team_repo
+    updated = team_repo.update_team(team_id, {"team_name": team_name})
+    if not updated:
+        raise HTTPException(status_code=404, detail="팀을 찾을 수 없습니다.")
+    return updated
+
+
+def delete_team(team_id: str) -> dict:
+    from repositories import team_repo
+    if not team_repo.delete_team(team_id):
+        raise HTTPException(status_code=404, detail="팀을 찾을 수 없습니다.")
+    return {"deleted": True, "team_id": team_id}
+
+
+def fetch_dashboard_stats() -> dict:
+    from repositories import question_repo, result_repo, exam_set_repo
+    data = _load_users()
+    total_users = len(data.get("approved_users", []))
+    sets = exam_set_repo.list_exam_sets()
+    active_sets = [s for s in sets if s.get("status") == "active"]
+    assigned_count = sum(len(s.get("assigned_users", [])) for s in active_sets)
+    return {
+        "question_count": question_repo.count_by_status("approved"),
+        "exam_set_count": len(active_sets),
+        "assigned_count": assigned_count,
+        "user_count": total_users,
+    }
+
+
+def bulk_upload_users(csv_text: str) -> dict:
+    import csv
+    import io
+    data = _load_users()
+    all_ids = {u["employee_id"] for u in data["approved_users"] + data["admins"]}
+    success, skipped, errors = 0, 0, 0
+    reader = csv.DictReader(io.StringIO(csv_text))
+    for row in reader:
+        try:
+            eid = (row.get("employee_id") or "").strip()
+            name = (row.get("name") or "").strip()
+            team = (row.get("team_code") or "").strip()
+            exam_date = (row.get("exam_date") or "").strip()
+            if not eid or not name:
+                errors += 1
+                continue
+            if eid in all_ids:
+                skipped += 1
+                continue
+            data["approved_users"].append({
+                "employee_id": eid,
+                "password_hash": "mock_hash",
+                "name": name,
+                "team": team,
+                "role": "examinee",
+                "exam_date": exam_date,
+                "approved": True,
+            })
+            all_ids.add(eid)
+            success += 1
+        except Exception:
+            errors += 1
+    _save_users(data)
+    return {"success": success, "skipped": skipped, "errors": errors, "total": success + skipped + errors}
+
+
 def get_exam_set_assignees(exam_set_id: str) -> list:
     from repositories import exam_set_repo
     exam_set = exam_set_repo.get_exam_set(exam_set_id)

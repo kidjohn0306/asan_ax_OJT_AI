@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { apiFetch, logout as apiLogout } from '../api'
+import { apiFetch, apiUpload, logout as apiLogout } from '../api'
 
 /* ── SVG Icon ──────────────────────────────────────────────── */
 function Icon({ name, size = 16, style }) {
@@ -194,10 +194,7 @@ function getExamStatus(examDatetime) {
 }
 
 function Dashboard({ onNavigate }) {
-  const [approvedCount, setApprovedCount] = useState('-')
-  const [examCount, setExamCount] = useState('-')
-  const [approvedQCount, setApprovedQCount] = useState('-')
-  const [reviewingQCount, setReviewingQCount] = useState('-')
+  const [stats, setStats] = useState({ question_count:'-', exam_set_count:'-', assigned_count:'-', user_count:'-' })
   const [apiStatus, setApiStatus] = useState('확인 중...')
   const [driveStatus, setDriveStatus] = useState('확인 중...')
   const [examSets, setExamSets] = useState([])
@@ -207,12 +204,9 @@ function Dashboard({ onNavigate }) {
   const [modalLoading, setModalLoading] = useState(false)
 
   useEffect(() => {
-    apiFetch('GET', '/api/admin/user-count').then(d => setApprovedCount(d.count)).catch(() => {})
-    apiFetch('GET', '/api/admin/exam-count')
-      .then(d => { setExamCount(d.count); setApiStatus('정상') })
+    apiFetch('GET', '/api/admin/stats')
+      .then(d => { setStats(d); setApiStatus('정상') })
       .catch(() => setApiStatus('연결 불가'))
-    apiFetch('GET', '/api/admin/approved-question-count').then(d => setApprovedQCount(d.count)).catch(() => {})
-    apiFetch('GET', '/api/admin/reviewing-question-count').then(d => setReviewingQCount(d.count)).catch(() => {})
     apiFetch('GET', '/api/drive/status')
       .then(() => setDriveStatus('연동'))
       .catch(() => setDriveStatus('미연동'))
@@ -262,6 +256,17 @@ function Dashboard({ onNavigate }) {
     { name:'이민수', team:'T3', score:65, pass:false, date:'2026-06-13' },
     { name:'최지훈', team:'T2', score:95, pass:true,  date:'2026-06-12' },
   ]
+
+  const [seeding, setSeeding] = useState(false)
+  async function seedMock() {
+    if (!confirm('더미 데이터(테스트 사용자 3명)를 주입하시겠습니까?')) return
+    setSeeding(true)
+    try {
+      const r = await apiFetch('POST', '/api/admin/seed-mock-data')
+      alert(r.message)
+    } catch (e) { alert(`오류: ${e.message}`) }
+    finally { setSeeding(false) }
+  }
 
   const quickActions = [
     ['ai',    '문제 생성',   'q-generate'],
@@ -333,10 +338,10 @@ function Dashboard({ onNavigate }) {
       </div>
 
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
-        <StatCard iconName="users" iconColor="#2563EB" iconBg="#EFF6FF" label="승인된 응시자" value={approvedCount} unit="명" />
-        <StatCard iconName="file"  iconColor="#D97706" iconBg="#FFFBEB" label="총 응시 완료"  value={examCount}    unit="회" />
-        <StatCard iconName="check" iconColor="#059669" iconBg="#ECFDF5" label="승인된 문제"   value={approvedQCount} unit="개" />
-        <StatCard iconName="book"  iconColor="#7C3AED" iconBg="#F5F3FF" label="검토 대기"     value={reviewingQCount} unit="개" />
+        <StatCard iconName="book"  iconColor="#059669" iconBg="#ECFDF5" label="문제은행 문제수"   value={stats.question_count}  unit="개" />
+        <StatCard iconName="file"  iconColor="#D97706" iconBg="#FFFBEB" label="활성 시험세트"     value={stats.exam_set_count}  unit="개" />
+        <StatCard iconName="clock" iconColor="#2563EB" iconBg="#EFF6FF" label="응시 예정 인원"    value={stats.assigned_count}  unit="명" />
+        <StatCard iconName="users" iconColor="#7C3AED" iconBg="#F5F3FF" label="전체 등록 인원"    value={stats.user_count}      unit="명" />
       </div>
 
       <Card title="빠른 실행">
@@ -347,6 +352,11 @@ function Dashboard({ onNavigate }) {
               <Icon name={icon} size={14} style={{ opacity:0.55 }} />{label}
             </button>
           ))}
+          <button onClick={seedMock} disabled={seeding}
+            style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1px solid #FDE68A', borderRadius:8, background:'#FFFBEB', fontFamily:'var(--font)', fontSize:13, fontWeight:600, color:'#D97706', cursor:'pointer', opacity: seeding ? 0.6 : 1 }}>
+            <Icon name="refresh" size={14} style={{ opacity:0.7 }} />
+            {seeding ? '주입 중...' : '더미 데이터 주입'}
+          </button>
         </div>
       </Card>
 
@@ -1480,18 +1490,24 @@ function Users({ toast }) {
   const [users, setUsers] = useState([])
   const [form, setForm] = useState({ empno:'', name:'', team:'T1', date:'' })
   const [result, setResult] = useState({ msg:'', ok:null })
+  const [teams, setTeams] = useState([])
+  const [csvResult, setCsvResult] = useState(null)
+  const [csvLoading, setCsvLoading] = useState(false)
 
   async function loadUsers() {
     try { const d = await apiFetch('GET', '/api/admin/users'); setUsers(d.users) } catch {}
   }
-  useEffect(() => { loadUsers() }, [])
+  useEffect(() => {
+    loadUsers()
+    apiFetch('GET', '/api/admin/teams').then(d => setTeams(d.teams)).catch(() => {})
+  }, [])
 
   async function approve() {
     if (!form.empno || !form.name || !form.date) { setResult({ msg:'모든 항목을 입력해주세요.', ok:false }); return }
     try {
       await apiFetch('POST', '/api/admin/approve-user', { employee_id:form.empno, name:form.name, team:form.team, exam_date:form.date })
       setResult({ msg:`${form.name} (${form.empno}) 승인 완료`, ok:true })
-      setForm({ empno:'', name:'', team:'T1', date:'' })
+      setForm({ empno:'', name:'', team: teams[0]?.team_code || 'T1', date:'' })
       loadUsers()
     } catch (e) { setResult({ msg:`오류: ${e.message}`, ok:false }) }
   }
@@ -1501,25 +1517,66 @@ function Users({ toast }) {
     try { await apiFetch('DELETE', `/api/admin/users/${id}`); loadUsers() } catch (e) { toast(`삭제 실패: ${e.message}`, 'error') }
   }
 
+  async function handleCsvUpload(e) {
+    const file = e.target.files[0]
+    if (!file) return
+    setCsvLoading(true); setCsvResult(null)
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      const r = await apiUpload('/api/admin/upload-users', fd)
+      setCsvResult(r)
+      toast(`CSV 업로드 완료: 성공 ${r.success}건`, 'success')
+      loadUsers()
+    } catch (err) {
+      setCsvResult({ error: err.message })
+      toast(`CSV 업로드 실패: ${err.message}`, 'error')
+    } finally {
+      setCsvLoading(false)
+      e.target.value = ''
+    }
+  }
+
+  const teamOpts = teams.length > 0 ? teams : [{ team_code:'T1', team_name:'1팀' }, { team_code:'T2', team_name:'2팀' }, { team_code:'T3', team_name:'3팀' }]
+
   return (
     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-      <Card title="신입사원 응시 승인">
-        <FormInput label="사원번호" value={form.empno} onChange={e => setForm(p=>({...p,empno:e.target.value}))} placeholder="예: 2024003" autoComplete="off" />
-        <FormInput label="이름" value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} placeholder="홍길동" />
-        <div style={{ marginBottom:14 }}>
-          <label style={{ display:'block', fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:6 }}>소속 팀</label>
-          <select value={form.team} onChange={e => setForm(p=>({...p,team:e.target.value}))} style={{ width:'100%', border:'1.5px solid var(--border)', borderRadius:6, padding:'9px 12px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}>
-            <option value="T1">1팀 (주간)</option><option value="T2">2팀 (4조3교대)</option><option value="T3">3팀 (3조2교대)</option>
-          </select>
-        </div>
-        <FormInput label="응시 예정일" type="date" value={form.date} onChange={e => setForm(p=>({...p,date:e.target.value}))} />
-        <BtnPrimary onClick={approve} style={{ width:'100%', justifyContent:'center' }}>
-          <Icon name="check" size={14} style={{ color:'white' }} /> 승인 등록
-        </BtnPrimary>
-        {result.msg && (
-          <p style={{ marginTop:10, fontSize:12, padding:'8px 10px', borderRadius:6, background: result.ok ? 'var(--success-light)' : 'var(--danger-light)', color: result.ok ? 'var(--success)' : 'var(--danger)' }}>{result.msg}</p>
-        )}
-      </Card>
+      <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+        <Card title="신입사원 응시 승인">
+          <FormInput label="사원번호" value={form.empno} onChange={e => setForm(p=>({...p,empno:e.target.value}))} placeholder="예: 2024003" autoComplete="off" />
+          <FormInput label="이름" value={form.name} onChange={e => setForm(p=>({...p,name:e.target.value}))} placeholder="홍길동" />
+          <div style={{ marginBottom:14 }}>
+            <label style={{ display:'block', fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:6 }}>소속 팀</label>
+            <select value={form.team} onChange={e => setForm(p=>({...p,team:e.target.value}))} style={{ width:'100%', border:'1.5px solid var(--border)', borderRadius:6, padding:'9px 12px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}>
+              {teamOpts.map(t => <option key={t.team_code} value={t.team_code}>{t.team_name}</option>)}
+            </select>
+          </div>
+          <FormInput label="응시 예정일" type="date" value={form.date} onChange={e => setForm(p=>({...p,date:e.target.value}))} />
+          <BtnPrimary onClick={approve} style={{ width:'100%', justifyContent:'center' }}>
+            <Icon name="check" size={14} style={{ color:'white' }} /> 승인 등록
+          </BtnPrimary>
+          {result.msg && (
+            <p style={{ marginTop:10, fontSize:12, padding:'8px 10px', borderRadius:6, background: result.ok ? 'var(--success-light)' : 'var(--danger-light)', color: result.ok ? 'var(--success)' : 'var(--danger)' }}>{result.msg}</p>
+          )}
+        </Card>
+
+        <Card title="CSV 대량 업로드">
+          <p style={{ fontSize:12, color:'var(--text-muted)', marginBottom:10 }}>컬럼: <code>employee_id, name, team_code, exam_date</code> (첫 행 헤더)</p>
+          <label style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1.5px dashed var(--border)', borderRadius:8, cursor:'pointer', fontSize:13, color:'var(--text)', background:'#FAFAFA', width:'100%', justifyContent:'center', boxSizing:'border-box' }}>
+            <Icon name="up" size={14} />
+            {csvLoading ? '업로드 중...' : 'CSV 파일 선택'}
+            <input type="file" accept=".csv" style={{ display:'none' }} onChange={handleCsvUpload} disabled={csvLoading} />
+          </label>
+          {csvResult && !csvResult.error && (
+            <div style={{ marginTop:10, fontSize:12, padding:'8px 12px', borderRadius:6, background:'var(--success-light)', color:'var(--success)' }}>
+              성공 {csvResult.success}건 · 중복 skip {csvResult.skipped}건 · 오류 {csvResult.errors}건
+            </div>
+          )}
+          {csvResult?.error && (
+            <div style={{ marginTop:10, fontSize:12, padding:'8px 12px', borderRadius:6, background:'var(--danger-light)', color:'var(--danger)' }}>{csvResult.error}</div>
+          )}
+        </Card>
+      </div>
       <Card title="승인된 응시자 목록" noPad action={<BtnOutlineSm onClick={loadUsers}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
         <DataTable headers={['사원번호','이름','팀','응시일','상태','관리']}>
           {users.length === 0 ? (
@@ -1996,6 +2053,87 @@ function ExamStatus({ toast }) {
   )
 }
 
+/* ── 팀 관리 ─────────────────────────────────────────────────── */
+function TeamsManager({ toast }) {
+  const [teams, setTeams] = useState([])
+  const [form, setForm] = useState({ team_id:'', team_name:'', team_code:'' })
+  const [editId, setEditId] = useState(null)
+  const [editName, setEditName] = useState('')
+
+  async function load() {
+    try { const d = await apiFetch('GET', '/api/admin/teams'); setTeams(d.teams) } catch {}
+  }
+  useEffect(() => { load() }, [])
+
+  async function create() {
+    if (!form.team_id || !form.team_name || !form.team_code) { toast('모든 항목을 입력해주세요.', 'error'); return }
+    try {
+      await apiFetch('POST', '/api/admin/teams', form)
+      setForm({ team_id:'', team_name:'', team_code:'' })
+      toast('팀이 추가되었습니다.'); load()
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+  }
+
+  async function save(id) {
+    if (!editName.trim()) return
+    try {
+      await apiFetch('PATCH', `/api/admin/teams/${id}`, { team_name: editName })
+      setEditId(null); toast('팀명이 수정되었습니다.'); load()
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+  }
+
+  async function remove(id, name) {
+    if (!confirm(`'${name}' 팀을 삭제하시겠습니까?`)) return
+    try { await apiFetch('DELETE', `/api/admin/teams/${id}`); toast('삭제되었습니다.'); load() }
+    catch (e) { toast(`삭제 실패: ${e.message}`, 'error') }
+  }
+
+  return (
+    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
+      <Card title="팀 추가">
+        <FormInput label="팀 ID" value={form.team_id} onChange={e => setForm(p=>({...p,team_id:e.target.value}))} placeholder="예: team-sales" />
+        <FormInput label="팀명" value={form.team_name} onChange={e => setForm(p=>({...p,team_name:e.target.value}))} placeholder="예: 영업팀" />
+        <FormInput label="팀 코드" value={form.team_code} onChange={e => setForm(p=>({...p,team_code:e.target.value}))} placeholder="예: SALES" />
+        <BtnPrimary onClick={create} style={{ width:'100%', justifyContent:'center' }}>
+          <Icon name="plus" size={14} style={{ color:'white' }} /> 팀 추가
+        </BtnPrimary>
+      </Card>
+
+      <Card title="팀 목록" noPad action={<BtnOutlineSm onClick={load}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
+        <DataTable headers={['팀 ID','팀명','코드','관리']}>
+          {teams.length === 0 ? (
+            <tr><td colSpan={4} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>팀이 없습니다.</td></tr>
+          ) : teams.map(t => (
+            <tr key={t.team_id}>
+              <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)', fontFamily:'monospace' }}>{t.team_id}</td>
+              <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:13 }}>
+                {editId === t.team_id ? (
+                  <input value={editName} onChange={e => setEditName(e.target.value)}
+                    style={{ border:'1.5px solid var(--accent)', borderRadius:5, padding:'4px 8px', fontSize:13, fontFamily:'var(--font)', width:'100%', outline:'none' }} />
+                ) : t.team_name}
+              </td>
+              <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12 }}>{t.team_code}</td>
+              <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', display:'flex', gap:6 }}>
+                {editId === t.team_id ? (
+                  <>
+                    <BtnOutlineSm onClick={() => save(t.team_id)}>저장</BtnOutlineSm>
+                    <BtnOutlineSm onClick={() => setEditId(null)}>취소</BtnOutlineSm>
+                  </>
+                ) : (
+                  <>
+                    <BtnOutlineSm onClick={() => { setEditId(t.team_id); setEditName(t.team_name) }}>수정</BtnOutlineSm>
+                    <BtnOutlineSm danger onClick={() => remove(t.team_id, t.team_name)}>삭제</BtnOutlineSm>
+                  </>
+                )}
+              </td>
+            </tr>
+          ))}
+        </DataTable>
+      </Card>
+    </div>
+  )
+}
+
 const NAV_META = {
   dashboard:      { bc:['홈','대시보드'],                          title:'관리자 대시보드' },
   'q-generate':   { bc:['홈','문제 관리','문제 생성'],             title:'문제 생성' },
@@ -2008,6 +2146,7 @@ const NAV_META = {
   users:          { bc:['홈','사용자 승인'],                       title:'사용자 승인' },
   results:        { bc:['홈','결과 분석'],                         title:'결과 분석' },
   settings:       { bc:['홈','설정'],                              title:'시스템 설정' },
+  teams:          { bc:['홈','팀 관리'],                           title:'팀 관리' },
 }
 
 export default function Admin() {
@@ -2044,6 +2183,7 @@ export default function Admin() {
     { id:'users',       icon:'users',    label:'사용자 승인' },
     { id:'results',     icon:'chart',    label:'결과 분석' },
     { id:'settings',    icon:'settings', label:'설정' },
+    { id:'teams',       icon:'users',    label:'팀 관리' },
   ]
 
   const SIDEBAR_W = 220
@@ -2147,6 +2287,7 @@ export default function Admin() {
             {view === 'users'       && <Users toast={toast} />}
             {view === 'results'     && <Results />}
             {view === 'settings'    && <Settings />}
+            {view === 'teams'       && <TeamsManager toast={toast} />}
           </div>
         </main>
       </div>
