@@ -15,8 +15,15 @@ RESULTS_HEADERS = ["exam_id", "employee_id", "exam_set_id", "team_code", "score"
 SNAPSHOTS_SHEET_TAB = "snapshots"
 SNAPSHOTS_HEADERS = ["exam_id", "created_at", "data_json"]
 
-
 _HTTP_TIMEOUT_SECONDS = 15
+
+
+def _default_sheet_id():
+    return (
+        os.getenv("GOOGLE_SHEETS_ID")
+        or os.getenv("GOOGLE_EXAM_SETS_SHEET_ID")
+        or "1l-79bi-ZctkIN3NNrKuQuyDJ8hJjEyOmTWPfoDsZl8E"
+    )
 
 
 def _build_sheets_service():
@@ -48,13 +55,6 @@ def _safe_json_list(s) -> list:
         return []
 
 
-def _results_spreadsheet_id() -> str:
-    sheet_id = os.getenv("GOOGLE_SHEETS_ID")
-    if not sheet_id:
-        raise RuntimeError("GOOGLE_SHEETS_ID 환경변수가 설정되지 않았습니다.")
-    return sheet_id
-
-
 def _ensure_tab(svc, spreadsheet_id: str, tab: str, headers: list[str]) -> None:
     """탭이 없으면 생성하고 헤더가 없으면 추가한다."""
     meta = svc.spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
@@ -83,12 +83,14 @@ def _ensure_tab(svc, spreadsheet_id: str, tab: str, headers: list[str]) -> None:
 
 class SheetsExamSetRepository(ExamSetRepository):
     def __init__(self):
-        self._spreadsheet_id = os.getenv(
-            "GOOGLE_EXAM_SETS_SHEET_ID",
-            "1l-79bi-ZctkIN3NNrKuQuyDJ8hJjEyOmTWPfoDsZl8E",
-        )
+        self._spreadsheet_id = _default_sheet_id()
         self._svc = _build_sheets_service()
-        self._ensure_tab()
+        self._tab_ready = False
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            self._ensure_tab()
+            self._tab_ready = True
 
     # ── 내부 헬퍼 ────────────────────────────────────────────────────────────
 
@@ -154,9 +156,11 @@ class SheetsExamSetRepository(ExamSetRepository):
     # ── 공개 인터페이스 ──────────────────────────────────────────────────────
 
     def list_exam_sets(self) -> list:
+        self._maybe_ensure_tab()
         return [self._row_to_dict(r) for r in self._read_all_rows()]
 
     def get_exam_set(self, exam_set_id: str) -> dict | None:
+        self._maybe_ensure_tab()
         for row in self._read_all_rows():
             d = self._row_to_dict(row)
             if d["exam_set_id"] == exam_set_id:
@@ -164,6 +168,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         return None
 
     def create_exam_set(self, data: dict) -> dict:
+        self._maybe_ensure_tab()
         data.setdefault("assigned_users", [])
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
         data.setdefault("exam_datetime", "")
@@ -177,6 +182,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         return data
 
     def assign_user(self, exam_set_id: str, employee_id: str) -> bool:
+        self._maybe_ensure_tab()
         row_idx = self._find_sheet_row(exam_set_id)
         if row_idx == -1:
             return False
@@ -192,6 +198,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         return True
 
     def unassign_user(self, exam_set_id: str, employee_id: str) -> bool:
+        self._maybe_ensure_tab()
         row_idx = self._find_sheet_row(exam_set_id)
         if row_idx == -1:
             return False
@@ -207,6 +214,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         return True
 
     def update_exam_set(self, exam_set_id: str, fields: dict) -> bool:
+        self._maybe_ensure_tab()
         row_idx = self._find_sheet_row(exam_set_id)
         if row_idx == -1:
             return False
@@ -230,17 +238,25 @@ class SheetsResultRepository(ResultRepository):
 
     한 행 = 한 응시 결과. 조회 키(exam_id·employee_id·exam_set_id 등)는 별도 열로,
     전체 결과는 data_json 열에 JSON으로 저장해 스키마 변경에 유연하게 대응한다.
+    (score_and_save()가 만드는 result_data는 difficulty_summary·results 등 중첩 구조를
+    포함하므로, 고정 컬럼이 아닌 JSON 컬럼으로 저장해야 값 손실이 없다.)
     """
 
     def __init__(self):
-        self._spreadsheet_id = _results_spreadsheet_id()
+        self._spreadsheet_id = _default_sheet_id()
         self._svc = _build_sheets_service()
-        _ensure_tab(self._svc, self._spreadsheet_id, RESULTS_SHEET_TAB, RESULTS_HEADERS)
+        self._tab_ready = False
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            _ensure_tab(self._svc, self._spreadsheet_id, RESULTS_SHEET_TAB, RESULTS_HEADERS)
+            self._tab_ready = True
 
     def _values(self):
         return self._svc.spreadsheets().values()
 
     def _read_all_rows(self) -> list[list]:
+        self._maybe_ensure_tab()
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
             range=f"{RESULTS_SHEET_TAB}!A:G",
@@ -254,6 +270,7 @@ class SheetsResultRepository(ResultRepository):
         return json.loads(data_json) if data_json else {}
 
     def append_result(self, result: dict) -> None:
+        self._maybe_ensure_tab()
         result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
         row = [
             result.get("exam_id", ""),
@@ -304,14 +321,20 @@ class SheetsSnapshotRepository(SnapshotRepository):
     """
 
     def __init__(self):
-        self._spreadsheet_id = _results_spreadsheet_id()
+        self._spreadsheet_id = _default_sheet_id()
         self._svc = _build_sheets_service()
-        _ensure_tab(self._svc, self._spreadsheet_id, SNAPSHOTS_SHEET_TAB, SNAPSHOTS_HEADERS)
+        self._tab_ready = False
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            _ensure_tab(self._svc, self._spreadsheet_id, SNAPSHOTS_SHEET_TAB, SNAPSHOTS_HEADERS)
+            self._tab_ready = True
 
     def _values(self):
         return self._svc.spreadsheets().values()
 
     def save_snapshot(self, exam_id: str, snapshot: dict) -> None:
+        self._maybe_ensure_tab()
         row = [exam_id, datetime.now(timezone.utc).isoformat(), json.dumps(snapshot, ensure_ascii=False)]
         self._values().append(
             spreadsheetId=self._spreadsheet_id,
@@ -322,6 +345,7 @@ class SheetsSnapshotRepository(SnapshotRepository):
         ).execute()
 
     def get_snapshot(self, exam_id: str) -> dict | None:
+        self._maybe_ensure_tab()
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
             range=f"{SNAPSHOTS_SHEET_TAB}!A:C",

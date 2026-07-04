@@ -57,7 +57,7 @@ def submit_exam(body: SubmitRequest, creds: HTTPAuthorizationCredentials = Depen
             payload = decode_token(creds.credentials)
             skip_save = payload.get("role") == "admin"
         except Exception:
-            pass
+            skip_save = False
     from services.exam_service import score_and_save
     return score_and_save(body.exam_id, body.answers, body.response_times, body.employee_id, body.name, skip_save=skip_save)
 

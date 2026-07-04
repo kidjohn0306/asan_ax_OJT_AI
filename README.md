@@ -36,22 +36,26 @@ asan_ax_OJT_AI/
 │   │   ├── difficulty.py     # 난이도 판정 알고리즘 (정답률·응답시간·백분위)
 │   │   └── generation/
 │   │       └── gates.py      # AI 생성 문제 7-gate 검증 (V-01~V-07)
+│   ├── api/
+│   │   ├── deps.py           # 공유 의존성 — require_admin() JWT 검증
+│   │   ├── auth.py, exam.py, admin.py, drive.py
 │   ├── repositories/         # 저장소 추상화 레이어
 │   │   ├── base.py           # 추상 인터페이스 (Question/Result/Snapshot/Feedback)
 │   │   ├── local_json.py     # 로컬 JSON 파일 기반 구현체
 │   │   ├── drive_repo.py     # Google Drive 기반 구현체
+│   │   ├── sheets_repo.py    # Google Sheets 기반 구현체 ✅
 │   │   └── __init__.py       # STORAGE_BACKEND 환경변수로 구현체 선택
-│   ├── ai_engine/            # AI 문제 생성 엔진
-│   │   ├── router.py         # AI_PROVIDER 환경변수로 생성기 선택
-│   │   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) ✅
-│   │   ├── mock_generator.py     # Mock 문제 반환 (AI_PROVIDER=mock) ✅
-│   │   └── question_generator.py # Claude API 스텁 (미구현)
 │   ├── credentials/          # service_account.json (gitignore됨 — 로컬에 직접 생성)
 │   ├── mock_data/
 │   │   ├── questions.json    # 공통5 + 팀별10×3 + 안전5 + 일반5 = 40문항
 │   │   ├── users.json        # 개발용 더미 사용자 (approved_users + admins)
 │   │   └── results.jsonl     # 채점 결과 로컬 저장 (STORAGE_BACKEND=local 시)
 │   └── requirements.txt
+├── ai_engine/                # AI 문제 생성 엔진 (루트 위치)
+│   ├── router.py             # AI_PROVIDER 환경변수로 생성기 선택
+│   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) ✅
+│   ├── mock_generator.py     # Mock 문제 반환 (AI_PROVIDER=mock) ✅
+│   └── question_generator.py # Claude API 스텁 (미구현)
 ├── frontend/
 │   ├── src/              # React 소스 (수정 시 반드시 빌드 후 커밋)
 │   └── dist/             # 빌드 결과물 (git 포함 — Vercel이 이 파일을 서빙)
@@ -135,8 +139,10 @@ npm run dev   # http://localhost:5173
 | `drive_service.py` | ✅ 완료 | 서비스 계정 인증, 파일 목록·다운로드·업로드 구현 |
 | `difficulty.py` | ✅ 완료 | 정답률(50%)·응답시간(30%)·백분위(20%) 규칙 기반, admin override 연결 |
 | `api/admin.py` | ✅ 완료 | 모든 라우트 `require_admin` JWT 의존성으로 보호 |
-| `repositories/` | ✅ 완료 | Repository 패턴. `STORAGE_BACKEND=local\|drive` 선택 |
-| `ai_engine/gemini_generator.py` | ✅ 완료 | Gemini REST API 문제 생성 (`AI_PROVIDER=gemini`) |
+| `repositories/` | ✅ 완료 | Repository 패턴. `STORAGE_BACKEND=local\|sheets\|drive` 선택 |
+| `repositories/sheets_repo.py` | ✅ 완료 | Google Sheets 저장 백엔드 (Drive 할당량 이슈 해결) |
+| `api/deps.py` | ✅ 완료 | `require_admin()` 공유 의존성 — admin/drive 중복 제거 |
+| `ai_engine/gemini_generator.py` | ✅ 완료 | Gemini REST API 문제 생성, 함수 분리 + 예외처리 강화 |
 | `services/generation/gates.py` | ✅ 완료 | AI 생성 문제 7-gate 검증 후 reviewing 상태 저장 |
 | `ai_engine/question_generator.py` | ❌ 미구현 | Claude API 스텁만 존재 |
 
@@ -183,6 +189,7 @@ npm run dev   # http://localhost:5173
 - `STORAGE_BACKEND=local`이면 채점 결과는 `mock_data/results.jsonl`에 로컬 저장
 - 비밀번호 `mock_hash` 계정은 아무 값으로 로그인 가능 (개발 편의)
 - Gemini 전환: `AI_PROVIDER=gemini` + `GEMINI_API_KEY` 설정
+- Sheets 저장 전환: `STORAGE_BACKEND=sheets` + `GOOGLE_SHEETS_ID` 설정 ✅ **권장**
 - Drive 저장 전환: `STORAGE_BACKEND=drive` + `DRIVE_RESULTS_FOLDER_ID` 설정 (할당량 이슈 주의)
 
 ---
@@ -193,7 +200,8 @@ npm run dev   # http://localhost:5173
 |---|---|---|
 | `JWT_SECRET_KEY` | `ojt-dev-secret-...` | JWT 서명 키 (운영 시 반드시 교체) |
 | `AI_PROVIDER` | `mock` | `mock` / `gemini` / `claude` |
-| `STORAGE_BACKEND` | `local` | `local` / `drive` |
+| `STORAGE_BACKEND` | `local` | `local` / `sheets` / `drive` |
+| `GOOGLE_SHEETS_ID` | — | Google Sheets 스프레드시트 ID (`STORAGE_BACKEND=sheets` 시 필요) |
 | `GEMINI_API_KEY` | — | Gemini API 키 (`AI_PROVIDER=gemini` 시 필요) |
 | `ANTHROPIC_API_KEY` | — | Claude API 키 (`AI_PROVIDER=claude` 시 필요, 미구현) |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | — | Service Account JSON 전체 내용 (Vercel 배포용) |
@@ -218,8 +226,8 @@ npm run dev   # http://localhost:5173
 
 | 항목 | 설명 |
 |---|---|
-| Drive 쓰기 할당량 | 개인 Google 계정 연결 서비스 계정은 Drive 파일 생성 시 `storageQuotaExceeded` 발생. 폴더 생성은 가능. Google Sheets 전환 검토 중 |
-| Vercel 스냅샷 휘발 | `STORAGE_BACKEND=local` 시 스냅샷이 `/tmp`에 저장되어 같은 인스턴스에서는 유효하지만 신규 콜드스타트 인스턴스에서는 없을 수 있음 → HTTP 410 반환 |
+| Drive 쓰기 할당량 | 개인 Google 계정 연결 서비스 계정은 `storageQuotaExceeded` 발생. `STORAGE_BACKEND=sheets` 전환으로 해결됨 |
+| Vercel 스냅샷 휘발 | `STORAGE_BACKEND=local` 시 스냅샷이 `/tmp`에 저장되어 신규 인스턴스에서 손실 가능 → HTTP 410. `sheets` 모드에서는 영구 저장 |
 | `questions.json` 읽기 전용 | Vercel 파일시스템은 읽기 전용. AI 생성 문제 저장 시 `STORAGE_BACKEND=local`이면 런타임 오류 발생 |
 | 응시 이력 | 실 결과 없으면 `fetch_logs()`가 더미 5건 반환 |
 
@@ -228,7 +236,7 @@ npm run dev   # http://localhost:5173
 | 기능 | 파일 | 비고 |
 |---|---|---|
 | Claude API 문제 생성 | `ai_engine/question_generator.py` | 스텁만 존재. `AI_PROVIDER=gemini` 으로 우회 가능 |
-| Google Sheets 저장 백엔드 | `repositories/` | Drive 할당량 이슈 해결책. 팀 회의 후 구현 예정 |
+| ~~Google Sheets 저장 백엔드~~ | ~~`repositories/`~~ | ✅ 구현 완료 (`sheets_repo.py`) |
 | 응시자 JWT 검증 | `api/exam.py` | `/api/exam/*` 라우트 인증 미적용 |
 | 서버 측 로그아웃 | `api/auth.py` | 클라이언트 sessionStorage 삭제만 처리 |
 | 결과 리포트 PDF 내보내기 | — | 미착수 |
@@ -248,7 +256,7 @@ npm run dev   # http://localhost:5173
 - [x] 스냅샷 기반 채점 (문제·정답 생성 시점 고정)
 - [x] Gemini API 문제 생성 연동 (`AI_PROVIDER=gemini`)
 - [x] run_gates 연결 — AI 생성 문제 7-gate 검증 후 `reviewing` 저장
-- [ ] Google Sheets 저장 백엔드 (Drive 할당량 이슈 해결)
+- [x] Google Sheets 저장 백엔드 (`STORAGE_BACKEND=sheets`, 인스턴스 교체에도 안전)
 - [ ] Claude API 문제 생성 (`question_generator.py`)
 - [ ] 응시자 전용 JWT 검증 (`/api/exam/*`)
 - [ ] 난이도 AI 자동 확정 피드백 루프

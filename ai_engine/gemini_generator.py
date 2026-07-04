@@ -10,28 +10,19 @@ import re
 import requests
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
+_MAX_REJECTED_EXAMPLES = 5
 
 
-def generate_questions_from_material(
-    material_text: str,
-    category: str,
-    count: int = 10,
-    difficulty_hint: str = "중",
-    rejected_examples: list[dict] = None,
-) -> list[dict]:
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
-
+def _build_prompt(material_text: str, category: str, count: int, difficulty_hint: str, rejected_examples: list) -> str:
     rejection_block = ""
     if rejected_examples:
         lines = "\n".join(
             f'  - 문제: "{q["question"]}" → 반려 사유: {q.get("reject_reason", "미기재")}'
-            for q in rejected_examples[:5]
+            for q in rejected_examples[:_MAX_REJECTED_EXAMPLES]
         )
         rejection_block = f"\n[반드시 피해야 할 문제 유형 (과거 반려 사례)]\n{lines}\n위 사례와 유사한 문제는 절대 생성하지 마세요.\n"
 
-    prompt = f"""다음 OJT 교육자료를 바탕으로 {category} 분야 객관식 문제 {count}개를 생성하세요.
+    return f"""다음 OJT 교육자료를 바탕으로 {category} 분야 객관식 문제 {count}개를 생성하세요.
 난이도는 '{difficulty_hint}'을 기준으로 합니다.
 {rejection_block}
 [교육자료]
@@ -50,18 +41,43 @@ def generate_questions_from_material(
   }}
 ]"""
 
+
+def _call_api(prompt: str, api_key: str) -> str:
     response = requests.post(
         f"{GEMINI_URL}?key={api_key}",
         json={"contents": [{"parts": [{"text": prompt}]}]},
         timeout=60,
     )
     response.raise_for_status()
+    try:
+        return response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+    except (KeyError, IndexError) as e:
+        raise ValueError(f"Gemini API 응답 형식 오류: {e}")
 
-    raw = response.json()["candidates"][0]["content"]["parts"][0]["text"].strip()
+
+def _parse_response(raw: str) -> list:
     raw = re.sub(r"^```(?:json)?\s*", "", raw)
     raw = re.sub(r"\s*```$", "", raw)
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as e:
+        raise ValueError(f"Gemini 응답 JSON 파싱 실패: {e}")
 
-    questions_raw = json.loads(raw)
+
+def generate_questions_from_material(
+    material_text: str,
+    category: str,
+    count: int = 10,
+    difficulty_hint: str = "중",
+    rejected_examples: list[dict] = None,
+) -> list[dict]:
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
+
+    prompt = _build_prompt(material_text, category, count, difficulty_hint, rejected_examples or [])
+    raw = _call_api(prompt, api_key)
+    questions_raw = _parse_response(raw)
 
     return [
         {
