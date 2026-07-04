@@ -12,6 +12,7 @@ TeamCode = Literal["T1", "T2", "T3"]
 
 class GenerateRequest(BaseModel):
     team_code: TeamCode
+    employee_id: Optional[str] = ""
 
 
 class SubmitRequest(BaseModel):
@@ -20,6 +21,15 @@ class SubmitRequest(BaseModel):
     response_times: dict[str, float]  # { "C-001": 12.5, ... }  단위: 초
     employee_id: Optional[str] = ""
     name: Optional[str] = ""
+
+
+@router.get("/assigned-name")
+def assigned_exam_name(employee_id: str = ""):
+    """
+    로그인 직후 응시자에게 배정된 시험명 조회 (시험 생성 없이 이름만 확인)
+    """
+    from services.exam_service import get_assigned_exam_name
+    return {"name": get_assigned_exam_name(employee_id)}
 
 
 @router.post("/generate")
@@ -31,7 +41,7 @@ def generate_exam(body: GenerateRequest):
     USE_MOCK_DATA=true 이면 mock_data/questions.json 사용
     """
     from services.exam_service import generate_exam_questions
-    return generate_exam_questions(body.team_code)
+    return generate_exam_questions(body.team_code, employee_id=body.employee_id)
 
 
 @router.post("/submit")

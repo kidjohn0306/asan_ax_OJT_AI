@@ -157,7 +157,41 @@ function StatusDot({ mode }) {
   return <span style={{ width:7, height:7, borderRadius:'50%', background:c[mode] || c.offline, display:'inline-block', flexShrink:0 }} />
 }
 
+function Modal({ title, onClose, wide, children }) {
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:'white', borderRadius:16, width:'100%', maxWidth: wide ? 720 : 480, maxHeight:'85vh', display:'flex', flexDirection:'column', boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}>
+        <div style={{ padding:'16px 22px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+          <span style={{ fontSize:15, fontWeight:800, color:'var(--text)' }}>{title}</span>
+          <button onClick={onClose} style={{ border:'none', background:'none', cursor:'pointer', color:'var(--text-muted)', fontSize:20, lineHeight:1, padding:4 }}>×</button>
+        </div>
+        <div style={{ padding:'18px 22px', overflowY:'auto' }}>{children}</div>
+      </div>
+    </div>
+  )
+}
+
 /* ── Views ──────────────────────────────────────────────────── */
+
+const TEAM_LABELS = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }
+
+const EXAM_DURATION_MS = 60 * 60 * 1000 // 시험 시간 60분
+
+const EXAM_STATUS_META = {
+  done:      { label:'완료',   dot:'var(--success)', badge:'success' },
+  ongoing:   { label:'진행중', dot:'var(--warning)',  badge:'warning' },
+  scheduled: { label:'예정',   dot:'var(--text-light)', badge:'gray' },
+}
+
+function getExamStatus(examDatetime) {
+  if (!examDatetime) return 'scheduled'
+  const start = new Date(examDatetime)
+  if (isNaN(start.getTime())) return 'scheduled'
+  const now = new Date()
+  if (now < start) return 'scheduled'
+  if (now > new Date(start.getTime() + EXAM_DURATION_MS)) return 'done'
+  return 'ongoing'
+}
 
 function Dashboard({ onNavigate }) {
   const [approvedCount, setApprovedCount] = useState('-')
@@ -166,6 +200,11 @@ function Dashboard({ onNavigate }) {
   const [reviewingQCount, setReviewingQCount] = useState('-')
   const [apiStatus, setApiStatus] = useState('확인 중...')
   const [driveStatus, setDriveStatus] = useState('확인 중...')
+  const [examSets, setExamSets] = useState([])
+  const [examStatusFilter, setExamStatusFilter] = useState('all')
+  const [modal, setModal] = useState(null)
+  const [modalData, setModalData] = useState(null)
+  const [modalLoading, setModalLoading] = useState(false)
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/user-count').then(d => setApprovedCount(d.count)).catch(() => {})
@@ -177,7 +216,44 @@ function Dashboard({ onNavigate }) {
     apiFetch('GET', '/api/drive/status')
       .then(() => setDriveStatus('연동'))
       .catch(() => setDriveStatus('미연동'))
+    apiFetch('GET', '/api/admin/exam-sets').then(d => setExamSets(d.sets || [])).catch(() => {})
   }, [])
+
+  const EXAM_STATUS_FILTERS = [
+    { key:'all',       label:'전체' },
+    { key:'done',      label:'완료' },
+    { key:'ongoing',   label:'진행중' },
+    { key:'scheduled', label:'예정' },
+  ]
+
+  const recentSets = [...examSets]
+    .filter(s => examStatusFilter === 'all' || getExamStatus(s.exam_datetime) === examStatusFilter)
+    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+    .slice(0, 6)
+
+  function closeModal() { setModal(null); setModalData(null) }
+
+  async function openQuestions(set) {
+    setModal({ type:'questions', set })
+    setModalLoading(true)
+    setModalData(null)
+    try {
+      const d = await apiFetch('GET', `/api/admin/exam-sets/${set.exam_set_id}/questions`)
+      setModalData(d)
+    } catch (e) { setModalData({ error: e.message }) }
+    finally { setModalLoading(false) }
+  }
+
+  async function openResults(set) {
+    setModal({ type:'results', set })
+    setModalLoading(true)
+    setModalData(null)
+    try {
+      const d = await apiFetch('GET', `/api/admin/exam-sets/${set.exam_set_id}/results`)
+      setModalData(d)
+    } catch (e) { setModalData({ error: e.message }) }
+    finally { setModalLoading(false) }
+  }
 
   const recent = [
     { name:'홍길동', team:'T1', score:92, pass:true,  date:'2026-06-14' },
@@ -191,7 +267,7 @@ function Dashboard({ onNavigate }) {
     ['ai',    '문제 생성',   'q-generate'],
     ['check', '검토·검증',  'q-review'],
     ['book',  '문제은행',   'q-bank'],
-    ['file',  '시험 생성', 'exam-sheet'],
+    ['file',  '시험지 생성', 'exam-sheet'],
     ['users', '사용자 승인', 'users'],
     ['clock', '응시 이력',   'history'],
   ]
@@ -205,6 +281,52 @@ function Dashboard({ onNavigate }) {
 
   return (
     <div>
+      <Card
+        title="최근 시험 관리"
+        noPad
+        action={
+          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+            {EXAM_STATUS_FILTERS.map(f => (
+              <label key={f.key} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, cursor:'pointer', color: examStatusFilter === f.key ? 'var(--text)' : 'var(--text-muted)', fontWeight: examStatusFilter === f.key ? 700 : 400 }}>
+                <input
+                  type="radio"
+                  name="examStatusFilter"
+                  checked={examStatusFilter === f.key}
+                  onChange={() => setExamStatusFilter(f.key)}
+                  style={{ accentColor:'var(--accent)', cursor:'pointer', margin:0 }}
+                />
+                {f.key !== 'all' && <span style={{ width:7, height:7, borderRadius:'50%', background:EXAM_STATUS_META[f.key].dot, display:'inline-block' }} />}
+                {f.label}
+              </label>
+            ))}
+          </div>
+        }
+      >
+        {recentSets.length === 0 ? (
+          <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>생성된 시험이 없습니다.</p>
+        ) : (
+          recentSets.map((s, i) => {
+            const status = getExamStatus(s.exam_datetime)
+            return (
+            <div key={s.exam_set_id} style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 20px', borderBottom: i < recentSets.length - 1 ? '1px solid var(--border)' : 'none' }}>
+              <div style={{ flex:1, minWidth:0 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{ fontSize:14, fontWeight:700, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.name}</span>
+                  <Badge type={EXAM_STATUS_META[status].badge}>{EXAM_STATUS_META[status].label}</Badge>
+                </div>
+                <div style={{ fontSize:12, color:'var(--text-muted)', marginTop:3 }}>
+                  시험일 {s.exam_datetime ? s.exam_datetime.slice(0,16).replace('T',' ') : (s.created_at ? s.created_at.slice(0,10) : '-')} · 대상 팀 {TEAM_LABELS[s.team_code] || s.team_code}
+                </div>
+              </div>
+              <div style={{ display:'flex', gap:8, flexShrink:0 }}>
+                <BtnOutlineSm onClick={() => openQuestions(s)}>문제 보기</BtnOutlineSm>
+                <BtnOutlineSm onClick={() => openResults(s)}>결과 보기</BtnOutlineSm>
+              </div>
+            </div>
+          )})
+        )}
+      </Card>
+
       <div style={{ background:'var(--warning-light)', border:'1px solid #FDE68A', borderRadius:8, padding:'9px 16px', marginBottom:16, fontSize:12, color:'var(--warning)', display:'flex', alignItems:'center', gap:8 }}>
         <span style={{ width:6, height:6, borderRadius:'50%', background:'#F59E0B', flexShrink:0, display:'inline-block' }} />
         Mock 모드 — Claude API · Google Drive 없이 작동 중.
@@ -257,6 +379,58 @@ function Dashboard({ onNavigate }) {
           ))}
         </Card>
       </div>
+
+      {modal && (
+        <Modal
+          title={`${modal.set.name} · ${modal.type === 'questions' ? '문제 목록' : '응시 결과'}`}
+          onClose={closeModal}
+          wide
+        >
+          {modalLoading ? (
+            <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>불러오는 중...</p>
+          ) : modalData?.error ? (
+            <p style={{ fontSize:13, color:'var(--danger)', textAlign:'center', padding:'24px 0' }}>오류: {modalData.error}</p>
+          ) : modal.type === 'questions' ? (
+            (modalData?.questions || []).length === 0 ? (
+              <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>문제가 없습니다.</p>
+            ) : (
+              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                {modalData.questions.map((q, i) => (
+                  <div key={q.question_id} style={{ border:'1px solid var(--border)', borderRadius:8, padding:'10px 14px' }}>
+                    <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:4 }}>
+                      {i + 1}. {q.question_id} · {q.category} · <span style={{ fontWeight:700 }}>{q.difficulty}</span>
+                    </div>
+                    <div style={{ fontSize:13, fontWeight:600, color:'var(--text)', marginBottom:6 }}>{q.question}</div>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4 }}>
+                      {['A','B','C','D'].map(k => (
+                        <div key={k} style={{ fontSize:12, color: q.answer === k ? 'var(--success)' : 'var(--text-muted)', fontWeight: q.answer === k ? 700 : 400 }}>
+                          {k}. {q.options[k]}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )
+          ) : (
+            (modalData?.results || []).length === 0 ? (
+              <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>응시 결과가 없습니다.</p>
+            ) : (
+              <DataTable headers={['이름','사번','점수','합격 여부','제출일시']}>
+                {modalData.results.map((r, i) => (
+                  <tr key={i}>
+                    <td style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{r.name || '-'}</td>
+                    <td style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{r.employee_id || '-'}</td>
+                    <td style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700 }}>{r.score}점</td>
+                    <td style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)' }}><Badge type={r.pass ? 'success' : 'danger'}>{r.pass ? '합격' : '재교육'}</Badge></td>
+                    <td style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{r.submitted_at ? r.submitted_at.slice(0,16).replace('T',' ') : '-'}</td>
+                  </tr>
+                ))}
+              </DataTable>
+            )
+          )}
+        </Modal>
+      )}
     </div>
   )
 }
@@ -309,6 +483,7 @@ function QuestionGenerate({ toast, onNavigate }) {
   function handlePdf() {
     if (!preview || preview.length === 0) { toast('먼저 문제를 생성해주세요.', 'error'); return }
     const teamLabel = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }[team] || team
+    const title = examName.trim() || '(주)엑스티 OJT 기초고사'
     const rows = preview.map((q, i) => {
       const opts = q.options || {}
       return `
@@ -324,7 +499,7 @@ function QuestionGenerate({ toast, onNavigate }) {
 <html lang="ko">
 <head>
 <meta charset="UTF-8"/>
-<title>OJT 시험지 — (주)엑스티</title>
+<title>${title}</title>
 <style>
   @page { size: A4; margin: 20mm 18mm; }
   body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size: 10.5pt; color: #1a1a1a; }
@@ -341,7 +516,7 @@ function QuestionGenerate({ toast, onNavigate }) {
 </style>
 </head>
 <body>
-  <h1>(주)엑스티 OJT 기초고사</h1>
+  <h1>${title}</h1>
   <p class="meta">${teamLabel} · ${preview.length}문항 · 응시일: ___년 ___월 ___일 &nbsp;&nbsp; 성명: ________________ &nbsp;&nbsp; 사원번호: ________________</p>
   <hr/>
   <div class="grid">${rows}</div>
@@ -689,7 +864,7 @@ function QuestionBank({ toast, onNavigate }) {
         </FilterSelect>
         <BtnOutlineSm onClick={() => load()}>조회</BtnOutlineSm>
         <BtnPrimary onClick={() => onNavigate('exam-sheet')} style={{ padding:'6px 14px', fontSize:13 }}>
-          <Icon name="file" size={13} style={{ color:'white' }} /> 시험 생성
+          <Icon name="file" size={13} style={{ color:'white' }} /> 시험지 생성
         </BtnPrimary>
       </div>
     }>
@@ -773,7 +948,7 @@ function QuestionBank({ toast, onNavigate }) {
   )
 }
 
-/* ── 시험 생성 (자동 배분 + 피드백 편집) ───────────────────── */
+/* ── 시험지 생성 (자동 배분 + 피드백 편집) ───────────────────── */
 function ExamSheet({ toast, onNavigate }) {
   const [examName, setExamName] = useState('')
   const [team, setTeam] = useState('T1')
@@ -1552,11 +1727,30 @@ function ExamAssign({ toast }) {
   const [userQuery, setUserQuery] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [focusedIdx, setFocusedIdx] = useState(-1)
+  const [examDatetime, setExamDatetime] = useState('')
+  const [savingSchedule, setSavingSchedule] = useState(false)
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
     apiFetch('GET', '/api/admin/users').then(d => setUsers(d.users || [])).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    const s = sets.find(s => s.exam_set_id === selectedSet)
+    setExamDatetime(s?.exam_datetime ? s.exam_datetime.slice(0, 16) : '')
+  }, [selectedSet, sets])
+
+  async function handleSaveSchedule() {
+    if (!selectedSet) return
+    setSavingSchedule(true)
+    try {
+      await apiFetch('PATCH', `/api/admin/exam-sets/${selectedSet}/schedule`, { exam_datetime: examDatetime })
+      toast('시험 일시가 저장됐습니다.')
+      const setsData = await apiFetch('GET', '/api/admin/exam-sets')
+      setSets(setsData.sets || [])
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+    finally { setSavingSchedule(false) }
+  }
 
 
 
@@ -1637,6 +1831,23 @@ function ExamAssign({ toast }) {
               {sets.map(s => <option key={s.exam_set_id} value={s.exam_set_id}>{s.name} ({s.team_code})</option>)}
             </select>
           </div>
+          {selectedSet && (
+            <div>
+              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험 일시</label>
+              <div style={{ display:'flex', gap:8 }}>
+                <input
+                  type="datetime-local"
+                  value={examDatetime}
+                  onChange={e => setExamDatetime(e.target.value)}
+                  style={{ flex:1, height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
+                />
+                <button onClick={handleSaveSchedule} disabled={savingSchedule}
+                  style={{ height:44, padding:'0 16px', border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', whiteSpace:'nowrap', opacity: savingSchedule ? 0.6 : 1 }}>
+                  {savingSchedule ? '저장 중...' : '일시 저장'}
+                </button>
+              </div>
+            </div>
+          )}
           <div>
             <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>응시자 검색</label>
             <div style={{ position:'relative' }}>
@@ -1682,7 +1893,7 @@ function ExamAssign({ toast }) {
       {sets.length > 0 && (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
           <Card title="시험세트 목록">
-            <DataTable headers={['이름','팀','문항 수','생성일']}>
+            <DataTable headers={['이름','팀','문항 수','시험 일시','생성일']}>
               {sets.map(s => (
                 <tr key={s.exam_set_id}
                   onClick={() => { setViewedSetId(s.exam_set_id); loadAssignees(s.exam_set_id) }}
@@ -1690,6 +1901,7 @@ function ExamAssign({ toast }) {
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600, color: viewedSetId === s.exam_set_id ? 'var(--accent-dark)' : 'var(--text)' }}>{s.name}</td>
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.team_code}</td>
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{(s.question_ids || []).length}문항</td>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.exam_datetime ? s.exam_datetime.slice(0,16).replace('T',' ') : '미정'}</td>
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.created_at ? s.created_at.slice(0,10) : '-'}</td>
                 </tr>
               ))}
@@ -1789,7 +2001,7 @@ const NAV_META = {
   'q-generate':   { bc:['홈','문제 관리','문제 생성'],             title:'문제 생성' },
   'q-review':     { bc:['홈','문제 관리','검토·검증'],             title:'검토 · 검증' },
   'q-bank':       { bc:['홈','문제 관리','문제은행'],              title:'문제은행' },
-  'exam-sheet':   { bc:['홈','시험 관리','시험 생성'],             title:'시험 생성' },
+  'exam-sheet':   { bc:['홈','시험 관리','시험지 생성'],           title:'시험지 생성' },
   'exam-assign':  { bc:['홈','시험 관리','시험 배정'],             title:'시험 배정' },
   'exam-status':  { bc:['홈','시험 관리','응시 현황'],             title:'응시 현황' },
   history:        { bc:['홈','응시 이력'],                         title:'응시 이력' },
@@ -1824,7 +2036,7 @@ export default function Admin() {
       { id:'q-bank',     icon:'book',  label:'문제은행' },
     ]},
     { id:'exam-manage', icon:'file',  label:'시험 관리', sub:[
-      { id:'exam-sheet',  icon:'file',  label:'시험 생성' },
+      { id:'exam-sheet',  icon:'file',  label:'시험지 생성' },
       { id:'exam-assign', icon:'users', label:'시험 배정' },
       { id:'exam-status', icon:'chart', label:'응시 현황' },
     ]},

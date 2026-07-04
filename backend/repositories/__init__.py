@@ -30,18 +30,29 @@ if _use_sheets:
 else:
     exam_set_repo = LocalExamSetRepository()
 
-# exam_set 외 다른 repo는 local 또는 drive 만 사용
-_other_backend = "local" if _backend == "sheets" else _backend
-if _other_backend == "local":
+if _backend == "local":
     question_repo = LocalQuestionRepository()
     result_repo = LocalResultRepository()
     snapshot_repo = LocalSnapshotRepository()
     feedback_repo = LocalFeedbackRepository()
-elif _other_backend == "drive":
+elif _backend == "drive":
     from repositories.drive_repo import DriveQuestionRepository, DriveResultRepository, DriveSnapshotRepository
     question_repo = DriveQuestionRepository()
     result_repo = DriveResultRepository()
     snapshot_repo = DriveSnapshotRepository()
+    feedback_repo = LocalFeedbackRepository()
+elif _backend == "sheets":
+    # 문제은행은 로컬 유지 — results·snapshots만 Sheets로 (GOOGLE_SHEETS_ID 필요)
+    question_repo = LocalQuestionRepository()
+    try:
+        from repositories.sheets_repo import SheetsResultRepository, SheetsSnapshotRepository
+        result_repo = SheetsResultRepository()
+        snapshot_repo = SheetsSnapshotRepository()
+    except Exception as _sheets_rs_err:
+        import logging
+        logging.warning(f"Sheets Result/Snapshot 초기화 실패, Local로 폴백: {_sheets_rs_err}")
+        result_repo = LocalResultRepository()
+        snapshot_repo = LocalSnapshotRepository()
     feedback_repo = LocalFeedbackRepository()
 else:
     raise NotImplementedError(f"STORAGE_BACKEND={_backend} 미구현.")

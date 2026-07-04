@@ -60,6 +60,10 @@ class AssignUserRequest(BaseModel):
     employee_id: str
 
 
+class ScheduleExamRequest(BaseModel):
+    exam_datetime: str
+
+
 @router.get("/users")
 def get_users(_: dict = Depends(require_admin)):
     from services.admin_service import fetch_users
@@ -187,16 +191,28 @@ def unassign_user(exam_set_id: str, employee_id: str, _: dict = Depends(require_
     return unassign_user_from_exam_set(employee_id, exam_set_id)
 
 
+@router.patch("/exam-sets/{exam_set_id}/schedule")
+def schedule_exam(exam_set_id: str, body: ScheduleExamRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import set_exam_datetime
+    return set_exam_datetime(exam_set_id, body.exam_datetime)
+
+
 @router.get("/exam-sets/{exam_set_id}/results")
 def get_exam_set_results(exam_set_id: str, _: dict = Depends(require_admin)):
     from repositories import result_repo
     return {"results": result_repo.list_results_by_set(exam_set_id)}
 
 
+@router.get("/exam-sets/{exam_set_id}/questions")
+def get_exam_set_questions(exam_set_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import get_exam_set_questions as _get
+    return _get(exam_set_id)
+
+
 @router.get("/debug/storage")
 def debug_storage(_: dict = Depends(require_admin)):
     import os
-    from repositories import exam_set_repo
+    from repositories import exam_set_repo, result_repo, snapshot_repo
     all_keys = [k for k in os.environ.keys() if not k.startswith("PATH") and not k.startswith("PYTHON")]
 
     sheets_error = None
@@ -207,11 +223,24 @@ def debug_storage(_: dict = Depends(require_admin)):
         except Exception as e:
             sheets_error = str(e)
 
+    results_sheets_error = None
+    if type(result_repo).__name__ != "SheetsResultRepository":
+        try:
+            from repositories.sheets_repo import SheetsResultRepository
+            SheetsResultRepository()
+        except Exception as e:
+            results_sheets_error = str(e)
+
     return {
+        "STORAGE_BACKEND": os.getenv("STORAGE_BACKEND", "(not set)"),
         "EXAM_SET_STORAGE": os.getenv("EXAM_SET_STORAGE", "(not set)"),
         "GOOGLE_EXAM_SETS_SHEET_ID": os.getenv("GOOGLE_EXAM_SETS_SHEET_ID", "(not set)"),
+        "GOOGLE_SHEETS_ID": os.getenv("GOOGLE_SHEETS_ID", "(not set)"),
         "GOOGLE_SERVICE_ACCOUNT_JSON_SET": bool(os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")),
         "exam_set_repo_class": type(exam_set_repo).__name__,
+        "result_repo_class": type(result_repo).__name__,
+        "snapshot_repo_class": type(snapshot_repo).__name__,
         "sheets_init_error": sheets_error,
+        "results_sheets_init_error": results_sheets_error,
         "all_env_keys": sorted(all_keys),
     }

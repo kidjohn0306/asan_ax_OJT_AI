@@ -300,6 +300,15 @@ def unassign_user_from_exam_set(employee_id: str, exam_set_id: str) -> dict:
     return {"success": True, "employee_id": employee_id, "exam_set_id": exam_set_id}
 
 
+def set_exam_datetime(exam_set_id: str, exam_datetime: str) -> dict:
+    from repositories import exam_set_repo
+    success = exam_set_repo.update_exam_set(exam_set_id, {"exam_datetime": exam_datetime})
+    if not success:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
+    return {"success": True, "exam_set_id": exam_set_id, "exam_datetime": exam_datetime}
+
+
 def get_exam_set_assignees(exam_set_id: str) -> list:
     from repositories import exam_set_repo
     exam_set = exam_set_repo.get_exam_set(exam_set_id)
@@ -309,5 +318,41 @@ def get_exam_set_assignees(exam_set_id: str) -> list:
     assigned_ids = exam_set.get("assigned_users", [])
     all_users = fetch_users().get("users", [])
     return [u for u in all_users if u.get("employee_id") in assigned_ids]
+
+
+def get_exam_set_questions(exam_set_id: str) -> dict:
+    from repositories import exam_set_repo, question_repo
+
+    exam_set = exam_set_repo.get_exam_set(exam_set_id)
+    if not exam_set:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
+
+    questions = []
+    for qid in exam_set.get("question_ids", []):
+        q = question_repo.get_question(qid)
+        if not q:
+            continue
+        questions.append({
+            "question_id": q["question_id"],
+            "category": q["category"],
+            "question": q["question"],
+            "options": {
+                "A": q["option_a"], "B": q["option_b"],
+                "C": q["option_c"], "D": q["option_d"],
+            },
+            "answer": q.get("answer"),
+            "difficulty": q.get("admin_override") or q.get("difficulty_ai") or q.get("difficulty_init", "중"),
+        })
+
+    return {
+        "exam_set": {
+            "exam_set_id": exam_set.get("exam_set_id"),
+            "name": exam_set.get("name"),
+            "team_code": exam_set.get("team_code"),
+            "created_at": exam_set.get("created_at"),
+        },
+        "questions": questions,
+    }
 
 

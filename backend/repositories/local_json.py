@@ -254,3 +254,12 @@ class LocalExamSetRepository(ExamSetRepository):
                     self._save(stored)
                 return True
         return False
+
+    def update_exam_set(self, exam_set_id: str, fields: dict) -> bool:
+        stored = self._load()
+        for s in stored.get("sets", []):
+            if s.get("exam_set_id") == exam_set_id:
+                s.update(fields)
+                self._save(stored)
+                return True
+        return False

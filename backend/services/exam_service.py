@@ -12,9 +12,26 @@ def _calc_dist(total: int) -> dict:
     return {"상": upper, "중": mid, "하": low}
 
 
+DEFAULT_EXAM_NAME = "OJT 기초고사"
+
+
 def _get_repos():
     from repositories import question_repo, result_repo, snapshot_repo
     return question_repo, result_repo, snapshot_repo
+
+
+def _find_assigned_exam_set(employee_id: str) -> dict | None:
+    if not employee_id:
+        return None
+    from repositories import exam_set_repo
+    candidates = [
+        s for s in exam_set_repo.list_exam_sets()
+        if employee_id in s.get("assigned_users", []) and s.get("status", "active") == "active"
+    ]
+    if not candidates:
+        return None
+    candidates.sort(key=lambda s: s.get("created_at", ""), reverse=True)
+    return candidates[0]
 
 
 def _pick_by_difficulty(pool: list, dist: dict) -> list:
@@ -33,30 +50,50 @@ def _pick_by_difficulty(pool: list, dist: dict) -> list:
     return result
 
 
+def get_assigned_exam_name(employee_id: str) -> str:
+    assigned_set = _find_assigned_exam_set(employee_id)
+    if not assigned_set:
+        return DEFAULT_EXAM_NAME
+    return assigned_set.get("name") or DEFAULT_EXAM_NAME
+
+
 def generate_exam_questions(team_code: str, preview: bool = False, config: dict = None,
-                            total_count: int = 25, manual_dist: dict = None) -> dict:
+                            total_count: int = 25, manual_dist: dict = None,
+                            employee_id: str = "") -> dict:
     q_repo, r_repo, s_repo = _get_repos()
-    team_key = TEAM_KEY_MAP.get(team_code, "team1")
 
-    data = q_repo.get_all_questions()
-    # preview 모드는 approved+reviewing 포함, 실제 시험은 approved만
-    allowed = {"approved", "reviewing"} if preview else {"approved"}
-    pool = (
-        [q for q in data.get("common",  []) if q.get("status") in allowed]
-        + [q for q in data.get(team_key, []) if q.get("status") in allowed]
-        + [q for q in data.get("safety",  []) if q.get("status") in allowed]
-        + [q for q in data.get("general", []) if q.get("status") in allowed]
-    )
+    assigned_set = None if preview else _find_assigned_exam_set(employee_id)
 
-    dist = manual_dist if manual_dist else _calc_dist(total_count)
-    questions = _pick_by_difficulty(pool, dist)
-    # 난이도별 부족 시 나머지 풀에서 보충
-    if len(questions) < total_count:
-        picked_ids = {q.get("question_id") for q in questions}
-        remaining = [q for q in pool if q.get("question_id") not in picked_ids]
-        random.shuffle(remaining)
-        questions += remaining[:total_count - len(questions)]
-    random.shuffle(questions)
+    if assigned_set:
+        exam_name = assigned_set.get("name") or DEFAULT_EXAM_NAME
+        exam_set_id = assigned_set.get("exam_set_id", "")
+        team_code = assigned_set.get("team_code", team_code)
+        questions = [q_repo.get_question(qid) for qid in assigned_set.get("question_ids", [])]
+        questions = [q for q in questions if q]
+    else:
+        exam_name = DEFAULT_EXAM_NAME
+        exam_set_id = ""
+        team_key = TEAM_KEY_MAP.get(team_code, "team1")
+
+        data = q_repo.get_all_questions()
+        # preview 모드는 approved+reviewing 포함, 실제 시험은 approved만
+        allowed = {"approved", "reviewing"} if preview else {"approved"}
+        pool = (
+            [q for q in data.get("common",  []) if q.get("status") in allowed]
+            + [q for q in data.get(team_key, []) if q.get("status") in allowed]
+            + [q for q in data.get("safety",  []) if q.get("status") in allowed]
+            + [q for q in data.get("general", []) if q.get("status") in allowed]
+        )
+
+        dist = manual_dist if manual_dist else _calc_dist(total_count)
+        questions = _pick_by_difficulty(pool, dist)
+        # 난이도별 부족 시 나머지 풀에서 보충
+        if len(questions) < total_count:
+            picked_ids = {q.get("question_id") for q in questions}
+            remaining = [q for q in pool if q.get("question_id") not in picked_ids]
+            random.shuffle(remaining)
+            questions += remaining[:total_count - len(questions)]
+        random.shuffle(questions)
 
     exam_id = str(uuid.uuid4())
 
@@ -75,12 +112,18 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
             }
             for q in questions
         }
-        snapshot["_meta"] = {"team_code": team_code, "created_at": datetime.now(timezone.utc).isoformat()}
+        snapshot["_meta"] = {
+            "team_code": team_code,
+            "exam_set_id": exam_set_id,
+            "name": exam_name,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
         s_repo.save_snapshot(exam_id, snapshot)
 
     return {
         "exam_id": exam_id,
         "team_code": team_code,
+        "name": exam_name,
         "preview": preview,
         "questions": [
             {
@@ -144,7 +187,7 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_i
     result_data = {
         "exam_id": exam_id,
         "employee_id": employee_id,
-        "exam_set_id": meta.get("exam_set_id", "legacy"),
+        "exam_set_id": meta.get("exam_set_id") or "legacy",
         "name": name,
         "score": score,
         "pass": score >= 70,

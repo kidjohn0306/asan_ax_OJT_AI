@@ -53,7 +53,7 @@ function diffBadgeStyle(diff) {
 }
 
 /* ── IdentityScreen ─────────────────────────────────────────── */
-function IdentityScreen({ empInfo, onStart }) {
+function IdentityScreen({ empInfo, examName, onStart }) {
   const today = new Date()
   const dateStr = `${today.getFullYear()}년 ${today.getMonth()+1}월 ${today.getDate()}일`
 
@@ -68,7 +68,7 @@ function IdentityScreen({ empInfo, onStart }) {
           <div style={{ fontSize:13, color:'var(--text-muted)', marginTop:2 }}>인재개발부 · OJT 평가 시스템</div>
         </div>
 
-        <div style={{ fontSize:22, fontWeight:800, color:'var(--text)', letterSpacing:'-0.5px', marginBottom:6, textAlign:'center' }}>OJT 기초고사</div>
+        <div style={{ fontSize:22, fontWeight:800, color:'var(--text)', letterSpacing:'-0.5px', marginBottom:6, textAlign:'center' }}>{examName}</div>
         <div style={{ fontSize:14, color:'var(--text-muted)', marginBottom:28, textAlign:'center' }}>시험 전 응시자 정보를 확인해 주세요</div>
 
         <div style={{ width:'100%', background:'var(--bg)', borderRadius:12, border:'1px solid var(--border)', padding:'20px 24px', marginBottom:24 }}>
@@ -312,7 +312,7 @@ function ScoringScreen({ title, sub }) {
 }
 
 /* ── ResultScreen ───────────────────────────────────────────── */
-function ResultScreen({ empInfo, questions, answers, score, onFinish }) {
+function ResultScreen({ empInfo, examName, questions, answers, score, onFinish }) {
   const [accordionOpen, setAccordionOpen] = useState(false)
   const pass = score >= 70
 
@@ -324,7 +324,7 @@ function ResultScreen({ empInfo, questions, answers, score, onFinish }) {
       <div style={{ background:'var(--primary)', padding:'20px 32px', display:'flex', alignItems:'center', justifyContent:'space-between', color:'white', flexShrink:0 }}>
         <div>
           <div style={{ fontSize:16, fontWeight:800 }}>(주)엑스티</div>
-          <div style={{ fontSize:13, opacity:0.65, marginTop:2 }}>OJT 기초고사 · 시험 결과</div>
+          <div style={{ fontSize:13, opacity:0.65, marginTop:2 }}>{examName} · 시험 결과</div>
         </div>
         <div style={{ fontSize:13, opacity:0.7, textAlign:'right' }}>{empInfo.name} · {empInfo.empno}</div>
       </div>
@@ -412,6 +412,14 @@ export default function Exam() {
     if (!empInfo.name || !empInfo.empno) navigate('/', { replace: true })
   }, [])
 
+  useEffect(() => {
+    if (!empInfo.empno) return
+    fetch(`/api/exam/assigned-name?employee_id=${encodeURIComponent(empInfo.empno)}`)
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data?.name) setExamName(data.name) })
+      .catch(() => {})
+  }, [])
+
   const [screen, setScreen] = useState('identity')
   const [showAdminNotice, setShowAdminNotice] = useState(sessionStorage.getItem('role') === 'admin')
   const [showExitConfirm, setShowExitConfirm] = useState(false)
@@ -421,6 +429,7 @@ export default function Exam() {
   const [currentQ, setCurrentQ] = useState(0)
   const [timerSeconds, setTimerSeconds] = useState(3600)
   const [examId, setExamId] = useState(null)
+  const [examName, setExamName] = useState('OJT 기초고사')
   const [score, setScore] = useState(null)
   const timerRef = useRef(null)
   const handleSubmitRef = useRef(null)
@@ -470,11 +479,12 @@ export default function Exam() {
       const res = await fetch('/api/exam/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ team_code: teamCode }),
+        body: JSON.stringify({ team_code: teamCode, employee_id: empInfo.empno }),
       })
       if (res.ok) {
         const data = await res.json()
         setExamId(data.exam_id)
+        if (data.name) setExamName(data.name)
         const qs = data.questions.map(q => ({
           id: q.id, cat: q.category, diff: q.difficulty || '중',
           q: q.question, opts: [q.options.A, q.options.B, q.options.C, q.options.D], ans: -1,
@@ -540,7 +550,7 @@ export default function Exam() {
 
   return (
     <>
-      {screen === 'identity' && <IdentityScreen empInfo={empInfo} onStart={handleStart} />}
+      {screen === 'identity' && <IdentityScreen empInfo={empInfo} examName={examName} onStart={handleStart} />}
       {(screen === 'exam' || screen === 'confirm') && (
         <ExamScreen
           questions={questions}
@@ -579,7 +589,7 @@ export default function Exam() {
         />
       )}
       {screen === 'result' && score !== null && (
-        <ResultScreen empInfo={empInfo} questions={questions} answers={answers} score={score} onFinish={handleFinish} />
+        <ResultScreen empInfo={empInfo} examName={examName} questions={questions} answers={answers} score={score} onFinish={handleFinish} />
       )}
     </>
   )

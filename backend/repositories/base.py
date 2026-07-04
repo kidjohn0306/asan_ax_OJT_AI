@@ -69,3 +69,6 @@ class ExamSetRepository(ABC):
 
     @abstractmethod
     def unassign_user(self, exam_set_id: str, employee_id: str) -> bool: ...
+
+    @abstractmethod
+    def update_exam_set(self, exam_set_id: str, fields: dict) -> bool: ...
