@@ -1,22 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Literal, Optional
 
+from api.deps import require_admin
+
 router = APIRouter()
-_bearer = HTTPBearer()
 
 DifficultyLevel = Literal["상", "중", "하"]
 TeamCode = Literal["T1", "T2", "T3"]
 StatusType = Literal["draft", "reviewing", "approved", "rejected"]
-
-
-def require_admin(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
-    from services.auth_service import decode_token
-    payload = decode_token(creds.credentials)
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
-    return payload
 
 
 class DifficultyPatchRequest(BaseModel):

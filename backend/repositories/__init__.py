@@ -30,14 +30,24 @@ if _use_sheets:
 else:
     exam_set_repo = LocalExamSetRepository()
 
-# exam_set 외 다른 repo는 local 또는 drive 만 사용
-_other_backend = "local" if _backend == "sheets" else _backend
-if _other_backend == "local":
+if _backend == "sheets":
+    try:
+        from repositories.sheets_repo import SheetsResultRepository, SheetsSnapshotRepository
+        result_repo = SheetsResultRepository()
+        snapshot_repo = SheetsSnapshotRepository()
+    except Exception as _sheets_err:
+        import logging
+        logging.warning(f"SheetsResultRepository 초기화 실패, local로 폴백: {_sheets_err}")
+        result_repo = LocalResultRepository()
+        snapshot_repo = LocalSnapshotRepository()
+    question_repo = LocalQuestionRepository()
+    feedback_repo = LocalFeedbackRepository()
+elif _backend == "local":
     question_repo = LocalQuestionRepository()
     result_repo = LocalResultRepository()
     snapshot_repo = LocalSnapshotRepository()
     feedback_repo = LocalFeedbackRepository()
-elif _other_backend == "drive":
+elif _backend == "drive":
     from repositories.drive_repo import DriveQuestionRepository, DriveResultRepository, DriveSnapshotRepository
     question_repo = DriveQuestionRepository()
     result_repo = DriveResultRepository()
