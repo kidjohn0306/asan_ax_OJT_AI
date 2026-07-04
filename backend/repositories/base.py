@@ -69,3 +69,34 @@ class ExamSetRepository(ABC):
 
     @abstractmethod
     def unassign_user(self, exam_set_id: str, employee_id: str) -> bool: ...
+
+
+class TeamRepository(ABC):
+    @abstractmethod
+    def list_teams(self) -> list: ...
+
+    @abstractmethod
+    def get_team(self, team_id: str) -> dict | None: ...
+
+    @abstractmethod
+    def create_team(self, data: dict) -> dict: ...
+
+    @abstractmethod
+    def update_team(self, team_id: str, fields: dict) -> dict | None: ...
+
+    @abstractmethod
+    def delete_team(self, team_id: str) -> bool: ...
+
+
+class QuestionStatsRepository(ABC):
+    @abstractmethod
+    def increment_batch(self, question_ids: list) -> None: ...
+
+    @abstractmethod
+    def get_stats(self, question_id: str) -> dict | None: ...
+
+    @abstractmethod
+    def list_all_stats(self) -> dict: ...
+
+    @abstractmethod
+    def list_flagged(self) -> list: ...
