@@ -85,6 +85,13 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
         snapshot["_meta"] = {"team_code": team_code, "created_at": datetime.now(timezone.utc).isoformat()}
         s_repo.save_snapshot(exam_id, snapshot)
 
+        # 출제 횟수 트래킹 — 실패해도 시험 생성은 계속
+        try:
+            from repositories import question_stats_repo
+            question_stats_repo.increment_batch([q["question_id"] for q in questions])
+        except Exception:
+            pass
+
     return {
         "exam_id": exam_id,
         "team_code": team_code,

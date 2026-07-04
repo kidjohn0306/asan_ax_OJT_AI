@@ -11,6 +11,18 @@ import requests
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 _MAX_REJECTED_EXAMPLES = 5
+_MAX_MATERIAL_CHARS = 4000  # 약 1000 토큰 — 무료 티어 토큰 절약
+
+
+def _truncate_material(text: str) -> str:
+    if len(text) <= _MAX_MATERIAL_CHARS:
+        return text
+    # 문장 경계에서 자름
+    truncated = text[:_MAX_MATERIAL_CHARS]
+    last_period = max(truncated.rfind('。'), truncated.rfind('.'), truncated.rfind('\n'))
+    if last_period > _MAX_MATERIAL_CHARS * 0.7:
+        truncated = truncated[:last_period + 1]
+    return truncated + "\n[이하 생략 — 토큰 절약을 위해 요약 처리됨]"
 
 
 def _build_prompt(material_text: str, category: str, count: int, difficulty_hint: str, rejected_examples: list) -> str:
@@ -75,7 +87,7 @@ def generate_questions_from_material(
     if not api_key:
         raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
 
-    prompt = _build_prompt(material_text, category, count, difficulty_hint, rejected_examples or [])
+    prompt = _build_prompt(_truncate_material(material_text), category, count, difficulty_hint, rejected_examples or [])
     raw = _call_api(prompt, api_key)
     questions_raw = _parse_response(raw)
 
