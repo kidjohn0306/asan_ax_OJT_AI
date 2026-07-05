@@ -213,6 +213,12 @@ def get_teams(_: dict = Depends(require_admin)):
     return {"teams": list_teams()}
 
 
+@router.get("/teams/headcount")
+def get_team_headcounts(_: dict = Depends(require_admin)):
+    from services.admin_service import fetch_team_headcounts
+    return fetch_team_headcounts()
+
+
 @router.post("/teams")
 def create_team(body: CreateTeamRequest, _: dict = Depends(require_admin)):
     from services.admin_service import create_team as _create

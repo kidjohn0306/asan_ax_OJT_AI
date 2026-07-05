@@ -275,6 +275,7 @@ function Dashboard({ onNavigate }) {
 function QuestionGenerate({ toast, onNavigate }) {
   const [mode, setMode] = useState('preset')
   const [team, setTeam] = useState('T1')
+  const [teams, setTeams] = useState([])
   const [diff, setDiff] = useState('중급')
   const [count, setCount] = useState('25문항')
   const [material, setMaterial] = useState('')
@@ -288,6 +289,10 @@ function QuestionGenerate({ toast, onNavigate }) {
 
   const DIFF_MAP = { '초급': '하', '중급': '중', '고급': '상' }
   const COUNT_MAP = { '10문항': 10, '20문항': 20, '25문항': 25 }
+
+  useEffect(() => {
+    apiFetch('GET', '/api/admin/teams').then(d => setTeams(d.teams || [])).catch(() => {})
+  }, [])
 
   async function generate() {
     setLoading(true)
@@ -318,7 +323,7 @@ function QuestionGenerate({ toast, onNavigate }) {
 
   function handlePdf() {
     if (!preview || preview.length === 0) { toast('먼저 문제를 생성해주세요.', 'error'); return }
-    const teamLabel = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }[team] || team
+    const teamLabel = teamOpts.find(([val]) => val === team)?.[1] || team
     const rows = preview.map((q, i) => {
       const opts = q.options || {}
       return `
@@ -369,7 +374,8 @@ function QuestionGenerate({ toast, onNavigate }) {
     setBulkCats(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat])
   }
 
-  const teamOpts = [['T1','1팀 (주간)'],['T2','2팀 (4조3교대)'],['T3','3팀 (3조2교대)']]
+  const teamOpts = (teams.length > 0 ? teams : [{ team_code:'T1', team_name:'1팀' }, { team_code:'T2', team_name:'2팀' }, { team_code:'T3', team_name:'3팀' }])
+    .map(t => [t.team_code, t.team_name])
   const diffOpts = ['초급','중급','고급']
   const countOpts = ['10문항','20문항','25문항']
   const catOpts = ['공통','팀별','환경안전','일반상식']
@@ -631,11 +637,16 @@ function ExamReview({ toast }) {
 /* ── 문제은행 (승인된 문제 목록) ─────────────────────────────── */
 function QuestionBank({ toast, onNavigate }) {
   const [items, setItems] = useState(null)
+  const [stats, setStats] = useState({})
   const [cat, setCat] = useState('')
   const [statusFilter, setStatusFilter] = useState('approved')
   const [rejectingId, setRejectingId] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
   const [reasonCodes, setReasonCodes] = useState({})
+
+  useEffect(() => {
+    apiFetch('GET', '/api/admin/question-stats').then(data => setStats(data.stats || {})).catch(() => {})
+  }, [])
 
   const STATUS_TABS = [
     { value: 'approved',  label: '승인 (문제은행)' },
@@ -738,6 +749,12 @@ function QuestionBank({ toast, onNavigate }) {
                         <StatusBadge status={q.status} />
                         {q.flags?.warning && <span title="카테고리·팀 불일치">⚠️</span>}
                         {q.flags?.security_hold && <span title="보안 키워드 감지">🔒</span>}
+                        {stats[q.question_id]?.exam_count > 0 && (
+                          <span title="누적 출제 횟수" style={{ fontSize:11, color:'var(--text-muted)' }}>
+                            출제 {stats[q.question_id].exam_count}회
+                          </span>
+                        )}
+                        {stats[q.question_id]?.flagged_frequent && <Badge type="warning">자주 출제됨</Badge>}
                       </div>
                       <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4 }}>{q.question}</div>
                     </div>
@@ -787,6 +804,7 @@ function QuestionBank({ toast, onNavigate }) {
 function ExamSheet({ toast, onNavigate }) {
   const [examName, setExamName] = useState('')
   const [team, setTeam] = useState('T1')
+  const [teams, setTeams] = useState([])
   const [totalCount, setTotalCount] = useState(25)
   const [manualMode, setManualMode] = useState(false)
   const [manualUpper, setManualUpper] = useState(7)
@@ -797,7 +815,12 @@ function ExamSheet({ toast, onNavigate }) {
   const [swapTargetIdx, setSwapTargetIdx] = useState(null)
   const [swapPool, setSwapPool] = useState([])
 
-  const teamOpts = [['T1','1팀 (주간)'],['T2','2팀 (4조3교대)'],['T3','3팀 (3조2교대)']]
+  useEffect(() => {
+    apiFetch('GET', '/api/admin/teams').then(d => setTeams(d.teams || [])).catch(() => {})
+  }, [])
+
+  const teamOpts = (teams.length > 0 ? teams : [{ team_code:'T1', team_name:'1팀' }, { team_code:'T2', team_name:'2팀' }, { team_code:'T3', team_name:'3팀' }])
+    .map(t => [t.team_code, t.team_name])
 
   async function assign() {
     if (manualMode && (manualUpper + manualMid + manualLow) !== totalCount) {
@@ -1178,136 +1201,6 @@ function StatusBadge({ status }) {
   }
   const m = map[status] || { type:'gray', label: status }
   return <Badge type={m.type}>{m.label}</Badge>
-}
-
-function Questions({ toast }) {
-  const [items, setItems] = useState(null)
-  const [cat, setCat] = useState('')
-  const [diff, setDiff] = useState('')
-  const [openId, setOpenId] = useState(null)
-  const [page, setPage] = useState(0)
-  const [pageSize, setPageSize] = useState(10)
-
-  async function load() {
-    try {
-      const data = await apiFetch('GET', `/api/admin/questions${cat ? `?category=${encodeURIComponent(cat)}` : ''}`)
-      setItems(data.questions)
-      setPage(0)
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
-  }
-
-  async function updateDiff(qid, newDiff) {
-    try {
-      await apiFetch('PATCH', '/api/admin/difficulty', { question_id: qid, new_difficulty: newDiff })
-      toast(`${qid} 난이도 → ${newDiff} 변경 완료`)
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
-  }
-
-  return (
-    <Card title="문제 관리 · 난이도 조정" noPad action={
-      <div style={{ display:'flex', gap:8 }}>
-        <FilterSelect value={cat} onChange={setCat}>
-          <option value="">전체 카테고리</option>
-          <option value="공통">공통</option><option value="팀별">팀별</option><option value="환경안전">환경안전</option><option value="일반상식">일반상식</option>
-        </FilterSelect>
-        <FilterSelect value={diff} onChange={v => { setDiff(v); setPage(0) }}>
-          <option value="">전체 난이도</option>
-          <option value="하">하</option><option value="중">중</option><option value="상">상</option>
-        </FilterSelect>
-        <BtnOutlineSm onClick={load}>조회</BtnOutlineSm>
-      </div>
-    }>
-      <div style={{ padding:'9px 20px', background:'var(--bg)', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>
-        난이도 드롭다운을 변경하면 즉시 서버에 반영됩니다.
-      </div>
-      <div style={{ padding:'14px 20px' }}>
-        {!items ? (
-          <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>조회 버튼을 눌러 문제를 불러오세요.</p>
-        ) : items.length === 0 ? (
-          <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>문제가 없습니다.</p>
-        ) : (() => {
-          const filtered = diff ? items.filter(q => (q.difficulty_ai || q.difficulty_init) === diff) : items
-          const totalPages = pageSize === 0 ? 1 : Math.ceil(filtered.length / pageSize)
-          const paged = pageSize === 0 ? filtered : filtered.slice(page * pageSize, (page + 1) * pageSize)
-          return (<>
-          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-            {paged.map(q => {
-              const d = q.difficulty_ai || q.difficulty_init
-              const isOpen = openId === q.question_id
-              const opts = [['A', q.option_a], ['B', q.option_b], ['C', q.option_c], ['D', q.option_d]]
-              return (
-                <div key={q.question_id} style={{ border:'1px solid var(--border)', borderRadius:7, overflow:'hidden' }}>
-                  <div
-                    onClick={() => setOpenId(isOpen ? null : q.question_id)}
-                    style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'10px 12px', cursor:'pointer', background: isOpen ? 'var(--accent-light)' : 'white' }}
-                  >
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:11, color:'var(--text-muted)' }}>{q.question_id} · {q.category}</div>
-                      <div style={{ fontSize:12, color:'var(--text)', fontWeight:500, lineHeight:1.4, marginTop:2 }}>{q.question}</div>
-                    </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, flexShrink:0, marginLeft:12 }}>
-                      <span style={{ fontSize:11, fontWeight:700, padding:'3px 9px', borderRadius:20, ...({ 상:{background:'#fee2e2',color:'#b91c1c'}, 중:{background:'#fef3c7',color:'#b45309'}, 하:{background:'#d1fae5',color:'#065f46'} }[d] || {}) }}>{d}</span>
-                      <select
-                        value={d}
-                        onClick={e => e.stopPropagation()}
-                        onChange={e => updateDiff(q.question_id, e.target.value)}
-                        style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', background:'white', outline:'none' }}
-                      >
-                        <option value="하">하</option><option value="중">중</option><option value="상">상</option>
-                      </select>
-                      <svg width={14} height={14} viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" strokeWidth="2.5" strokeLinecap="round" style={{ transition:'transform 0.2s', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)', flexShrink:0 }}>
-                        <path d="M6 9l6 6 6-6"/>
-                      </svg>
-                    </div>
-                  </div>
-                  {isOpen && (
-                    <div style={{ padding:'12px 16px', background:'var(--bg)', borderTop:'1px solid var(--border)' }}>
-                      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                        {opts.map(([label, text]) => (
-                          <div key={label} style={{ display:'flex', alignItems:'flex-start', gap:8 }}>
-                            <span style={{
-                              width:22, height:22, borderRadius:'50%', flexShrink:0,
-                              background: q.answer === label ? 'var(--accent)' : 'var(--border)',
-                              color: q.answer === label ? 'white' : 'var(--text-muted)',
-                              display:'flex', alignItems:'center', justifyContent:'center',
-                              fontSize:11, fontWeight:700,
-                            }}>{label}</span>
-                            <span style={{ fontSize:12, color:'var(--text)', lineHeight:1.5, paddingTop:3 }}>{text}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              )
-            })}
-          </div>
-          {filtered.length > 0 && (
-            <div style={{ position:'relative', marginTop:16, paddingTop:12, borderTop:'1px solid var(--border)' }}>
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
-                <button onClick={() => setPage(p => Math.max(0, p - 1))} disabled={page === 0} style={{ height:30, padding:'0 10px', border:'1.5px solid var(--border)', borderRadius:6, background:'white', fontSize:12, cursor: page === 0 ? 'not-allowed' : 'pointer', opacity: page === 0 ? 0.4 : 1, fontFamily:'var(--font)' }}>이전</button>
-                {Array.from({ length: Math.min(totalPages, 10) }, (_, i) => i).map(i => (
-                  <button key={i} onClick={() => setPage(i)} style={{ height:30, minWidth:30, padding:'0 6px', border:`1.5px solid ${page === i ? 'var(--accent)' : 'var(--border)'}`, borderRadius:6, background: page === i ? 'var(--accent)' : 'white', color: page === i ? 'white' : 'var(--text)', fontSize:12, fontWeight: page === i ? 700 : 400, cursor:'pointer', fontFamily:'var(--font)' }}>{i + 1}</button>
-                ))}
-                <button onClick={() => setPage(p => Math.min(totalPages - 1, p + 1))} disabled={page === totalPages - 1} style={{ height:30, padding:'0 10px', border:'1.5px solid var(--border)', borderRadius:6, background:'white', fontSize:12, cursor: page === totalPages - 1 ? 'not-allowed' : 'pointer', opacity: page === totalPages - 1 ? 0.4 : 1, fontFamily:'var(--font)' }}>다음</button>
-              </div>
-              <select
-                value={pageSize}
-                onChange={e => { setPageSize(Number(e.target.value)); setPage(0) }}
-                style={{ position:'absolute', right:0, top:'50%', transform:'translateY(-50%)', border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:12, background:'white', outline:'none', cursor:'pointer' }}
-              >
-                <option value={10}>10개씩 보기</option>
-                <option value={15}>15개씩 보기</option>
-                <option value={30}>30개씩 보기</option>
-                <option value={0}>전체 보기</option>
-              </select>
-            </div>
-          )}
-          </>)
-        })()}
-      </div>
-    </Card>
-  )
 }
 
 /* ── 사용자 승인 ─────────────────────────────────────────────── */
@@ -1844,12 +1737,14 @@ function ExamStatus({ toast }) {
 /* ── 팀 관리 ─────────────────────────────────────────────────── */
 function TeamsManager({ toast }) {
   const [teams, setTeams] = useState([])
+  const [headcounts, setHeadcounts] = useState({})
   const [form, setForm] = useState({ team_id:'', team_name:'', team_code:'' })
   const [editId, setEditId] = useState(null)
   const [editName, setEditName] = useState('')
 
   async function load() {
     try { const d = await apiFetch('GET', '/api/admin/teams'); setTeams(d.teams) } catch {}
+    try { const d = await apiFetch('GET', '/api/admin/teams/headcount'); setHeadcounts(d.headcounts || {}) } catch {}
   }
   useEffect(() => { load() }, [])
 
@@ -1888,9 +1783,9 @@ function TeamsManager({ toast }) {
       </Card>
 
       <Card title="팀 목록" noPad action={<BtnOutlineSm onClick={load}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
-        <DataTable headers={['팀 ID','팀명','코드','관리']}>
+        <DataTable headers={['팀 ID','팀명','코드','실제 인원','관리']}>
           {teams.length === 0 ? (
-            <tr><td colSpan={4} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>팀이 없습니다.</td></tr>
+            <tr><td colSpan={5} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>팀이 없습니다.</td></tr>
           ) : teams.map(t => (
             <tr key={t.team_id}>
               <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)', fontFamily:'monospace' }}>{t.team_id}</td>
@@ -1901,6 +1796,7 @@ function TeamsManager({ toast }) {
                 ) : t.team_name}
               </td>
               <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12 }}>{t.team_code}</td>
+              <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{headcounts[t.team_code] || 0}명</td>
               <td style={{ padding:'10px 14px', borderBottom:'1px solid var(--border)', display:'flex', gap:6 }}>
                 {editId === t.team_id ? (
                   <>

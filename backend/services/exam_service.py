@@ -43,7 +43,8 @@ def _pick_by_difficulty(pool: list, dist: dict) -> list:
 def generate_exam_questions(team_code: str, preview: bool = False, config: dict = None,
                             total_count: int = 25, manual_dist: dict = None) -> dict:
     q_repo, r_repo, s_repo = _get_repos()
-    team_key = TEAM_KEY_MAP.get(team_code, "team1")
+    # T1/T2/T3는 기존 team1/team2/team3 문제풀에 매핑(하위호환), 그 외 신규 팀은 team_code 자체를 풀 키로 사용
+    team_key = TEAM_KEY_MAP.get(team_code, team_code)
 
     data = q_repo.get_all_questions()
     # preview 모드는 approved+reviewing 포함, 실제 시험은 approved만

@@ -123,7 +123,7 @@ export default function Login() {
       sessionStorage.setItem('emp_id', empId)
 
       if (data.role === 'admin') {
-        navigate('/admin')
+        navigate('/xt-hq-2b7f')
       } else {
         navigate('/exam')
       }
