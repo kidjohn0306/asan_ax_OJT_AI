@@ -78,8 +78,13 @@ def _call_api(prompt: str, api_key: str) -> str:
 
 
 def _parse_response(raw: str) -> list:
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
+    raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+    raw = re.sub(r"\s*```$", "", raw).strip()
+    # 모델이 지시를 무시하고 JSON 앞뒤에 설명 텍스트를 덧붙이는 경우를 대비해
+    # 첫 '['부터 마지막 ']'까지만 잘라서 파싱한다
+    start, end = raw.find('['), raw.rfind(']')
+    if start != -1 and end != -1 and end > start:
+        raw = raw[start:end + 1]
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:

@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from pathlib import Path
 
@@ -199,7 +200,9 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
         questions = generate_questions_from_material(
             material_text, category, count, difficulty_hint, rejected_examples, overused_questions
         )
-    except Exception:
+    except Exception as e:
+        provider = os.getenv("AI_PROVIDER", "mock")
+        logging.exception(f"AI 문제 생성 실패 (provider={provider}): {e}")
         raise HTTPException(status_code=502, detail="AI 문제 생성에 실패했습니다. 잠시 후 다시 시도해주세요.")
 
     passed, failed_list = [], []
