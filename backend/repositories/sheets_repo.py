@@ -1,7 +1,33 @@
 import os
 import json
+import logging
+import functools
 from datetime import datetime, timezone
 from repositories.base import ExamSetRepository, ResultRepository, SnapshotRepository
+from repositories.local_json import (
+    LocalExamSetRepository,
+    LocalResultRepository,
+    LocalSnapshotRepository,
+    LocalTeamRepository,
+    LocalQuestionStatsRepository,
+)
+
+
+def _fallback_on_error(local_cls):
+    """Sheets API 호출 실패(할당량 초과·API 비활성화 등) 시 동일 시그니처의 Local 저장소로 위임."""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except Exception as exc:
+                logging.warning(f"{type(self).__name__}.{func.__name__} 실패, {local_cls.__name__}로 폴백: {exc}")
+                if getattr(self, "_local_fallback", None) is None:
+                    self._local_fallback = local_cls()
+                return getattr(self._local_fallback, func.__name__)(*args, **kwargs)
+        return wrapper
+    return decorator
+
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_TAB = "exam_sets"
@@ -145,10 +171,12 @@ class SheetsExamSetRepository(ExamSetRepository):
 
     # ── 공개 인터페이스 ──────────────────────────────────────────────────────
 
+    @_fallback_on_error(LocalExamSetRepository)
     def list_exam_sets(self) -> list:
         self._maybe_ensure_tab()
         return [self._row_to_dict(r) for r in self._read_all_rows()]
 
+    @_fallback_on_error(LocalExamSetRepository)
     def get_exam_set(self, exam_set_id: str) -> dict | None:
         self._maybe_ensure_tab()
         for row in self._read_all_rows():
@@ -157,6 +185,7 @@ class SheetsExamSetRepository(ExamSetRepository):
                 return d
         return None
 
+    @_fallback_on_error(LocalExamSetRepository)
     def create_exam_set(self, data: dict) -> dict:
         self._maybe_ensure_tab()
         data.setdefault("assigned_users", [])
@@ -170,6 +199,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         ).execute()
         return data
 
+    @_fallback_on_error(LocalExamSetRepository)
     def assign_user(self, exam_set_id: str, employee_id: str) -> bool:
         self._maybe_ensure_tab()
         row_idx = self._find_sheet_row(exam_set_id)
@@ -189,6 +219,7 @@ class SheetsExamSetRepository(ExamSetRepository):
             self._update_assigned_users(row_idx, assigned)
         return True
 
+    @_fallback_on_error(LocalExamSetRepository)
     def unassign_user(self, exam_set_id: str, employee_id: str) -> bool:
         self._maybe_ensure_tab()
         row_idx = self._find_sheet_row(exam_set_id)
@@ -280,6 +311,7 @@ class SheetsResultRepository(ResultRepository):
             data.get("saved_at", ""),
         ]
 
+    @_fallback_on_error(LocalResultRepository)
     def append_result(self, result: dict) -> None:
         self._maybe_ensure_tab()
         result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
@@ -291,6 +323,7 @@ class SheetsResultRepository(ResultRepository):
             body={"values": [self._dict_to_row(result)]},
         ).execute()
 
+    @_fallback_on_error(LocalResultRepository)
     def get_result(self, exam_id: str) -> dict:
         self._maybe_ensure_tab()
         for row in self._read_all_rows():
@@ -299,6 +332,7 @@ class SheetsResultRepository(ResultRepository):
                 return d
         return None
 
+    @_fallback_on_error(LocalResultRepository)
     def get_all_results(self) -> dict:
         self._maybe_ensure_tab()
         results = {}
@@ -308,10 +342,12 @@ class SheetsResultRepository(ResultRepository):
                 results[d["exam_id"]] = d
         return results
 
+    @_fallback_on_error(LocalResultRepository)
     def count(self) -> int:
         self._maybe_ensure_tab()
         return len(self._read_all_rows())
 
+    @_fallback_on_error(LocalResultRepository)
     def list_results_by_set(self, exam_set_id: str) -> list:
         self._maybe_ensure_tab()
         return [self._row_to_dict(r) for r in self._read_all_rows() if len(r) > 1 and r[1] == exam_set_id]
@@ -351,6 +387,7 @@ class SheetsSnapshotRepository(SnapshotRepository):
                 body={"values": [SNAPSHOTS_HEADERS]},
             ).execute()
 
+    @_fallback_on_error(LocalSnapshotRepository)
     def save_snapshot(self, exam_id: str, snapshot: dict) -> None:
         self._maybe_ensure_tab()
         self._values().append(
@@ -365,6 +402,7 @@ class SheetsSnapshotRepository(SnapshotRepository):
             ]]},
         ).execute()
 
+    @_fallback_on_error(LocalSnapshotRepository)
     def get_snapshot(self, exam_id: str) -> dict:
         self._maybe_ensure_tab()
         res = self._values().get(
@@ -450,11 +488,13 @@ class SheetsTeamRepository:
                 return i
         return -1
 
+    @_fallback_on_error(LocalTeamRepository)
     def list_teams(self) -> list:
         self._maybe_ensure_tab()
         teams = [self._row_to_dict(r) for r in self._read_all_rows() if r and r[0]]
         return teams if teams else list(DEFAULT_TEAMS)
 
+    @_fallback_on_error(LocalTeamRepository)
     def get_team(self, team_id: str) -> dict | None:
         self._maybe_ensure_tab()
         for row in self._read_all_rows():
@@ -463,6 +503,7 @@ class SheetsTeamRepository:
                 return d
         return None
 
+    @_fallback_on_error(LocalTeamRepository)
     def create_team(self, data: dict) -> dict:
         self._maybe_ensure_tab()
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
@@ -476,6 +517,7 @@ class SheetsTeamRepository:
         ).execute()
         return data
 
+    @_fallback_on_error(LocalTeamRepository)
     def update_team(self, team_id: str, fields: dict) -> dict | None:
         self._maybe_ensure_tab()
         row_idx = self._find_row_index(team_id)
@@ -492,6 +534,7 @@ class SheetsTeamRepository:
         ).execute()
         return team
 
+    @_fallback_on_error(LocalTeamRepository)
     def delete_team(self, team_id: str) -> bool:
         self._maybe_ensure_tab()
         row_idx = self._find_row_index(team_id)
@@ -559,6 +602,7 @@ class SheetsQuestionStatsRepository:
             "flagged_frequent": _get(3) == "TRUE",
         }
 
+    @_fallback_on_error(LocalQuestionStatsRepository)
     def get_stats(self, question_id: str) -> dict | None:
         self._maybe_ensure_tab()
         for row in self._read_all_rows():
@@ -566,14 +610,17 @@ class SheetsQuestionStatsRepository:
                 return self._row_to_dict(row)
         return None
 
+    @_fallback_on_error(LocalQuestionStatsRepository)
     def list_all_stats(self) -> dict:
         self._maybe_ensure_tab()
         return {d["question_id"]: d for d in (self._row_to_dict(r) for r in self._read_all_rows()) if d["question_id"]}
 
+    @_fallback_on_error(LocalQuestionStatsRepository)
     def list_flagged(self) -> list:
         self._maybe_ensure_tab()
         return [d for d in (self._row_to_dict(r) for r in self._read_all_rows()) if d["flagged_frequent"]]
 
+    @_fallback_on_error(LocalQuestionStatsRepository)
     def increment_batch(self, question_ids: list) -> None:
         if not question_ids:
             return
