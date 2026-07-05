@@ -12,8 +12,7 @@ asan_ax_OJT_AI/
 ├── ai_engine/                # AI 문제 생성 엔진 (루트 위치 — sys.path에 의해 임포트됨)
 │   ├── router.py             # AI_PROVIDER 환경변수로 생성기 선택
 │   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) — _build_prompt/_call_api/_parse_response
-│   ├── mock_generator.py     # 목업 문제 (AI_PROVIDER=mock)
-│   └── question_generator.py # Claude API 스텁 (미구현)
+│   └── question_generator.py # Claude API (claude-sonnet-5, anthropic SDK) + mock 생성기(_mock_generate) 겸용
 ├── backend/
 │   ├── main.py               # FastAPI 앱, frontend/dist/ StaticFiles 마운트, load_dotenv(override=True)
 │   ├── api/                  # 라우터
@@ -59,12 +58,15 @@ Vercel 배포용 키는 Vercel 대시보드 Environment Variables에서 설정 (
 ### AI 제공자 선택 (`AI_PROVIDER`)
 - `mock` (기본값) — `mock_data/questions.json` 문제 사용, API 호출 없음
 - `gemini` — Gemini REST API (`gemini-2.5-flash`) 문제 생성. `GEMINI_API_KEY` 필요
-- `claude` — Claude API 스텁 (미구현, `ANTHROPIC_API_KEY` 필요)
+- `claude` — Claude API (`claude-sonnet-5`, anthropic SDK) 문제 생성. `CLAUDE_API_KEY` 필요
+- 두 제공자 모두 자주 출제된 문제(`question_stats`의 `flagged_frequent`)를 프롬프트에 회피 목록으로 전달해 중복 출제를 줄임
 
 ### 저장소 백엔드 선택 (`STORAGE_BACKEND`)
 - `local` (기본값) — `mock_data/*.json` 파일에 저장. Vercel 재배포 시 초기화됨
 - `sheets` — Google Sheets에 저장. `GOOGLE_SHEETS_ID` 필요 ✅ **권장 (Drive 할당량 이슈 해결)**
-  - `results` + `snapshots` + `exam_sets` + `teams` + `question_stats` 탭 자동 생성
+  - `results` + `snapshots` + `exam_sets` + `teams` + `question_stats` + `question_bank` 탭 자동 생성
+  - `question_bank`: 문제은행 데이터(공통/팀별/환경안전/일반상식 문제 전체). 기존 `mock_data/questions.json` 데이터는
+    `backend/scripts/migrate_questions_to_sheets.py`로 1회 이관 가능
   - 서비스 계정에 스프레드시트 편집자 권한 필요
 - `drive` — Google Drive에 저장. `DRIVE_RESULTS_FOLDER_ID` 필요
   - ⚠️ 개인 구글 계정 연결 서비스 계정은 Drive 쓰기 할당량 0 → `storageQuotaExceeded` 발생
