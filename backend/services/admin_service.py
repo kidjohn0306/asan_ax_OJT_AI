@@ -58,6 +58,16 @@ def fetch_user_count() -> dict:
     return {"count": len(data["approved_users"])}
 
 
+def fetch_team_headcounts() -> dict:
+    """팀별 실제 소속(승인된) 인원수 — 팀 관리 화면에서 정원과 대조하기 위한 실제 값."""
+    data = _load_users()
+    counts: dict = {}
+    for u in data["approved_users"]:
+        team = u.get("team") or "미배정"
+        counts[team] = counts.get(team, 0) + 1
+    return {"headcounts": counts}
+
+
 def fetch_approved_question_count() -> dict:
     q_repo, _, _ = _get_repos()
     return {"count": q_repo.count_by_status("approved")}
@@ -119,7 +129,7 @@ def fetch_questions(team=None, category=None, status=None) -> dict:
     else:
         data = q_repo.get_all_questions()
         if team:
-            team_key = TEAM_KEY_MAP.get(team)
+            team_key = TEAM_KEY_MAP.get(team, team)
             questions = data.get(team_key, [])
         else:
             questions = [q for pool in data.values() for q in pool]
@@ -164,13 +174,31 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
     from ai_engine.router import generate_questions_from_material
     from services.generation.gates import run_gates
 
-    category = TEAM_KEY_MAP.get(team_code, "team1")
+    from repositories import question_stats_repo
+
+    category = TEAM_KEY_MAP.get(team_code, team_code)
     q_repo, _, _ = _get_repos()
     rejected = q_repo.list_by_status("rejected")
     rejected_examples = [q for q in rejected if q.get("reject_reason")]
 
+    overused_questions = []
     try:
-        questions = generate_questions_from_material(material_text, category, count, difficulty_hint, rejected_examples)
+        flagged_ids = {stat["question_id"] for stat in question_stats_repo.list_flagged()}
+        if flagged_ids:
+            # get_question()을 건마다 호출하면 매번 전체 문제은행을 다시 읽으므로(N+1),
+            # 문제은행을 한 번만 불러와 조회한다.
+            all_pools = q_repo.get_all_questions().values()
+            overused_questions = [
+                q["question"] for pool in all_pools for q in pool
+                if q.get("question_id") in flagged_ids and q.get("question")
+            ]
+    except Exception:
+        pass  # 통계 조회 실패는 문제 생성 자체를 막지 않음
+
+    try:
+        questions = generate_questions_from_material(
+            material_text, category, count, difficulty_hint, rejected_examples, overused_questions
+        )
     except Exception:
         raise HTTPException(status_code=502, detail="AI 문제 생성에 실패했습니다. 잠시 후 다시 시도해주세요.")
 
@@ -354,11 +382,25 @@ def fetch_dashboard_stats() -> dict:
 def bulk_upload_users(csv_text: str) -> dict:
     import csv
     import io
+
+    if not csv_text or not csv_text.strip():
+        raise HTTPException(status_code=400, detail="CSV 파일이 비어 있습니다.")
+
+    try:
+        reader = csv.DictReader(io.StringIO(csv_text))
+        fieldnames = reader.fieldnames or []
+        rows = list(reader)
+    except csv.Error as e:
+        raise HTTPException(status_code=400, detail=f"CSV 형식을 읽을 수 없습니다: {e}")
+
+    required_cols = {"employee_id", "name"}
+    if not required_cols.issubset(set(fieldnames)):
+        raise HTTPException(status_code=400, detail=f"CSV에 필수 컬럼이 없습니다: {', '.join(sorted(required_cols))}")
+
     data = _load_users()
     all_ids = {u["employee_id"] for u in data["approved_users"] + data["admins"]}
     success, skipped, errors = 0, 0, 0
-    reader = csv.DictReader(io.StringIO(csv_text))
-    for row in reader:
+    for row in rows:
         try:
             eid = (row.get("employee_id") or "").strip()
             name = (row.get("name") or "").strip()

@@ -43,14 +43,6 @@ function catBadgeStyle(cat) {
   }
   return map[cat] || {}
 }
-function diffBadgeStyle(diff) {
-  const map = {
-    상:{ background:'#fee2e2', color:'#b91c1c' },
-    중:{ background:'#fef3c7', color:'#b45309' },
-    하:{ background:'#d1fae5', color:'#065f46' },
-  }
-  return map[diff] || {}
-}
 
 /* ── IdentityScreen ─────────────────────────────────────────── */
 function IdentityScreen({ empInfo, onStart }) {
@@ -424,6 +416,7 @@ export default function Exam() {
   const [score, setScore] = useState(null)
   const timerRef = useRef(null)
   const handleSubmitRef = useRef(null)
+  const historyGuardPushedRef = useRef(false)
 
   const stopTimer = useCallback(() => {
     if (timerRef.current) clearInterval(timerRef.current)
@@ -445,19 +438,66 @@ export default function Exam() {
   useEffect(() => () => stopTimer(), [])
 
   useEffect(() => {
-    if (screen !== 'exam') return
+    if (screen !== 'exam' && screen !== 'confirm') return
+
+    const forceLogout = () => {
+      stopTimer()
+      apiLogout(navigate)
+    }
+
     const handleBeforeUnload = (e) => { e.preventDefault(); e.returnValue = '' }
+
     const handleKeyDown = (e) => {
       if (e.key === 'F5' || (e.ctrlKey && e.key === 'r') || (e.metaKey && e.key === 'r')) {
         e.preventDefault()
         setShowExitConfirm(true)
+        return
+      }
+      // 개발자 도구 진입 방해 (완전 차단은 불가능 — 우회 가능한 수준의 저지선)
+      const key = e.key.toLowerCase()
+      if (
+        e.key === 'F12' ||
+        (e.ctrlKey && e.shiftKey && ['i', 'j', 'c'].includes(key)) ||
+        (e.ctrlKey && key === 'u')
+      ) {
+        e.preventDefault()
       }
     }
+
+    // PrintScreen은 OS가 브라우저보다 먼저 가로채는 경우가 많아 keydown이 아닌
+    // keyup에서만 감지되는 환경이 있음(그마저도 100% 보장되지 않음)
+    const handleKeyUp = (e) => {
+      if (e.key === 'PrintScreen') forceLogout()
+    }
+
+    const handleContextMenu = (e) => e.preventDefault()
+
+    // 탭 전환, 홈키(화면 최소화) 등으로 페이지가 가려지면 즉시 로그아웃
+    const handleVisibilityChange = () => {
+      if (document.hidden) forceLogout()
+    }
+
+    // 뒤로가기 감지: 더미 history 항목을 쌓아 popstate로만 감지되게 하고 즉시 로그아웃
+    // exam <-> confirm 전환마다 effect가 재실행되므로, 더미 항목은 세션당 한 번만 push해 history 스택 누적을 방지
+    const handlePopState = () => forceLogout()
+    if (!historyGuardPushedRef.current) {
+      window.history.pushState(null, '', window.location.href)
+      historyGuardPushedRef.current = true
+    }
+
     window.addEventListener('beforeunload', handleBeforeUnload)
     window.addEventListener('keydown', handleKeyDown)
+    window.addEventListener('keyup', handleKeyUp)
+    window.addEventListener('contextmenu', handleContextMenu)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    window.addEventListener('popstate', handlePopState)
     return () => {
       window.removeEventListener('beforeunload', handleBeforeUnload)
       window.removeEventListener('keydown', handleKeyDown)
+      window.removeEventListener('keyup', handleKeyUp)
+      window.removeEventListener('contextmenu', handleContextMenu)
+      document.removeEventListener('visibilitychange', handleVisibilityChange)
+      window.removeEventListener('popstate', handlePopState)
     }
   }, [screen])
 

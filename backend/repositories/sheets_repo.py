@@ -34,7 +34,10 @@ SHEET_TAB = "exam_sets"
 HEADERS = ["exam_set_id", "name", "team_code", "assigned_users", "created_at"]
 
 RESULTS_TAB = "results"
-RESULTS_HEADERS = ["exam_id", "exam_set_id", "employee_id", "score", "total", "answers", "saved_at"]
+RESULTS_HEADERS = [
+    "exam_id", "exam_set_id", "employee_id", "name", "score",
+    "pass", "team_code", "submitted_at", "difficulty_summary", "results",
+]
 
 SNAPSHOTS_TAB = "snapshots"
 SNAPSHOTS_HEADERS = ["exam_id", "snapshot", "created_at"]
@@ -264,7 +267,7 @@ class SheetsResultRepository(ResultRepository):
             ).execute()
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{RESULTS_TAB}!A1:G1",
+            range=f"{RESULTS_TAB}!A1:J1",
         ).execute()
         if not res.get("values"):
             self._values().update(
@@ -277,7 +280,7 @@ class SheetsResultRepository(ResultRepository):
     def _read_all_rows(self) -> list:
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{RESULTS_TAB}!A:G",
+            range=f"{RESULTS_TAB}!A:J",
         ).execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -286,17 +289,24 @@ class SheetsResultRepository(ResultRepository):
     def _row_to_dict(row: list) -> dict:
         def _get(i): return row[i] if len(row) > i else ""
         try:
-            answers = json.loads(_get(5)) if _get(5) else []
+            difficulty_summary = json.loads(_get(8)) if _get(8) else {}
         except (json.JSONDecodeError, ValueError):
-            answers = []
+            difficulty_summary = {}
+        try:
+            results = json.loads(_get(9)) if _get(9) else []
+        except (json.JSONDecodeError, ValueError):
+            results = []
         return {
             "exam_id": _get(0),
             "exam_set_id": _get(1),
             "employee_id": _get(2),
-            "score": int(_get(3)) if _get(3) else 0,
-            "total": int(_get(4)) if _get(4) else 0,
-            "answers": answers,
-            "saved_at": _get(6),
+            "name": _get(3),
+            "score": int(_get(4)) if _get(4) else 0,
+            "pass": _get(5) == "TRUE",
+            "team_code": _get(6),
+            "submitted_at": _get(7),
+            "difficulty_summary": difficulty_summary,
+            "results": results,
         }
 
     @staticmethod
@@ -305,19 +315,22 @@ class SheetsResultRepository(ResultRepository):
             data.get("exam_id", ""),
             data.get("exam_set_id", ""),
             data.get("employee_id", ""),
+            data.get("name", ""),
             str(data.get("score", 0)),
-            str(data.get("total", 0)),
-            json.dumps(data.get("answers", []), ensure_ascii=False),
-            data.get("saved_at", ""),
+            "TRUE" if data.get("pass") else "FALSE",
+            data.get("team_code", ""),
+            data.get("submitted_at", ""),
+            json.dumps(data.get("difficulty_summary", {}), ensure_ascii=False),
+            json.dumps(data.get("results", []), ensure_ascii=False),
         ]
 
     @_fallback_on_error(LocalResultRepository)
     def append_result(self, result: dict) -> None:
         self._maybe_ensure_tab()
-        result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
+        result.setdefault("submitted_at", datetime.now(timezone.utc).isoformat())
         self._values().append(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{RESULTS_TAB}!A:G",
+            range=f"{RESULTS_TAB}!A:J",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [self._dict_to_row(result)]},

@@ -14,8 +14,6 @@ from repositories.base import (
 
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
 
-TEAM_KEY_MAP = {"T1": "team1", "T2": "team2", "T3": "team3"}
-
 
 class LocalQuestionRepository(QuestionRepository):
     _FILE = MOCK_DIR / "questions.json"

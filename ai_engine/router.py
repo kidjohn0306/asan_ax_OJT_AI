@@ -16,10 +16,11 @@ def generate_questions_from_material(
     count: int = 10,
     difficulty_hint: str = "중",
     rejected_examples: list = None,
+    overused_questions: list = None,
 ) -> list[dict]:
     if AI_PROVIDER == "gemini":
         from ai_engine.gemini_generator import generate_questions_from_material as _gen
-        return _gen(material_text, category, count, difficulty_hint, rejected_examples)
+        return _gen(material_text, category, count, difficulty_hint, rejected_examples, overused_questions)
 
     if AI_PROVIDER == "claude":
         from ai_engine.question_generator import generate_questions_from_material as _gen
