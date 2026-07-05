@@ -105,15 +105,11 @@ class LocalResultRepository(ResultRepository):
     RESULTS_DIR = MOCK_DIR / "results"
     _TMP_RESULTS_DIR = Path("/tmp/results")
 
-    def _result_path(self, exam_set_id: str, employee_id: str) -> Path:
-        try:
-            set_dir = self.RESULTS_DIR / exam_set_id
-            os.makedirs(set_dir, exist_ok=True)
-            return set_dir / f"{employee_id}.json"
-        except OSError:
-            set_dir = self._TMP_RESULTS_DIR / exam_set_id
-            os.makedirs(set_dir, exist_ok=True)
-            return set_dir / f"{employee_id}.json"
+    def _result_path(self, exam_set_id: str, employee_id: str, base: Path = None) -> Path:
+        base = base or self.RESULTS_DIR
+        set_dir = base / exam_set_id
+        os.makedirs(set_dir, exist_ok=True)
+        return set_dir / f"{employee_id}.json"
 
     def _iter_result_files(self):
         # RESULTS_DIR 먼저, _TMP_RESULTS_DIR 나중에 — get_all_results에서 dict 덮어쓰기 시 /tmp(런타임 변경) 우선
@@ -133,9 +129,15 @@ class LocalResultRepository(ResultRepository):
         result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
         exam_set_id = result.get("exam_set_id") or "legacy"
         employee_id = result.get("employee_id") or result.get("exam_id")
-        path = self._result_path(exam_set_id, employee_id)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        try:
+            path = self._result_path(exam_set_id, employee_id)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+        except OSError:
+            # Vercel: filesystem is read-only, fall back to /tmp
+            path = self._result_path(exam_set_id, employee_id, base=self._TMP_RESULTS_DIR)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
 
     # base.py ResultRepository 시그니처 유지 (append_result -> save_result 위임)
     def append_result(self, result: dict) -> None:
