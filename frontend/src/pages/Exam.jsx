@@ -462,7 +462,7 @@ export default function Exam() {
   }, [screen])
 
   async function handleStart() {
-    setScreen('scoring')
+    setScreen('loading')
     const teamRaw = empInfo.team
     const teamCode = teamRaw.startsWith('2') ? 'T2' : teamRaw.startsWith('3') ? 'T3' : 'T1'
     const token = sessionStorage.getItem('token')
@@ -559,6 +559,7 @@ export default function Exam() {
       {screen === 'confirm' && (
         <ConfirmScreen answers={answers} onBack={() => setScreen('exam')} onSubmit={handleSubmit} />
       )}
+      {screen === 'loading' && <ScoringScreen title="로그인 중입니다..." sub="잠시만 기다려주세요" />}
       {screen === 'scoring' && <ScoringScreen title="채점 중입니다..." sub="잠시만 기다려주세요" />}
       {showAdminNotice && (
         <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:100 }}>
