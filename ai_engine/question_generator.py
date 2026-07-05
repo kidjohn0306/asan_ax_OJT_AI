@@ -67,7 +67,13 @@ def _call_api(prompt: str, api_key: str) -> str:
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],
     )
-    return message.content[0].text.strip()
+    # content[0]이 항상 텍스트 블록이라고 단정할 수 없음 — thinking 등 다른 블록이 먼저 올 수 있어
+    # 텍스트가 있는 첫 블록을 찾는다
+    for block in message.content:
+        text = getattr(block, "text", None)
+        if text:
+            return text.strip()
+    raise ValueError("Claude API 응답에 텍스트 콘텐츠가 없습니다.")
 
 
 def _parse_response(raw: str) -> list:
