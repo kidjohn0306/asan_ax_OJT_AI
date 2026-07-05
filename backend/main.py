@@ -34,9 +34,13 @@ if os.path.isdir(_frontend_dir):
     if os.path.isdir(_assets_dir):
         app.mount("/assets", StaticFiles(directory=_assets_dir), name="assets")
 
+    # index.html은 해시 없는 파일이라 캐시되면 배포한 새 코드가 반영 안 된 것처럼 보임 —
+    # 항상 재검증하도록 no-cache 지정. /assets의 해시된 JS/CSS는 파일명이 바뀌므로 캐시돼도 무방.
+    _NO_CACHE_HEADERS = {"Cache-Control": "no-cache, no-store, must-revalidate"}
+
     @app.get("/{full_path:path}", include_in_schema=False)
     async def spa_fallback(full_path: str):
         file_path = os.path.join(_frontend_dir, full_path)
-        if os.path.isfile(file_path):
+        if os.path.isfile(file_path) and full_path != "index.html":
             return FileResponse(file_path)
-        return FileResponse(os.path.join(_frontend_dir, "index.html"))
+        return FileResponse(os.path.join(_frontend_dir, "index.html"), headers=_NO_CACHE_HEADERS)

@@ -24,7 +24,7 @@ def generate_questions_from_material(
 
     if AI_PROVIDER == "claude":
         from ai_engine.question_generator import generate_questions_from_material as _gen
-        return _gen(material_text, category, count, difficulty_hint)
+        return _gen(material_text, category, count, difficulty_hint, rejected_examples, overused_questions)
 
     # mock (기본값)
     from ai_engine.question_generator import _mock_generate
