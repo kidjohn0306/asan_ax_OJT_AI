@@ -1,13 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
-from typing import Literal, Optional
+from typing import Optional
 
 router = APIRouter()
 security = HTTPBearer()
 _optional_bearer = HTTPBearer(auto_error=False)
 
-TeamCode = Literal["T1", "T2", "T3"]
+# 팀 관리 기능으로 T1/T2/T3 외 임의의 team_code를 생성할 수 있으므로 Literal로 제한하지 않는다.
+# (admin.py의 TeamCode = str 와 동일하게 맞춤 — 새로 만든 팀 소속 사용자는 이 값이 그대로 넘어온다)
+TeamCode = str
 
 
 class GenerateRequest(BaseModel):

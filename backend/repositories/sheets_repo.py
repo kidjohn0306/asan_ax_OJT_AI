@@ -11,6 +11,7 @@ from repositories.local_json import (
     LocalTeamRepository,
     LocalQuestionStatsRepository,
     LocalQuestionRepository,
+    LocalMaterialRepository,
 )
 
 
@@ -62,6 +63,9 @@ QUESTIONS_HEADERS = [
     "difficulty_init", "difficulty_ai", "admin_override", "status", "version",
     "explanation", "flags", "gate_errors", "reject_reason",
 ]
+
+MATERIAL_CACHE_TAB = "material_cache"
+MATERIAL_CACHE_HEADERS = ["category", "files_json", "scanned_at"]
 
 
 def _default_sheet_id():
@@ -865,3 +869,100 @@ class SheetsQuestionRepository:
     @_fallback_on_error(LocalQuestionRepository)
     def count_by_status(self, status: str) -> int:
         return len(self.list_by_status(status))
+
+
+class SheetsMaterialRepository:
+    def __init__(self):
+        self._spreadsheet_id = _default_sheet_id()
+        self._svc = _build_sheets_service()
+        self._tab_ready = False
+
+    def _values(self):
+        return self._svc.spreadsheets().values()
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            self._ensure_tab()
+            self._tab_ready = True
+
+    def _ensure_tab(self):
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        existing = [s["properties"]["title"] for s in meta.get("sheets", [])]
+        if MATERIAL_CACHE_TAB not in existing:
+            self._svc.spreadsheets().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": MATERIAL_CACHE_TAB}}}]},
+            ).execute()
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{MATERIAL_CACHE_TAB}!A1:C1").execute()
+        if not res.get("values"):
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{MATERIAL_CACHE_TAB}!A1",
+                valueInputOption="RAW",
+                body={"values": [MATERIAL_CACHE_HEADERS]},
+            ).execute()
+
+    def _find_row_index(self, category: str) -> int:
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{MATERIAL_CACHE_TAB}!A:A").execute()
+        rows = res.get("values", [])
+        for i, row in enumerate(rows[1:], start=2):
+            if row and row[0] == category:
+                return i
+        return -1
+
+    @staticmethod
+    def _row_to_manifest(row: list) -> dict:
+        def _get(i): return row[i] if len(row) > i else ""
+        try:
+            files = json.loads(_get(1)) if _get(1) else []
+        except json.JSONDecodeError:
+            files = []
+        return {
+            "category": _get(0),
+            "files": files,
+            "scanned_at": _get(2),
+        }
+
+    @staticmethod
+    def _manifest_to_row(category: str, manifest: dict) -> list:
+        return [
+            category,
+            json.dumps(manifest.get("files", []), ensure_ascii=False),
+            manifest.get("scanned_at", ""),
+        ]
+
+    @_fallback_on_error(LocalMaterialRepository)
+    def get_manifest(self, category: str) -> dict | None:
+        self._maybe_ensure_tab()
+        row_idx = self._find_row_index(category)
+        if row_idx == -1:
+            return None
+        res = self._values().get(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{MATERIAL_CACHE_TAB}!A{row_idx}:C{row_idx}",
+        ).execute()
+        rows = res.get("values", [])
+        if not rows:
+            return None
+        return self._row_to_manifest(rows[0])
+
+    @_fallback_on_error(LocalMaterialRepository)
+    def save_manifest(self, category: str, manifest: dict) -> None:
+        self._maybe_ensure_tab()
+        row_idx = self._find_row_index(category)
+        row = self._manifest_to_row(category, manifest)
+        if row_idx == -1:
+            self._values().append(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{MATERIAL_CACHE_TAB}!A:C",
+                valueInputOption="RAW",
+                insertDataOption="INSERT_ROWS",
+                body={"values": [row]},
+            ).execute()
+        else:
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{MATERIAL_CACHE_TAB}!A{row_idx}:C{row_idx}",
+                valueInputOption="RAW",
+                body={"values": [row]},
+            ).execute()

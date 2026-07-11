@@ -7,6 +7,7 @@ from repositories.local_json import (
     LocalExamSetRepository,
     LocalTeamRepository,
     LocalQuestionStatsRepository,
+    LocalMaterialRepository,
 )
 
 _backend = os.getenv("STORAGE_BACKEND", "local")
@@ -92,3 +93,15 @@ if _backend != "drive":
             question_repo = LocalQuestionRepository()
     else:
         question_repo = LocalQuestionRepository()
+
+# 교육자료 스캔 캐시 저장소 — Sheets 우선, 실패 시 Local 폴백
+if _use_sheets:
+    try:
+        from repositories.sheets_repo import SheetsMaterialRepository
+        material_repo = SheetsMaterialRepository()
+    except Exception as _e:
+        import logging
+        logging.warning(f"SheetsMaterialRepository 초기화 실패, Local로 폴백: {_e}")
+        material_repo = LocalMaterialRepository()
+else:
+    material_repo = LocalMaterialRepository()
