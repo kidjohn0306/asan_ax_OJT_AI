@@ -869,6 +869,8 @@ function ExamSheet({ toast, onNavigate }) {
   const [team, setTeam] = useState('T1')
   const [teams, setTeams] = useState([])
   const [totalCount, setTotalCount] = useState(25)
+  const [excludeFrequent, setExcludeFrequent] = useState(false)
+  const [maxExamCount, setMaxExamCount] = useState(5)
   const [manualMode, setManualMode] = useState(false)
   const [manualUpper, setManualUpper] = useState(7)
   const [manualMid, setManualMid] = useState(10)
@@ -894,6 +896,7 @@ function ExamSheet({ toast, onNavigate }) {
     try {
       const body = { team_code: team, total_count: totalCount }
       if (manualMode) body.manual_dist = { 상: manualUpper, 중: manualMid, 하: manualLow }
+      if (excludeFrequent) body.max_exam_count = maxExamCount
       const data = await apiFetch('POST', '/api/admin/preview-exam', body)
       const qs = data.questions
       setQuestions(qs.map((q, i) => ({ ...q, _order: i + 1 })))
@@ -1064,6 +1067,27 @@ function ExamSheet({ toast, onNavigate }) {
               style={{ flex:1, accentColor:'var(--accent)' }} />
             <span style={{ fontSize:20, fontWeight:800, color:'var(--accent)', minWidth:44, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{totalCount}</span>
           </div>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+            <span style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>출제 횟수 제한</span>
+            <button
+              onClick={() => setExcludeFrequent(v => !v)}
+              style={{ border:`1.5px solid ${excludeFrequent ? 'var(--accent)' : 'var(--border)'}`, background: excludeFrequent ? 'var(--accent-light)' : 'white', color: excludeFrequent ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'3px 10px', fontFamily:'var(--font)', fontSize:11, fontWeight: excludeFrequent ? 700 : 400, cursor:'pointer' }}
+            >{excludeFrequent ? 'ON' : 'OFF'}</button>
+          </div>
+          {excludeFrequent && (
+            <div style={{ marginBottom:12 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
+                <input type="range" min={1} max={20} step={1} value={maxExamCount}
+                  onChange={e => setMaxExamCount(Number(e.target.value))}
+                  style={{ flex:1, accentColor:'var(--accent)' }} />
+                <span style={{ fontSize:20, fontWeight:800, color:'var(--accent)', minWidth:44, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{maxExamCount}</span>
+              </div>
+              <div style={{ fontSize:11, color:'var(--text-muted)' }}>
+                {maxExamCount}회 이상 출제된 문제는 배분에서 제외됩니다.
+              </div>
+            </div>
+          )}
+
           {!manualMode ? (
             <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:16 }}>
               자동 배분: 상 {Math.round(totalCount*0.28)}·중 {Math.round(totalCount*0.40)}·하 {Math.round(totalCount*0.32)}문항 (예상)
