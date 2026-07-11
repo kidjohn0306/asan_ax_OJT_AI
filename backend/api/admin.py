@@ -1,22 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Literal, Optional
 
+from api.deps import require_admin
+
 router = APIRouter()
-_bearer = HTTPBearer()
 
 DifficultyLevel = Literal["상", "중", "하"]
-TeamCode = Literal["T1", "T2", "T3"]
+TeamCode = str
 StatusType = Literal["draft", "reviewing", "approved", "rejected"]
-
-
-def require_admin(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
-    from services.auth_service import decode_token
-    payload = decode_token(creds.credentials)
-    if payload.get("role") != "admin":
-        raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
-    return payload
 
 
 class DifficultyPatchRequest(BaseModel):
@@ -58,6 +50,16 @@ class CreateExamSetRequest(BaseModel):
 
 class AssignUserRequest(BaseModel):
     employee_id: str
+
+
+class CreateTeamRequest(BaseModel):
+    team_id: str
+    team_name: str
+    team_code: str
+
+
+class UpdateTeamRequest(BaseModel):
+    team_name: str
 
 
 @router.get("/users")
@@ -193,12 +195,91 @@ def get_exam_set_results(exam_set_id: str, _: dict = Depends(require_admin)):
     return {"results": result_repo.list_results_by_set(exam_set_id)}
 
 
+@router.post("/seed-mock-data")
+def seed_mock_data(_: dict = Depends(require_admin)):
+    from services.admin_service import seed_mock_data as _seed
+    return _seed()
+
+
+@router.get("/stats")
+def get_stats(_: dict = Depends(require_admin)):
+    from services.admin_service import fetch_dashboard_stats
+    return fetch_dashboard_stats()
+
+
+@router.get("/teams")
+def get_teams(_: dict = Depends(require_admin)):
+    from services.admin_service import list_teams
+    return {"teams": list_teams()}
+
+
+@router.get("/teams/headcount")
+def get_team_headcounts(_: dict = Depends(require_admin)):
+    from services.admin_service import fetch_team_headcounts
+    return fetch_team_headcounts()
+
+
+@router.post("/teams")
+def create_team(body: CreateTeamRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import create_team as _create
+    return _create(body.team_id, body.team_name, body.team_code)
+
+
+@router.patch("/teams/{team_id}")
+def update_team(team_id: str, body: UpdateTeamRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import update_team as _update
+    return _update(team_id, body.team_name)
+
+
+@router.delete("/teams/{team_id}")
+def delete_team(team_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import delete_team as _delete
+    return _delete(team_id)
+
+
+@router.post("/upload-users")
+async def upload_users(file: UploadFile = File(...), _: dict = Depends(require_admin)):
+    from services.admin_service import bulk_upload_users
+    raw = await file.read()
+    # Excel/메모장 BOM 처리
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp949", errors="replace")
+    return bulk_upload_users(text)
+
+
+@router.get("/question-stats")
+def get_question_stats(_: dict = Depends(require_admin)):
+    from repositories import question_stats_repo
+    return {"stats": question_stats_repo.list_all_stats()}
+
+
+@router.get("/question-stats/flagged")
+def get_flagged_questions(_: dict = Depends(require_admin)):
+    from repositories import question_stats_repo
+    return {"flagged": question_stats_repo.list_flagged()}
+
+
 @router.get("/debug/storage")
 def debug_storage(_: dict = Depends(require_admin)):
     import os
     from repositories import exam_set_repo
+    all_keys = [k for k in os.environ.keys() if not k.startswith("PATH") and not k.startswith("PYTHON")]
+
+    sheets_error = None
+    if type(exam_set_repo).__name__ != "SheetsExamSetRepository":
+        try:
+            from repositories.sheets_repo import SheetsExamSetRepository
+            SheetsExamSetRepository()
+        except Exception as e:
+            sheets_error = str(e)
+
     return {
         "EXAM_SET_STORAGE": os.getenv("EXAM_SET_STORAGE", "(not set)"),
         "GOOGLE_EXAM_SETS_SHEET_ID": os.getenv("GOOGLE_EXAM_SETS_SHEET_ID", "(not set)"),
+        "GOOGLE_SERVICE_ACCOUNT_JSON_SET": bool(os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")),
         "exam_set_repo_class": type(exam_set_repo).__name__,
+        "sheets_init_error": sheets_error,
+        "all_env_keys": sorted(all_keys),
     }

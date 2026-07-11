@@ -5,6 +5,8 @@ from repositories.local_json import (
     LocalSnapshotRepository,
     LocalFeedbackRepository,
     LocalExamSetRepository,
+    LocalTeamRepository,
+    LocalQuestionStatsRepository,
 )
 
 _backend = os.getenv("STORAGE_BACKEND", "local")
@@ -30,14 +32,22 @@ if _use_sheets:
 else:
     exam_set_repo = LocalExamSetRepository()
 
-# exam_set 외 다른 repo는 local 또는 drive 만 사용
-_other_backend = "local" if _backend == "sheets" else _backend
-if _other_backend == "local":
-    question_repo = LocalQuestionRepository()
+if _backend == "sheets":
+    try:
+        from repositories.sheets_repo import SheetsResultRepository, SheetsSnapshotRepository
+        result_repo = SheetsResultRepository()
+        snapshot_repo = SheetsSnapshotRepository()
+    except Exception as _sheets_err:
+        import logging
+        logging.warning(f"SheetsResultRepository 초기화 실패, local로 폴백: {_sheets_err}")
+        result_repo = LocalResultRepository()
+        snapshot_repo = LocalSnapshotRepository()
+    feedback_repo = LocalFeedbackRepository()
+elif _backend == "local":
     result_repo = LocalResultRepository()
     snapshot_repo = LocalSnapshotRepository()
     feedback_repo = LocalFeedbackRepository()
-elif _other_backend == "drive":
+elif _backend == "drive":
     from repositories.drive_repo import DriveQuestionRepository, DriveResultRepository, DriveSnapshotRepository
     question_repo = DriveQuestionRepository()
     result_repo = DriveResultRepository()
@@ -45,3 +55,40 @@ elif _other_backend == "drive":
     feedback_repo = LocalFeedbackRepository()
 else:
     raise NotImplementedError(f"STORAGE_BACKEND={_backend} 미구현.")
+
+# 팀 저장소 — Sheets 우선, 실패 시 Local 폴백
+if _use_sheets:
+    try:
+        from repositories.sheets_repo import SheetsTeamRepository
+        team_repo = SheetsTeamRepository()
+    except Exception as _e:
+        import logging
+        logging.warning(f"SheetsTeamRepository 초기화 실패, Local로 폴백: {_e}")
+        team_repo = LocalTeamRepository()
+else:
+    team_repo = LocalTeamRepository()
+
+# 문제 출제 횟수 저장소 — Sheets 우선, 실패 시 Local 폴백
+if _use_sheets:
+    try:
+        from repositories.sheets_repo import SheetsQuestionStatsRepository
+        question_stats_repo = SheetsQuestionStatsRepository()
+    except Exception as _e:
+        import logging
+        logging.warning(f"SheetsQuestionStatsRepository 초기화 실패, Local로 폴백: {_e}")
+        question_stats_repo = LocalQuestionStatsRepository()
+else:
+    question_stats_repo = LocalQuestionStatsRepository()
+
+# 문제은행 저장소 — Sheets 우선, 실패 시 Local 폴백 (drive 백엔드는 기존 DriveQuestionRepository 유지)
+if _backend != "drive":
+    if _use_sheets:
+        try:
+            from repositories.sheets_repo import SheetsQuestionRepository
+            question_repo = SheetsQuestionRepository()
+        except Exception as _e:
+            import logging
+            logging.warning(f"SheetsQuestionRepository 초기화 실패, Local로 폴백: {_e}")
+            question_repo = LocalQuestionRepository()
+    else:
+        question_repo = LocalQuestionRepository()

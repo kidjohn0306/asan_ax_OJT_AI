@@ -2,12 +2,19 @@ import random
 import uuid
 from datetime import datetime, timezone
 
+from fastapi import HTTPException
+
 TEAM_KEY_MAP = {"T1": "team1", "T2": "team2", "T3": "team3"}
+
+PASS_SCORE = 70
+SCORE_PER_QUESTION = 4
+_UPPER_RATIO = 0.28
+_MID_RATIO = 0.40
 
 
 def _calc_dist(total: int) -> dict:
-    upper = round(total * 0.28)
-    mid   = round(total * 0.40)
+    upper = round(total * _UPPER_RATIO)
+    mid   = round(total * _MID_RATIO)
     low   = total - upper - mid
     return {"상": upper, "중": mid, "하": low}
 
@@ -36,7 +43,8 @@ def _pick_by_difficulty(pool: list, dist: dict) -> list:
 def generate_exam_questions(team_code: str, preview: bool = False, config: dict = None,
                             total_count: int = 25, manual_dist: dict = None) -> dict:
     q_repo, r_repo, s_repo = _get_repos()
-    team_key = TEAM_KEY_MAP.get(team_code, "team1")
+    # T1/T2/T3는 기존 team1/team2/team3 문제풀에 매핑(하위호환), 그 외 신규 팀은 team_code 자체를 풀 키로 사용
+    team_key = TEAM_KEY_MAP.get(team_code, team_code)
 
     data = q_repo.get_all_questions()
     # preview 모드는 approved+reviewing 포함, 실제 시험은 approved만
@@ -78,6 +86,13 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
         snapshot["_meta"] = {"team_code": team_code, "created_at": datetime.now(timezone.utc).isoformat()}
         s_repo.save_snapshot(exam_id, snapshot)
 
+        # 출제 횟수 트래킹 — 실패해도 시험 생성은 계속
+        try:
+            from repositories import question_stats_repo
+            question_stats_repo.increment_batch([q["question_id"] for q in questions])
+        except Exception:
+            pass
+
     return {
         "exam_id": exam_id,
         "team_code": team_code,
@@ -106,7 +121,6 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_i
 
     snapshot = s_repo.get_snapshot(exam_id)
     if not snapshot:
-        from fastapi import HTTPException
         raise HTTPException(
             status_code=410,
             detail="시험 세션이 만료됐습니다. 시험을 다시 시작해주세요.",
@@ -127,7 +141,7 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_i
             continue
         correct = isinstance(user_ans, str) and q_snap["answer"] == user_ans.upper()
         if correct:
-            score += 4  # 25문항 × 4점 = 100점 만점
+            score += SCORE_PER_QUESTION
         difficulty = q_snap.get("difficulty", "중")
         if difficulty in difficulty_summary:
             key = "correct" if correct else "incorrect"
@@ -147,7 +161,7 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_i
         "exam_set_id": meta.get("exam_set_id", "legacy"),
         "name": name,
         "score": score,
-        "pass": score >= 70,
+        "pass": score >= PASS_SCORE,
         "difficulty_summary": difficulty_summary,
         "results": results,
         "team_code": meta.get("team_code", ""),
@@ -163,6 +177,5 @@ def get_exam_result(exam_id: str) -> dict:
     _, r_repo, _ = _get_repos()
     result = r_repo.get_result(exam_id)
     if not result:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="결과를 찾을 수 없습니다.")
     return result

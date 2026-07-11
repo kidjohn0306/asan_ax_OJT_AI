@@ -91,12 +91,12 @@ def run_gates(q: dict) -> dict:
             failed.append(msg)
 
     # V-06: WARNING 플래그만
-    ok, msg = _v06_category_team_match(q)
+    ok, _ = _v06_category_team_match(q)
     if not ok:
         flags["warning"] = True
 
     # V-07: SECURITY_HOLD 플래그만
-    ok, msg = _v07_security_keywords(q)
+    ok, _ = _v07_security_keywords(q)
     if not ok:
         flags["security_hold"] = True
 

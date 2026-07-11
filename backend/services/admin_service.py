@@ -1,6 +1,9 @@
 import json
+import logging
 import os
 from pathlib import Path
+
+from fastapi import HTTPException
 from services.difficulty import update_difficulty_from_feedback
 
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
@@ -41,7 +44,6 @@ def delete_user(employee_id: str) -> dict:
     before = len(data["approved_users"])
     data["approved_users"] = [u for u in data["approved_users"] if u["employee_id"] != employee_id]
     if len(data["approved_users"]) == before:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
     _save_users(data)
     return {"deleted": True, "employee_id": employee_id}
@@ -55,6 +57,16 @@ def fetch_exam_count() -> dict:
 def fetch_user_count() -> dict:
     data = _load_users()
     return {"count": len(data["approved_users"])}
+
+
+def fetch_team_headcounts() -> dict:
+    """팀별 실제 소속(승인된) 인원수 — 팀 관리 화면에서 정원과 대조하기 위한 실제 값."""
+    data = _load_users()
+    counts: dict = {}
+    for u in data["approved_users"]:
+        team = u.get("team") or "미배정"
+        counts[team] = counts.get(team, 0) + 1
+    return {"headcounts": counts}
 
 
 def fetch_approved_question_count() -> dict:
@@ -73,7 +85,6 @@ def fetch_logs(team=None, date_from=None, date_to=None) -> dict:
 
     logs = []
     for r in all_results.values():
-        # results.jsonl에 name 필드가 없으면 team_code로 대체
         log = {
             "name": r.get("name", r.get("team_code", "-")),
             "team": r.get("team_code", "-"),
@@ -84,7 +95,6 @@ def fetch_logs(team=None, date_from=None, date_to=None) -> dict:
         }
         logs.append(log)
 
-    # 데이터 없으면 더미 반환 (초기 상태 호환)
     if not logs:
         logs = [
             {"name": "홍길동", "team": "T1", "date": "2026-06-14", "score": 92, "pass": True,  "difficulty_dist": {"상": 2, "중": 5, "하": 3}},
@@ -120,7 +130,7 @@ def fetch_questions(team=None, category=None, status=None) -> dict:
     else:
         data = q_repo.get_all_questions()
         if team:
-            team_key = TEAM_KEY_MAP.get(team)
+            team_key = TEAM_KEY_MAP.get(team, team)
             questions = data.get(team_key, [])
         else:
             questions = [q for pool in data.values() for q in pool]
@@ -136,15 +146,12 @@ def override_difficulty(question_id: str, new_difficulty: str, reason_code: str 
 
     q = q_repo.get_question(question_id)
     if not q:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="문제를 찾을 수 없습니다.")
 
-    # 설계 §7.1: difficulty_ai(AI 판정값) vs 관리자 확정값 비교 (버그 수정)
     ai_difficulty = q.get("difficulty_ai") or q.get("difficulty_init", "중")
     log = []
     result = update_difficulty_from_feedback(question_id, ai_difficulty, new_difficulty, log)
 
-    # admin_override 필드에 영속화 (인메모리 제거)
     q_repo.update_question(question_id, {"admin_override": new_difficulty})
 
     fb_repo.append_feedback({
@@ -166,15 +173,37 @@ def override_difficulty(question_id: str, new_difficulty: str, reason_code: str 
 
 def generate_ai_questions(team_code: str, material_text: str, count: int, difficulty_hint: str) -> dict:
     from ai_engine.router import generate_questions_from_material
-    category = TEAM_KEY_MAP.get(team_code, "team1")
+    from services.generation.gates import run_gates
 
+    from repositories import question_stats_repo
+
+    category = TEAM_KEY_MAP.get(team_code, team_code)
     q_repo, _, _ = _get_repos()
     rejected = q_repo.list_by_status("rejected")
     rejected_examples = [q for q in rejected if q.get("reject_reason")]
 
-    questions = generate_questions_from_material(material_text, category, count, difficulty_hint, rejected_examples)
+    overused_questions = []
+    try:
+        flagged_ids = {stat["question_id"] for stat in question_stats_repo.list_flagged()}
+        if flagged_ids:
+            # get_question()을 건마다 호출하면 매번 전체 문제은행을 다시 읽으므로(N+1),
+            # 문제은행을 한 번만 불러와 조회한다.
+            all_pools = q_repo.get_all_questions().values()
+            overused_questions = [
+                q["question"] for pool in all_pools for q in pool
+                if q.get("question_id") in flagged_ids and q.get("question")
+            ]
+    except Exception:
+        pass  # 통계 조회 실패는 문제 생성 자체를 막지 않음
 
-    from services.generation.gates import run_gates
+    try:
+        questions = generate_questions_from_material(
+            material_text, category, count, difficulty_hint, rejected_examples, overused_questions
+        )
+    except Exception as e:
+        provider = os.getenv("AI_PROVIDER", "mock")
+        logging.exception(f"AI 문제 생성 실패 (provider={provider}): {e}")
+        raise HTTPException(status_code=502, detail="AI 문제 생성에 실패했습니다. 잠시 후 다시 시도해주세요.")
 
     passed, failed_list = [], []
     for q in questions:
@@ -217,10 +246,8 @@ def approve_question(question_id: str) -> dict:
     q_repo, _, _ = _get_repos()
     q = q_repo.get_question(question_id)
     if not q:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="문제를 찾을 수 없습니다.")
     if q.get("status") not in ("reviewing", "draft"):
-        from fastapi import HTTPException
         raise HTTPException(status_code=400, detail=f"승인 불가 상태: {q.get('status')}")
     q_repo.update_question(question_id, {"status": "approved"})
     return {"approved": True, "question_id": question_id}
@@ -230,7 +257,6 @@ def reject_question(question_id: str, reason: str) -> dict:
     q_repo, _, _ = _get_repos()
     q = q_repo.get_question(question_id)
     if not q:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="문제를 찾을 수 없습니다.")
     q_repo.update_question(question_id, {
         "status": "rejected",
@@ -245,7 +271,6 @@ def approve_new_user(employee_id: str, name: str, team: str, exam_date: str) -> 
     all_users = data["approved_users"] + data["admins"]
 
     if any(u["employee_id"] == employee_id for u in all_users):
-        from fastapi import HTTPException
         raise HTTPException(status_code=409, detail="이미 등록된 사원번호입니다.")
 
     new_user = {
@@ -284,30 +309,134 @@ def create_exam_set(name: str, team_code: str, question_ids: list, created_by: s
 
 def assign_user_to_exam_set(employee_id: str, exam_set_id: str) -> dict:
     from repositories import exam_set_repo
-    success = exam_set_repo.assign_user(exam_set_id, employee_id)
-    if not success:
-        from fastapi import HTTPException
+    if not exam_set_repo.assign_user(exam_set_id, employee_id):
         raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
     return {"success": True, "employee_id": employee_id, "exam_set_id": exam_set_id}
 
 
 def unassign_user_from_exam_set(employee_id: str, exam_set_id: str) -> dict:
     from repositories import exam_set_repo
-    success = exam_set_repo.unassign_user(exam_set_id, employee_id)
-    if not success:
-        from fastapi import HTTPException
+    if not exam_set_repo.unassign_user(exam_set_id, employee_id):
         raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
     return {"success": True, "employee_id": employee_id, "exam_set_id": exam_set_id}
+
+
+def seed_mock_data() -> dict:
+    data = _load_users()
+    existing_ids = {u["employee_id"] for u in data["approved_users"] + data["admins"]}
+    seed_users = [
+        {"employee_id": "2024001", "password_hash": "mock_hash", "name": "김테스트", "team": "T1", "role": "examinee", "exam_date": "2026-07-10", "approved": True},
+        {"employee_id": "2024002", "password_hash": "mock_hash", "name": "이테스트", "team": "T2", "role": "examinee", "exam_date": "2026-07-10", "approved": True},
+        {"employee_id": "2024003", "password_hash": "mock_hash", "name": "박테스트", "team": "T3", "role": "examinee", "exam_date": "2026-07-11", "approved": True},
+    ]
+    added = 0
+    for u in seed_users:
+        if u["employee_id"] not in existing_ids:
+            data["approved_users"].append(u)
+            existing_ids.add(u["employee_id"])
+            added += 1
+    _save_users(data)
+    return {"seeded_users": added, "message": f"더미 사용자 {added}명 추가 완료 (기존 계정 skip)"}
+
+
+def list_teams() -> list:
+    from repositories import team_repo
+    return team_repo.list_teams()
+
+
+def create_team(team_id: str, team_name: str, team_code: str) -> dict:
+    from repositories import team_repo
+    existing = team_repo.list_teams()
+    if any(t["team_id"] == team_id or t["team_code"] == team_code for t in existing):
+        raise HTTPException(status_code=409, detail="이미 존재하는 팀 ID 또는 코드입니다.")
+    return team_repo.create_team({"team_id": team_id, "team_name": team_name, "team_code": team_code})
+
+
+def update_team(team_id: str, team_name: str) -> dict:
+    from repositories import team_repo
+    updated = team_repo.update_team(team_id, {"team_name": team_name})
+    if not updated:
+        raise HTTPException(status_code=404, detail="팀을 찾을 수 없습니다.")
+    return updated
+
+
+def delete_team(team_id: str) -> dict:
+    from repositories import team_repo
+    if not team_repo.delete_team(team_id):
+        raise HTTPException(status_code=404, detail="팀을 찾을 수 없습니다.")
+    return {"deleted": True, "team_id": team_id}
+
+
+def fetch_dashboard_stats() -> dict:
+    from repositories import question_repo, result_repo, exam_set_repo
+    data = _load_users()
+    total_users = len(data.get("approved_users", []))
+    sets = exam_set_repo.list_exam_sets()
+    active_sets = [s for s in sets if s.get("status") == "active"]
+    assigned_count = sum(len(s.get("assigned_users", [])) for s in active_sets)
+    return {
+        "question_count": question_repo.count_by_status("approved"),
+        "exam_set_count": len(active_sets),
+        "assigned_count": assigned_count,
+        "user_count": total_users,
+    }
+
+
+def bulk_upload_users(csv_text: str) -> dict:
+    import csv
+    import io
+
+    if not csv_text or not csv_text.strip():
+        raise HTTPException(status_code=400, detail="CSV 파일이 비어 있습니다.")
+
+    try:
+        reader = csv.DictReader(io.StringIO(csv_text))
+        fieldnames = reader.fieldnames or []
+        rows = list(reader)
+    except csv.Error as e:
+        raise HTTPException(status_code=400, detail=f"CSV 형식을 읽을 수 없습니다: {e}")
+
+    required_cols = {"employee_id", "name"}
+    if not required_cols.issubset(set(fieldnames)):
+        raise HTTPException(status_code=400, detail=f"CSV에 필수 컬럼이 없습니다: {', '.join(sorted(required_cols))}")
+
+    data = _load_users()
+    all_ids = {u["employee_id"] for u in data["approved_users"] + data["admins"]}
+    success, skipped, errors = 0, 0, 0
+    for row in rows:
+        try:
+            eid = (row.get("employee_id") or "").strip()
+            name = (row.get("name") or "").strip()
+            team = (row.get("team_code") or "").strip()
+            exam_date = (row.get("exam_date") or "").strip()
+            if not eid or not name:
+                errors += 1
+                continue
+            if eid in all_ids:
+                skipped += 1
+                continue
+            data["approved_users"].append({
+                "employee_id": eid,
+                "password_hash": "mock_hash",
+                "name": name,
+                "team": team,
+                "role": "examinee",
+                "exam_date": exam_date,
+                "approved": True,
+            })
+            all_ids.add(eid)
+            success += 1
+        except Exception:
+            errors += 1
+    _save_users(data)
+    return {"success": success, "skipped": skipped, "errors": errors, "total": success + skipped + errors}
 
 
 def get_exam_set_assignees(exam_set_id: str) -> list:
     from repositories import exam_set_repo
     exam_set = exam_set_repo.get_exam_set(exam_set_id)
     if not exam_set:
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
     assigned_ids = exam_set.get("assigned_users", [])
     all_users = fetch_users().get("users", [])
     return [u for u in all_users if u.get("employee_id") in assigned_ids]
-
-

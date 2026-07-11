@@ -2,31 +2,33 @@
 
 ## 프로젝트 개요
 AI 기반 신입사원 OJT 교육 이해도 평가 시스템. FastAPI 백엔드 + Vite React 프론트엔드.
-현재 단계: **Repository 패턴 + Gemini AI 문제 생성 + run_gates 검증 연결 완료**
+현재 단계: **팀 관리·출제횟수 트래킹·CSV 업로드·대시보드 통계 구현 완료**
 
 ## 아키텍처
 
 ```
 asan_ax_OJT_AI/
 ├── api/index.py              # Vercel 진입점 — backend/main.py의 app을 임포트
+├── ai_engine/                # AI 문제 생성 엔진 (루트 위치 — sys.path에 의해 임포트됨)
+│   ├── router.py             # AI_PROVIDER 환경변수로 생성기 선택
+│   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) — _build_prompt/_call_api/_parse_response
+│   └── question_generator.py # Claude API (claude-sonnet-5, anthropic SDK) + mock 생성기(_mock_generate) 겸용
 ├── backend/
-│   ├── main.py               # FastAPI 앱, frontend/dist/ StaticFiles 마운트
-│   ├── api/                  # 라우터 (auth, exam, admin, drive)
+│   ├── main.py               # FastAPI 앱, frontend/dist/ StaticFiles 마운트, load_dotenv(override=True)
+│   ├── api/                  # 라우터
+│   │   ├── deps.py           # 공유 의존성 — require_admin() (JWT 검증 + 역할 확인)
+│   │   ├── auth.py, exam.py, admin.py, drive.py
 │   ├── services/             # 비즈니스 로직
-│   │   ├── exam_service.py   # 출제·채점·스냅샷 저장
-│   │   ├── admin_service.py  # 문제관리, 사용자승인, AI 생성 연결
+│   │   ├── exam_service.py   # 출제·채점·스냅샷 저장 (PASS_SCORE=70) + 출제횟수 increment_batch
+│   │   ├── admin_service.py  # 문제관리, 사용자승인, AI 생성, 팀CRUD, CSV업로드, 대시보드통계
 │   │   ├── drive_service.py  # Google Drive 서비스 계정 인증
 │   │   └── generation/       # run_gates (7개 검증 규칙)
 │   ├── repositories/         # 저장소 추상화 레이어
-│   │   ├── base.py           # 추상 인터페이스 (Question/Result/Snapshot/Feedback)
+│   │   ├── base.py           # 추상 인터페이스 (Question/Result/Snapshot/Feedback/Team/QuestionStats)
 │   │   ├── local_json.py     # 로컬 JSON 파일 기반 (로컬 개발용)
 │   │   ├── drive_repo.py     # Google Drive 기반 (STORAGE_BACKEND=drive)
-│   │   └── __init__.py       # STORAGE_BACKEND 환경변수로 구현체 선택
-│   ├── ai_engine/            # AI 문제 생성 엔진
-│   │   ├── router.py         # AI_PROVIDER 환경변수로 생성기 선택
-│   │   ├── gemini_generator.py  # Gemini REST API (gemini-2.5-flash)
-│   │   ├── mock_generator.py    # 목업 문제 (AI_PROVIDER=mock)
-│   │   └── question_generator.py # Claude API 스텁 (미구현)
+│   │   ├── sheets_repo.py    # Google Sheets 기반 (STORAGE_BACKEND=sheets) ✅
+│   │   └── __init__.py       # STORAGE_BACKEND 환경변수로 구현체 선택 (team_repo, question_stats_repo 포함)
 │   ├── credentials/          # 서비스 계정 파일 (gitignore됨)
 │   └── mock_data/            # 더미 JSON (users, questions, results)
 ├── frontend/
@@ -56,19 +58,25 @@ Vercel 배포용 키는 Vercel 대시보드 Environment Variables에서 설정 (
 ### AI 제공자 선택 (`AI_PROVIDER`)
 - `mock` (기본값) — `mock_data/questions.json` 문제 사용, API 호출 없음
 - `gemini` — Gemini REST API (`gemini-2.5-flash`) 문제 생성. `GEMINI_API_KEY` 필요
-- `claude` — Claude API 스텁 (미구현, `ANTHROPIC_API_KEY` 필요)
+- `claude` — Claude API (`claude-sonnet-5`, anthropic SDK) 문제 생성. `CLAUDE_API_KEY` 필요
+- 두 제공자 모두 자주 출제된 문제(`question_stats`의 `flagged_frequent`)를 프롬프트에 회피 목록으로 전달해 중복 출제를 줄임
 
 ### 저장소 백엔드 선택 (`STORAGE_BACKEND`)
 - `local` (기본값) — `mock_data/*.json` 파일에 저장. Vercel 재배포 시 초기화됨
+- `sheets` — Google Sheets에 저장. `GOOGLE_SHEETS_ID` 필요 ✅ **권장 (Drive 할당량 이슈 해결)**
+  - `results` + `snapshots` + `exam_sets` + `teams` + `question_stats` + `question_bank` 탭 자동 생성
+  - `question_bank`: 문제은행 데이터(공통/팀별/환경안전/일반상식 문제 전체). 기존 `mock_data/questions.json` 데이터는
+    `backend/scripts/migrate_questions_to_sheets.py`로 1회 이관 가능
+  - 서비스 계정에 스프레드시트 편집자 권한 필요
 - `drive` — Google Drive에 저장. `DRIVE_RESULTS_FOLDER_ID` 필요
   - ⚠️ 개인 구글 계정 연결 서비스 계정은 Drive 쓰기 할당량 0 → `storageQuotaExceeded` 발생
-  - 향후 Google Sheets 기반으로 전환 예정 (팀 회의 후 결정)
 
 ### 스냅샷 시스템
 시험 생성 시 문제·정답을 스냅샷으로 저장 → 채점 시 스냅샷 기준으로 채점.
 스냅샷 없으면 HTTP 410 반환 (문제 변경·세션 만료 대응).
 - `local` 모드: `/tmp/snapshots.jsonl` (Vercel 인스턴스 재사용 시 유효, 신규 인스턴스면 손실)
-- `drive` 모드: Drive `snapshots/` 폴더에 `{exam_id}.json` 저장 (할당량 문제로 현재 미작동)
+- `sheets` 모드: Sheets `snapshots` 탭에 영구 저장 → 인스턴스 교체에도 안전 ✅
+- `drive` 모드: Drive `snapshots/` 폴더 저장 (할당량 문제로 미작동)
 
 ### 테스트 계정 (Mock 모드)
 - `admin001` (관리자), `2024001` (응시자 T1), `2024002` (응시자 T2)

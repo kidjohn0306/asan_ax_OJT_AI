@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from fastapi import HTTPException
-from jose import jwt
+from jose import jwt, JWTError
 from passlib.context import CryptContext
 
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
@@ -23,7 +23,7 @@ def _load_users() -> dict:
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except Exception:
+    except JWTError:
         raise HTTPException(status_code=401, detail="유효하지 않은 토큰입니다.")
 
 
