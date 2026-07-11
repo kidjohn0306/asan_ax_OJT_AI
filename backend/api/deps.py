@@ -10,3 +10,8 @@ def require_admin(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> dic
     if payload.get("role") != "admin":
         raise HTTPException(status_code=403, detail="관리자 권한이 필요합니다.")
     return payload
+
+
+def require_auth(creds: HTTPAuthorizationCredentials = Depends(_bearer)) -> dict:
+    from services.auth_service import decode_token
+    return decode_token(creds.credentials)
