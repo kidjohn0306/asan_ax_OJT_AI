@@ -9,6 +9,15 @@ from services.difficulty import update_difficulty_from_feedback
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
 TEAM_KEY_MAP = {"T1": "team1", "T2": "team2", "T3": "team3"}
 
+# pool_key(문제 저장 위치: common/team1/team2/.../safety/general) -> 문제의 category 필드에 쓰이는
+# 한글 분류 라벨. 문제은행 시드 데이터·gates.py의 VALID_CATEGORIES·프론트 카테고리 필터가 모두 이 한글
+# 라벨을 기준으로 하므로, AI 문제 생성 시에도 pool_key가 아니라 이 라벨을 category로 사용해야 한다.
+_POOL_KEY_TO_CATEGORY_LABEL = {"common": "공통", "safety": "환경안전", "general": "일반상식"}
+
+
+def _category_label_for_pool(pool_key: str) -> str:
+    return _POOL_KEY_TO_CATEGORY_LABEL.get(pool_key, "팀별")
+
 
 def _get_repos():
     from repositories import question_repo, result_repo, feedback_repo
@@ -174,11 +183,22 @@ def override_difficulty(question_id: str, new_difficulty: str, reason_code: str 
 def generate_ai_questions(team_code: str, material_text: str, count: int, difficulty_hint: str) -> dict:
     from ai_engine.router import generate_questions_from_material
     from services.generation.gates import run_gates
+    from services.material_service import get_material_text_for_team
 
     from repositories import question_stats_repo
 
-    category = TEAM_KEY_MAP.get(team_code, team_code)
+    category = TEAM_KEY_MAP.get(team_code, team_code)  # pool_key — 문제 저장 위치(add_question)에 사용
+    category_label = _category_label_for_pool(category)  # 공통/팀별/환경안전/일반상식 — 문제의 category 필드·게이트 검증·프론트 필터에 사용
     q_repo, _, _ = _get_repos()
+
+    # Drive에서 스캔해둔 교육자료(공통+팀별)를 기본 자료로 사용하고,
+    # 관리자가 직접 붙여넣은 텍스트는 이번 출제에 한해 보충하는 내용으로 뒤에 덧붙인다.
+    # (수동 입력으로 자동 스캔 자료가 사라지지 않도록 둘 다 살리는 방식)
+    try:
+        drive_material = get_material_text_for_team(team_code)
+    except Exception:
+        drive_material = ""
+    material_text = "\n\n".join(t for t in (drive_material, material_text) if t)
     rejected = q_repo.list_by_status("rejected")
     rejected_examples = [q for q in rejected if q.get("reject_reason")]
 
@@ -198,7 +218,7 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
 
     try:
         questions = generate_questions_from_material(
-            material_text, category, count, difficulty_hint, rejected_examples, overused_questions
+            material_text, category_label, count, difficulty_hint, rejected_examples, overused_questions
         )
     except Exception as e:
         provider = os.getenv("AI_PROVIDER", "mock")
@@ -365,6 +385,18 @@ def delete_team(team_id: str) -> dict:
     if not team_repo.delete_team(team_id):
         raise HTTPException(status_code=404, detail="팀을 찾을 수 없습니다.")
     return {"deleted": True, "team_id": team_id}
+
+
+def fetch_system_status() -> dict:
+    """관리자 화면(대시보드/설정)의 '운영 모드'·'Claude API' 표시용 실제 설정값.
+    Claude/Gemini는 실제 API 호출 없이 키 설정 여부만 확인한다 (Google Drive 상태는
+    /api/drive/status가 이미 실제 연결을 확인하므로 여기서 중복 확인하지 않음)."""
+    return {
+        "ai_provider": os.getenv("AI_PROVIDER", "mock"),
+        "storage_backend": os.getenv("STORAGE_BACKEND", "local"),
+        "claude_key_configured": bool(os.getenv("CLAUDE_API_KEY")),
+        "gemini_key_configured": bool(os.getenv("GEMINI_API_KEY")),
+    }
 
 
 def fetch_dashboard_stats() -> dict:

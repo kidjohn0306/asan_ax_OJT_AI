@@ -54,8 +54,7 @@ asan_ax_OJT_AI/
 ├── ai_engine/                # AI 문제 생성 엔진 (루트 위치)
 │   ├── router.py             # AI_PROVIDER 환경변수로 생성기 선택
 │   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) ✅
-│   ├── mock_generator.py     # Mock 문제 반환 (AI_PROVIDER=mock) ✅
-│   └── question_generator.py # Claude API 스텁 (미구현)
+│   └── question_generator.py # Claude API (완전 구현) + _mock_generate() ✅
 ├── frontend/
 │   ├── src/              # React 소스 (수정 시 반드시 빌드 후 커밋)
 │   └── dist/             # 빌드 결과물 (git 포함 — Vercel이 이 파일을 서빙)
@@ -145,7 +144,7 @@ npm run dev   # http://localhost:5173
 | `api/deps.py` | ✅ 완료 | `require_admin()` 공유 의존성 — admin/drive 중복 제거 |
 | `ai_engine/gemini_generator.py` | ✅ 완료 | Gemini REST API 문제 생성, 함수 분리 + 예외처리 강화 |
 | `services/generation/gates.py` | ✅ 완료 | AI 생성 문제 7-gate 검증 후 reviewing 상태 저장 |
-| `ai_engine/question_generator.py` | ❌ 미구현 | Claude API 스텁만 존재 |
+| `ai_engine/question_generator.py` | ✅ 완료 | Claude API (anthropic SDK) 문제 생성 + mock 생성기 |
 
 ---
 
@@ -211,9 +210,10 @@ npm run dev   # http://localhost:5173
 | `STORAGE_BACKEND` | `local` | `local` / `sheets` / `drive` |
 | `GOOGLE_SHEETS_ID` | — | Google Sheets 스프레드시트 ID (`STORAGE_BACKEND=sheets` 시 필요) |
 | `GEMINI_API_KEY` | — | Gemini API 키 (`AI_PROVIDER=gemini` 시 필요) |
-| `ANTHROPIC_API_KEY` | — | Claude API 키 (`AI_PROVIDER=claude` 시 필요, 미구현) |
+| `CLAUDE_API_KEY` | — | Claude API 키 (`AI_PROVIDER=claude` 시 필요) |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | — | Service Account JSON 전체 내용 (Vercel 배포용) |
 | `DRIVE_RESULTS_FOLDER_ID` | — | Drive 결과·스냅샷 저장 폴더 ID (`STORAGE_BACKEND=drive` 시 필요) |
+| `DRIVE_EDUCATION_MATERIALS_FOLDER_ID` | — | 교육자료(PDF/PPTX) 루트 폴더 ID. 하위 `common`/`team1`/`team2`/`team3` 폴더를 스캔해 AI 문제 생성에 자동 반영 |
 
 ---
 
@@ -244,7 +244,7 @@ npm run dev   # http://localhost:5173
 
 | 기능 | 파일 | 비고 |
 |---|---|---|
-| Claude API 문제 생성 | `ai_engine/question_generator.py` | 스텁만 존재. `AI_PROVIDER=gemini` 으로 우회 가능 |
+| ~~Claude API 문제 생성~~ | ~~`ai_engine/question_generator.py`~~ | ✅ 구현 완료 (anthropic SDK) |
 | ~~Google Sheets 저장 백엔드~~ | ~~`repositories/`~~ | ✅ 구현 완료 (`sheets_repo.py`) |
 | 응시자 JWT 검증 | `api/exam.py` | `/api/exam/*` 라우트 인증 미적용 |
 | 서버 측 로그아웃 | `api/auth.py` | 클라이언트 sessionStorage 삭제만 처리 |
@@ -271,7 +271,7 @@ npm run dev   # http://localhost:5173
 - [x] 대시보드 4개 통계 카드 (`GET /api/admin/stats`)
 - [x] CSV 대량 사원 업로드 (`POST /api/admin/upload-users`)
 - [x] AI 토큰 절약 — 교육자료 4000자 초과 시 자동 트런케이션
-- [ ] Claude API 문제 생성 (`question_generator.py`)
+- [x] Claude API 문제 생성 (`question_generator.py`, anthropic SDK)
 - [ ] 응시자 전용 JWT 검증 (`/api/exam/*`)
 - [ ] 난이도 AI 자동 확정 피드백 루프
 - [ ] 결과 리포트 PDF 내보내기
@@ -295,7 +295,7 @@ Vercel 대시보드 → 프로젝트 → **Settings → Environment Variables**
 |---|---|---|
 | `JWT_SECRET_KEY` | JWT 서명 키 (랜덤 문자열로 교체 필수) | **즉시 설정** |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON 전체 내용 | ✅ 설정 완료 |
-| `ANTHROPIC_API_KEY` | Claude API 키 | Claude 연동 시 |
+| `CLAUDE_API_KEY` | Claude API 키 | Claude 연동 시 |
 
 > ⚠️ `JWT_SECRET_KEY`를 설정하지 않으면 기본값(`ojt-dev-secret-change-in-prod-2026`)이 사용됩니다. 반드시 Vercel 환경변수로 덮어쓰세요.
 
