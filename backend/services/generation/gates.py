@@ -219,6 +219,28 @@ def _schema_gate(q: dict) -> dict:
     return gate_result("PASS", "V01_OK", "객관식 단일정답 Schema가 유효합니다.", {})
 
 
+# --- V03 Single Answer (결정론적 부분: 보기 간 중복 가능성) -------------------------
+
+_OPTION_SIMILARITY_REVIEW_THRESHOLD = 0.92
+
+
+def v03_option_similarity_gate(q: dict) -> dict:
+    """네 보기 사이에 의미상 거의 동일한 쌍이 있으면 정답 단일성이 흔들릴 수 있다고 보고 REVIEW_REQUIRED로 표시한다.
+    정답 근거(교육자료 대비 Grounding) 확인은 gate_service.evaluate_candidate()의 의미 검증기가 담당한다."""
+    options = [q.get(k, "") for k in ("option_a", "option_b", "option_c", "option_d")]
+    normalized = [_normalize_for_dedup(o) for o in options]
+    for i in range(len(normalized)):
+        for j in range(i + 1, len(normalized)):
+            if not normalized[i] or not normalized[j]:
+                continue
+            similarity = SequenceMatcher(None, normalized[i], normalized[j]).ratio()
+            if similarity >= _OPTION_SIMILARITY_REVIEW_THRESHOLD:
+                return gate_result("REVIEW_REQUIRED", "V03_OPTIONS_TOO_SIMILAR",
+                                    "두 보기 문장이 의미상 중복될 가능성이 있습니다.",
+                                    {"option_pair": [i, j], "similarity": round(similarity, 4)})
+    return gate_result("PASS", "V03_OK", "보기 간 중복 가능성이 낮습니다.", {})
+
+
 # --- V04 Distractor Quality ---------------------------------------------------
 
 FORBIDDEN_DISTRACTOR_PHRASES = [
