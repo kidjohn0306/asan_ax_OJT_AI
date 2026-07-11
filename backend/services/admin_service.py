@@ -339,16 +339,26 @@ def list_exam_sets() -> list:
 
 def create_exam_set(name: str, team_code: str, question_ids: list, created_by: str = "") -> dict:
     import uuid
-    from repositories import exam_set_repo
+    from repositories import exam_set_repo, question_repo
+
+    # 존재하지 않는(또는 실제 문제은행과 어긋난) question_id가 섞여 들어가면 저장은 되지만
+    # 나중에 시험 생성 시점에야 문항 수가 조용히 줄어드는 문제로 이어짐 — 저장 시점에 걸러서
+    # 관리자가 바로 알 수 있게 한다.
+    all_ids = {q["question_id"] for pool in question_repo.get_all_questions().values() for q in pool}
+    valid_ids = [qid for qid in question_ids if qid in all_ids]
+    invalid_ids = [qid for qid in question_ids if qid not in all_ids]
+
     data = {
         "exam_set_id": f"set-{str(uuid.uuid4())[:8]}",
         "name": name,
         "team_code": team_code,
-        "question_ids": question_ids,
+        "question_ids": valid_ids,
         "created_by": created_by,
         "status": "active",
     }
-    return exam_set_repo.create_exam_set(data)
+    result = exam_set_repo.create_exam_set(data)
+    result["invalid_question_ids"] = invalid_ids
+    return result
 
 
 def assign_user_to_exam_set(employee_id: str, exam_set_id: str) -> dict:

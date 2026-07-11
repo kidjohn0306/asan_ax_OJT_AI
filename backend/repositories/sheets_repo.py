@@ -110,6 +110,17 @@ def _thread_local_sheets_service():
     return _thread_local.service
 
 
+def _warn_if_header_mismatch(tab_name: str, current_header: list, expected_headers: list) -> None:
+    """다른 브랜치/버전의 코드가 같은 시트를 다른 컬럼 순서로 쓰면, 위치 기반 파싱이 조용히
+    엉뚱한 값을 읽어버린다 (컬럼 개수가 같으면 기존 길이 체크로는 못 잡음 — 실제로 여러 번
+    발생한 사고). 내용까지 비교해 다르면 바로 로그에 남겨 원인 파악 시간을 줄인다."""
+    if current_header and current_header[:len(expected_headers)] != expected_headers:
+        logging.warning(
+            f"[{tab_name}] 시트 헤더가 코드 기대값과 다릅니다 — 다른 코드가 같은 시트를 "
+            f"다른 스키마로 쓰고 있을 수 있습니다. 기대: {expected_headers} / 실제: {current_header}"
+        )
+
+
 class SheetsExamSetRepository(ExamSetRepository):
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
@@ -151,6 +162,7 @@ class SheetsExamSetRepository(ExamSetRepository):
             range=f"{SHEET_TAB}!A1:H1",
         ).execute()
         current_header = res.get("values", [[]])[0] if res.get("values") else []
+        _warn_if_header_mismatch(SHEET_TAB, current_header, HEADERS)
         if len(current_header) < len(HEADERS):
             self._values().update(
                 spreadsheetId=self._spreadsheet_id,
@@ -344,7 +356,9 @@ class SheetsResultRepository(ResultRepository):
             spreadsheetId=self._spreadsheet_id,
             range=f"{RESULTS_TAB}!A1:J1",
         ).execute()
-        if not res.get("values"):
+        current_header = res.get("values", [[]])[0] if res.get("values") else []
+        _warn_if_header_mismatch(RESULTS_TAB, current_header, RESULTS_HEADERS)
+        if not current_header:
             self._values().update(
                 spreadsheetId=self._spreadsheet_id,
                 range=f"{RESULTS_TAB}!A1",
@@ -470,7 +484,9 @@ class SheetsSnapshotRepository(SnapshotRepository):
             spreadsheetId=self._spreadsheet_id,
             range=f"{SNAPSHOTS_TAB}!A1:C1",
         ).execute()
-        if not res.get("values"):
+        current_header = res.get("values", [[]])[0] if res.get("values") else []
+        _warn_if_header_mismatch(SNAPSHOTS_TAB, current_header, SNAPSHOTS_HEADERS)
+        if not current_header:
             self._values().update(
                 spreadsheetId=self._spreadsheet_id,
                 range=f"{SNAPSHOTS_TAB}!A1",
@@ -541,7 +557,9 @@ class SheetsTeamRepository:
         else:
             self._sheet_id = existing[TEAMS_TAB]
         res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{TEAMS_TAB}!A1:E1").execute()
-        if not res.get("values"):
+        current_header = res.get("values", [[]])[0] if res.get("values") else []
+        _warn_if_header_mismatch(TEAMS_TAB, current_header, TEAMS_HEADERS)
+        if not current_header:
             self._values().update(
                 spreadsheetId=self._spreadsheet_id,
                 range=f"{TEAMS_TAB}!A1",
@@ -672,7 +690,9 @@ class SheetsQuestionStatsRepository:
                 body={"requests": [{"addSheet": {"properties": {"title": STATS_TAB}}}]},
             ).execute()
         res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{STATS_TAB}!A1:D1").execute()
-        if not res.get("values"):
+        current_header = res.get("values", [[]])[0] if res.get("values") else []
+        _warn_if_header_mismatch(STATS_TAB, current_header, STATS_HEADERS)
+        if not current_header:
             self._values().update(
                 spreadsheetId=self._spreadsheet_id,
                 range=f"{STATS_TAB}!A1",
@@ -786,7 +806,9 @@ class SheetsQuestionRepository:
                 body={"requests": [{"addSheet": {"properties": {"title": QUESTIONS_TAB}}}]},
             ).execute()
         res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{QUESTIONS_TAB}!A1:R1").execute()
-        if not res.get("values"):
+        current_header = res.get("values", [[]])[0] if res.get("values") else []
+        _warn_if_header_mismatch(QUESTIONS_TAB, current_header, QUESTIONS_HEADERS)
+        if not current_header:
             self._values().update(
                 spreadsheetId=self._spreadsheet_id,
                 range=f"{QUESTIONS_TAB}!A1",
@@ -971,7 +993,9 @@ class SheetsMaterialRepository:
                 body={"requests": [{"addSheet": {"properties": {"title": MATERIAL_CACHE_TAB}}}]},
             ).execute()
         res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{MATERIAL_CACHE_TAB}!A1:C1").execute()
-        if not res.get("values"):
+        current_header = res.get("values", [[]])[0] if res.get("values") else []
+        _warn_if_header_mismatch(MATERIAL_CACHE_TAB, current_header, MATERIAL_CACHE_HEADERS)
+        if not current_header:
             self._values().update(
                 spreadsheetId=self._spreadsheet_id,
                 range=f"{MATERIAL_CACHE_TAB}!A1",
@@ -1071,7 +1095,9 @@ class SheetsUserRepository:
                 body={"requests": [{"addSheet": {"properties": {"title": USERS_TAB}}}]},
             ).execute()
         res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A1:G1").execute()
-        if not res.get("values"):
+        current_header = res.get("values", [[]])[0] if res.get("values") else []
+        _warn_if_header_mismatch(USERS_TAB, current_header, USERS_HEADERS)
+        if not current_header:
             self._values().update(
                 spreadsheetId=self._spreadsheet_id,
                 range=f"{USERS_TAB}!A1",

@@ -366,8 +366,12 @@ function QuestionGenerate({ toast, onNavigate }) {
     if (!preview || preview.length === 0) { toast('먼저 문제를 생성해주세요.', 'error'); return }
     try {
       const question_ids = preview.map(q => q.id || q.question_id).filter(Boolean)
-      await apiFetch('POST', '/api/admin/exam-sets', { name: examName.trim(), team_code: team, question_ids })
-      toast('시험지가 저장됐습니다.')
+      const res = await apiFetch('POST', '/api/admin/exam-sets', { name: examName.trim(), team_code: team, question_ids })
+      if (res.invalid_question_ids?.length > 0) {
+        toast(`시험지가 저장됐지만, 존재하지 않는 문제 ${res.invalid_question_ids.length}개는 제외됐습니다.`, 'error')
+      } else {
+        toast('시험지가 저장됐습니다.')
+      }
     } catch (e) { toast(`저장 실패: ${e.message}`, 'error') }
   }
 
@@ -975,8 +979,12 @@ function ExamSheet({ toast, onNavigate }) {
     if (!questions || questions.length === 0) { toast('먼저 문제를 배분해주세요.', 'error'); return }
     try {
       const question_ids = questions.map(q => q.id || q.question_id).filter(Boolean)
-      await apiFetch('POST', '/api/admin/exam-sets', { name: examName.trim(), team_code: team, question_ids })
-      toast('시험지가 저장됐습니다.')
+      const res = await apiFetch('POST', '/api/admin/exam-sets', { name: examName.trim(), team_code: team, question_ids })
+      if (res.invalid_question_ids?.length > 0) {
+        toast(`시험지가 저장됐지만, 존재하지 않는 문제 ${res.invalid_question_ids.length}개는 제외됐습니다.`, 'error')
+      } else {
+        toast('시험지가 저장됐습니다.')
+      }
     } catch (e) { toast(`저장 실패: ${e.message}`, 'error') }
   }
 
