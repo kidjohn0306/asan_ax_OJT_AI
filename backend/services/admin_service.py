@@ -339,6 +339,15 @@ def create_exam_set(name: str, team_code: str, question_ids: list, created_by: s
 
 def assign_user_to_exam_set(employee_id: str, exam_set_id: str) -> dict:
     from repositories import exam_set_repo
+
+    # 한 응시자는 동시에 하나의 시험 세트에만 배정되어야 한다. 그렇지 않으면 이전에
+    # 배정된 세트가 그대로 남아있어, 새 세트로 재배정해도 실제 출제 시 어느 세트를 써야
+    # 할지 모호해지고 이전 문제가 그대로 나오는 버그로 이어진다.
+    for s in exam_set_repo.list_exam_sets():
+        other_id = s.get("exam_set_id")
+        if other_id and other_id != exam_set_id and employee_id in s.get("assigned_users", []):
+            exam_set_repo.unassign_user(other_id, employee_id)
+
     if not exam_set_repo.assign_user(exam_set_id, employee_id):
         raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
     return {"success": True, "employee_id": employee_id, "exam_set_id": exam_set_id}

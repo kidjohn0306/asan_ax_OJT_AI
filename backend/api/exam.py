@@ -14,6 +14,7 @@ TeamCode = str
 
 class GenerateRequest(BaseModel):
     team_code: TeamCode
+    employee_id: Optional[str] = ""
 
 
 class SubmitRequest(BaseModel):
@@ -33,7 +34,7 @@ def generate_exam(body: GenerateRequest):
     USE_MOCK_DATA=true 이면 mock_data/questions.json 사용
     """
     from services.exam_service import generate_exam_questions
-    return generate_exam_questions(body.team_code)
+    return generate_exam_questions(body.team_code, employee_id=body.employee_id)
 
 
 @router.post("/submit")
