@@ -121,6 +121,12 @@ def get_logs(
     return fetch_logs(team, date_from, date_to)
 
 
+@router.get("/results-summary")
+def get_results_summary(_: dict = Depends(require_admin)):
+    from services.admin_service import fetch_results_summary
+    return fetch_results_summary()
+
+
 @router.get("/questions")
 def get_questions(
     team: Optional[str] = None,

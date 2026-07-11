@@ -11,6 +11,7 @@ from repositories.base import (
     TeamRepository,
     QuestionStatsRepository,
     MaterialRepository,
+    UserRepository,
 )
 
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
@@ -170,18 +171,28 @@ class LocalResultRepository(ResultRepository):
 
 
 class LocalSnapshotRepository(SnapshotRepository):
-    _file = Path("/tmp") / "snapshots.jsonl"
+    _file = MOCK_DIR / "snapshots.jsonl"
+    _tmp_file = Path("/tmp") / "snapshots.jsonl"
+
+    def _active_file(self) -> Path:
+        tmp = self._tmp_file
+        return tmp if tmp.exists() else self._file
 
     def save_snapshot(self, exam_id: str, snapshot: dict) -> None:
         record = {"exam_id": exam_id, "snapshot": snapshot,
                   "created_at": datetime.now(timezone.utc).isoformat()}
-        with open(self._file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        try:
+            with open(self._file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError:
+            with open(self._tmp_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
     def get_snapshot(self, exam_id: str) -> dict:
-        if not self._file.exists():
+        target = self._active_file()
+        if not target.exists():
             return None
-        with open(self._file, encoding="utf-8") as f:
+        with open(target, encoding="utf-8") as f:
             for line in f:
                 r = json.loads(line.strip())
                 if r.get("exam_id") == exam_id:
@@ -393,3 +404,82 @@ class LocalMaterialRepository(MaterialRepository):
         data = self._load()
         data[category] = manifest
         self._save(data)
+
+
+_USERS_FILE = MOCK_DIR / "users.json"
+_USERS_TMP_FILE = Path("/tmp/users.json")
+
+
+def load_local_admins() -> list:
+    """관리자 계정은 STORAGE_BACKEND 설정과 무관하게 항상 로컬 users.json에서만 읽는다
+    (비밀번호 해시가 공유 스프레드시트에 노출되지 않도록)."""
+    target = _USERS_TMP_FILE if _USERS_TMP_FILE.exists() else _USERS_FILE
+    with open(target, encoding="utf-8") as f:
+        return json.load(f).get("admins", [])
+
+
+def update_local_admin_password(employee_id: str, password_hash: str) -> bool:
+    target = _USERS_TMP_FILE if _USERS_TMP_FILE.exists() else _USERS_FILE
+    with open(target, encoding="utf-8") as f:
+        data = json.load(f)
+    admin = next((a for a in data["admins"] if a["employee_id"] == employee_id), None)
+    if not admin:
+        return False
+    admin["password_hash"] = password_hash
+    try:
+        with open(_USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except OSError:
+        with open(_USERS_TMP_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    return True
+
+
+class LocalUserRepository(UserRepository):
+    """승인된 응시자만 다룬다. admins는 users.json에 같이 있지만 이 Repository가
+    건드리지 않고 그대로 보존한다 (보안 — 관리자 계정은 항상 로컬에만 존재)."""
+
+    _file = MOCK_DIR / "users.json"
+    _tmp_file = Path("/tmp/users.json")
+
+    def _load_all(self) -> dict:
+        target = self._tmp_file if self._tmp_file.exists() else self._file
+        with open(target, encoding="utf-8") as f:
+            return json.load(f)
+
+    def _save_all(self, data: dict) -> None:
+        try:
+            with open(self._file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except OSError:
+            with open(self._tmp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def list_users(self) -> list:
+        return self._load_all().get("approved_users", [])
+
+    def find_user(self, employee_id: str) -> dict | None:
+        return next((u for u in self.list_users() if u["employee_id"] == employee_id), None)
+
+    def add_user(self, user: dict) -> None:
+        data = self._load_all()
+        data["approved_users"].append(user)
+        self._save_all(data)
+
+    def delete_user(self, employee_id: str) -> bool:
+        data = self._load_all()
+        before = len(data["approved_users"])
+        data["approved_users"] = [u for u in data["approved_users"] if u["employee_id"] != employee_id]
+        if len(data["approved_users"]) == before:
+            return False
+        self._save_all(data)
+        return True
+
+    def update_user(self, employee_id: str, fields: dict) -> bool:
+        data = self._load_all()
+        for u in data["approved_users"]:
+            if u["employee_id"] == employee_id:
+                u.update(fields)
+                self._save_all(data)
+                return True
+        return False
