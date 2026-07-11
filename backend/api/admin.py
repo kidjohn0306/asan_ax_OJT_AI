@@ -121,6 +121,12 @@ def get_logs(
     return fetch_logs(team, date_from, date_to)
 
 
+@router.get("/results-summary")
+def get_results_summary(_: dict = Depends(require_admin)):
+    from services.admin_service import fetch_results_summary
+    return fetch_results_summary()
+
+
 @router.get("/questions")
 def get_questions(
     team: Optional[str] = None,
@@ -199,6 +205,12 @@ def get_exam_set_assignees(exam_set_id: str, _: dict = Depends(require_admin)):
 def unassign_user(exam_set_id: str, employee_id: str, _: dict = Depends(require_admin)):
     from services.admin_service import unassign_user_from_exam_set
     return unassign_user_from_exam_set(employee_id, exam_set_id)
+
+
+@router.delete("/exam-sets/{exam_set_id}")
+def delete_exam_set(exam_set_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import delete_exam_set as _delete
+    return _delete(exam_set_id)
 
 
 @router.get("/exam-sets/{exam_set_id}/results")
