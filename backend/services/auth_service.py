@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -14,6 +15,10 @@ TOKEN_EXPIRE_MINUTES = 480  # 8시간
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# 로그아웃된 토큰의 jti 집합. 프로세스 재시작·인스턴스 교체 시 초기화되는 한계는
+# 다른 in-memory 상태(_exam_sessions 등)와 동일 — Vercel 콜드스타트 시 재로그인 필요할 수 있음.
+_revoked_jtis: set[str] = set()
+
 
 def _load_users() -> dict:
     with open(MOCK_DIR / "users.json", encoding="utf-8") as f:
@@ -22,13 +27,23 @@ def _load_users() -> dict:
 
 def decode_token(token: str) -> dict:
     try:
-        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         raise HTTPException(status_code=401, detail="유효하지 않은 토큰입니다.")
+    if payload.get("jti") in _revoked_jtis:
+        raise HTTPException(status_code=401, detail="로그아웃된 토큰입니다. 다시 로그인해주세요.")
+    return payload
+
+
+def revoke_token(token: str) -> None:
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM], options={"verify_exp": False})
+    jti = payload.get("jti")
+    if jti:
+        _revoked_jtis.add(jti)
 
 
 def create_access_token(data: dict) -> str:
-    payload = {**data, "exp": datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRE_MINUTES)}
+    payload = {**data, "jti": str(uuid.uuid4()), "exp": datetime.now(timezone.utc) + timedelta(minutes=TOKEN_EXPIRE_MINUTES)}
     return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
 
 
