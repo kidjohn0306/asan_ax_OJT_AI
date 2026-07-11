@@ -102,6 +102,26 @@ class QuestionStatsRepository(ABC):
     def list_flagged(self) -> list: ...
 
 
+class UserRepository(ABC):
+    """승인된 응시자(examinee) 계정 관리. 관리자 계정은 보안(비밀번호 해시 노출 방지)을
+    위해 항상 로컬 파일에만 저장하며 이 Repository의 대상이 아니다."""
+
+    @abstractmethod
+    def list_users(self) -> list: ...
+
+    @abstractmethod
+    def find_user(self, employee_id: str) -> dict | None: ...
+
+    @abstractmethod
+    def add_user(self, user: dict) -> None: ...
+
+    @abstractmethod
+    def delete_user(self, employee_id: str) -> bool: ...
+
+    @abstractmethod
+    def update_user(self, employee_id: str, fields: dict) -> bool: ...
+
+
 class MaterialRepository(ABC):
     """Drive 교육자료 스캔 결과 캐시. category(예: common/team1/team2/team3)별로
     스캔된 파일 매니페스트(id/name/modifiedTime)와 추출된 텍스트를 저장해

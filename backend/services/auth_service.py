@@ -1,14 +1,11 @@
-import json
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 from fastapi import HTTPException
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
-MOCK_DIR = Path(__file__).parent.parent / "mock_data"
 SECRET_KEY = os.getenv("JWT_SECRET_KEY", "ojt-dev-secret-change-in-prod-2026")
 ALGORITHM = "HS256"
 TOKEN_EXPIRE_MINUTES = 480  # 8시간
@@ -18,11 +15,6 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 # 로그아웃된 토큰의 jti 집합. 프로세스 재시작·인스턴스 교체 시 초기화되는 한계는
 # 다른 in-memory 상태(_exam_sessions 등)와 동일 — Vercel 콜드스타트 시 재로그인 필요할 수 있음.
 _revoked_jtis: set[str] = set()
-
-
-def _load_users() -> dict:
-    with open(MOCK_DIR / "users.json", encoding="utf-8") as f:
-        return json.load(f)
 
 
 def decode_token(token: str) -> dict:
@@ -48,10 +40,12 @@ def create_access_token(data: dict) -> str:
 
 
 def authenticate_user(employee_id: str, password: str) -> dict:
-    data = _load_users()
-    all_users = data["approved_users"] + data["admins"]
+    from repositories import user_repo
+    from repositories.local_json import load_local_admins
 
-    user = next((u for u in all_users if u["employee_id"] == employee_id), None)
+    user = user_repo.find_user(employee_id)
+    if not user:
+        user = next((a for a in load_local_admins() if a["employee_id"] == employee_id), None)
     if not user:
         raise HTTPException(status_code=403, detail="승인되지 않은 계정입니다.")
     if not user.get("approved"):

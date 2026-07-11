@@ -13,6 +13,7 @@ from repositories.local_json import (
     LocalQuestionStatsRepository,
     LocalQuestionRepository,
     LocalMaterialRepository,
+    LocalUserRepository,
 )
 
 
@@ -67,6 +68,9 @@ QUESTIONS_HEADERS = [
 
 MATERIAL_CACHE_TAB = "material_cache"
 MATERIAL_CACHE_HEADERS = ["category", "files_json", "scanned_at"]
+
+USERS_TAB = "users"
+USERS_HEADERS = ["employee_id", "password_hash", "name", "team", "role", "exam_date", "approved"]
 
 
 def _default_sheet_id():
@@ -1001,3 +1005,132 @@ class SheetsMaterialRepository:
                 valueInputOption="RAW",
                 body={"values": [row]},
             ).execute()
+
+
+class SheetsUserRepository:
+    def __init__(self):
+        self._spreadsheet_id = _default_sheet_id()
+        self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
+
+    def _values(self):
+        return self._svc.spreadsheets().values()
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            self._ensure_tab()
+            self._tab_ready = True
+
+    def _ensure_tab(self):
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        existing = [s["properties"]["title"] for s in meta.get("sheets", [])]
+        if USERS_TAB not in existing:
+            self._svc.spreadsheets().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": USERS_TAB}}}]},
+            ).execute()
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A1:G1").execute()
+        if not res.get("values"):
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{USERS_TAB}!A1",
+                valueInputOption="RAW",
+                body={"values": [USERS_HEADERS]},
+            ).execute()
+
+    def _read_all_rows(self) -> list:
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A:G").execute()
+        rows = res.get("values", [])
+        return rows[1:] if len(rows) > 1 else []
+
+    @staticmethod
+    def _row_to_dict(row: list) -> dict:
+        def _get(i): return row[i] if len(row) > i else ""
+        return {
+            "employee_id": _get(0),
+            "password_hash": _get(1),
+            "name": _get(2),
+            "team": _get(3),
+            "role": _get(4) or "examinee",
+            "exam_date": _get(5),
+            "approved": _get(6) in ("TRUE", "True", True),
+        }
+
+    @staticmethod
+    def _dict_to_row(data: dict) -> list:
+        return [
+            data.get("employee_id", ""),
+            data.get("password_hash", ""),
+            data.get("name", ""),
+            data.get("team", ""),
+            data.get("role", "examinee"),
+            data.get("exam_date", ""),
+            "TRUE" if data.get("approved") else "FALSE",
+        ]
+
+    def _find_row_index(self, employee_id: str) -> int:
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A:A").execute()
+        for i, row in enumerate(res.get("values", []), start=1):
+            if row and row[0] == employee_id:
+                return i
+        return -1
+
+    @_fallback_on_error(LocalUserRepository)
+    def list_users(self) -> list:
+        self._maybe_ensure_tab()
+        return [self._row_to_dict(r) for r in self._read_all_rows() if r and r[0]]
+
+    @_fallback_on_error(LocalUserRepository)
+    def find_user(self, employee_id: str) -> dict | None:
+        self._maybe_ensure_tab()
+        for row in self._read_all_rows():
+            if row and row[0] == employee_id:
+                return self._row_to_dict(row)
+        return None
+
+    @_fallback_on_error(LocalUserRepository)
+    def add_user(self, user: dict) -> None:
+        self._maybe_ensure_tab()
+        self._values().append(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{USERS_TAB}!A:G",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [self._dict_to_row(user)]},
+        ).execute()
+
+    @_fallback_on_error(LocalUserRepository)
+    def delete_user(self, employee_id: str) -> bool:
+        self._maybe_ensure_tab()
+        row_idx = self._find_row_index(employee_id)
+        if row_idx == -1:
+            return False
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        sheet_id = next(s["properties"]["sheetId"] for s in meta["sheets"] if s["properties"]["title"] == USERS_TAB)
+        self._svc.spreadsheets().batchUpdate(
+            spreadsheetId=self._spreadsheet_id,
+            body={"requests": [{"deleteDimension": {"range": {
+                "sheetId": sheet_id, "dimension": "ROWS",
+                "startIndex": row_idx - 1, "endIndex": row_idx,
+            }}}]},
+        ).execute()
+        return True
+
+    @_fallback_on_error(LocalUserRepository)
+    def update_user(self, employee_id: str, fields: dict) -> bool:
+        self._maybe_ensure_tab()
+        row_idx = self._find_row_index(employee_id)
+        if row_idx == -1:
+            return False
+        user = self.find_user(employee_id)
+        user.update(fields)
+        self._values().update(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{USERS_TAB}!A{row_idx}:G{row_idx}",
+            valueInputOption="RAW",
+            body={"values": [self._dict_to_row(user)]},
+        ).execute()
+        return True
