@@ -1623,6 +1623,18 @@ function ExamAssign({ toast }) {
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
   }
 
+  async function handleDeleteSet(setId, setName, e) {
+    e.stopPropagation()
+    if (!window.confirm(`"${setName}" 시험세트를 삭제할까요? 배정 정보도 함께 사라지며 되돌릴 수 없습니다.`)) return
+    try {
+      await apiFetch('DELETE', `/api/admin/exam-sets/${setId}`)
+      toast('시험세트가 삭제됐습니다.')
+      if (viewedSetId === setId) { setViewedSetId(''); setAssignees([]) }
+      const setsData = await apiFetch('GET', '/api/admin/exam-sets')
+      setSets(setsData.sets || [])
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+  }
+
   const selectedUserObj = users.find(u => u.employee_id === selectedUser)
   const filteredUsers = userQuery.trim()
     ? users.filter(u =>
@@ -1705,7 +1717,7 @@ function ExamAssign({ toast }) {
       {sets.length > 0 && (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
           <Card title="시험세트 목록">
-            <DataTable headers={['이름','팀','문항 수','생성일']}>
+            <DataTable headers={['이름','팀','문항 수','생성일','']}>
               {sets.map(s => (
                 <tr key={s.exam_set_id}
                   onClick={() => { setViewedSetId(s.exam_set_id); loadAssignees(s.exam_set_id) }}
@@ -1714,6 +1726,12 @@ function ExamAssign({ toast }) {
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.team_code}</td>
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{(s.question_ids || []).length}문항</td>
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.created_at ? s.created_at.slice(0,10) : '-'}</td>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', textAlign:'right' }}>
+                    <button onClick={(e) => handleDeleteSet(s.exam_set_id, s.name, e)}
+                      style={{ fontSize:12, color:'var(--danger)', background:'none', border:'1px solid var(--danger)', borderRadius:6, padding:'4px 10px', cursor:'pointer', fontFamily:'var(--font)' }}>
+                      삭제
+                    </button>
+                  </td>
                 </tr>
               ))}
             </DataTable>
