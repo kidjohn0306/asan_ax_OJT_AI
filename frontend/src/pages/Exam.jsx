@@ -304,20 +304,27 @@ function ScoringScreen({ title, sub }) {
 }
 
 /* ── ResultScreen ───────────────────────────────────────────── */
-function ResultScreen({ empInfo, questions, answers, score, resultDetails, onFinish }) {
+function ResultScreen({ empInfo, questions, answers, score, submitResults, onFinish }) {
   const [accordionOpen, setAccordionOpen] = useState(false)
+  const [expandedRow, setExpandedRow] = useState(null)
   const pass = score >= 70
 
-  const LETTER_IDX = { A:0, B:1, C:2, D:3 }
-  const detailMap = {}
-  ;(resultDetails || []).forEach(r => { detailMap[r.q_id] = r })
+  // 서버 채점 결과(문제 텍스트·정답·내 답·해설 포함)가 있으면 이걸 기준으로 렌더링한다.
+  // 시험 출제 시점 응답에는 부정행위 방지를 위해 정답이 빠져있어 로컬 questions/answers만으로는
+  // 채점 결과를 표시할 수 없다 — 그래서 이 화면은 반드시 submitResults를 써야 한다.
+  const hasServerResults = Array.isArray(submitResults) && submitResults.length > 0
 
-  const catResults = { 공통:{c:0,t:5}, 팀별:{c:0,t:10}, 환경안전:{c:0,t:5}, 일반상식:{c:0,t:5} }
-  questions.forEach((q, i) => {
-    const detail = detailMap[q.id]
-    const correct = detail ? detail.correct : answers[i] === q.ans
-    if (correct) catResults[q.cat].c++
-  })
+  const catResults = { 공통:{c:0,t:0}, 팀별:{c:0,t:0}, 환경안전:{c:0,t:0}, 일반상식:{c:0,t:0} }
+  if (hasServerResults) {
+    submitResults.forEach(r => {
+      if (!catResults[r.category]) catResults[r.category] = { c:0, t:0 }
+      catResults[r.category].t++
+      if (r.correct) catResults[r.category].c++
+    })
+  } else {
+    Object.assign(catResults, { 공통:{c:0,t:5}, 팀별:{c:0,t:10}, 환경안전:{c:0,t:5}, 일반상식:{c:0,t:5} })
+    questions.forEach((q, i) => { if (answers[i] === q.ans) catResults[q.cat].c++ })
+  }
 
   return (
     <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:'var(--bg)', fontFamily:'var(--font)' }}>
@@ -342,7 +349,7 @@ function ResultScreen({ empInfo, questions, answers, score, resultDetails, onFin
           <div style={{ flex:1, display:'flex', flexDirection:'column', gap:14 }}>
             {CAT_ORDER.map(cat => {
               const r = catResults[cat]
-              const pct = Math.round((r.c / r.t) * 100)
+              const pct = r.t ? Math.round((r.c / r.t) * 100) : 0
               return (
                 <div key={cat}>
                   <div style={{ display:'grid', gridTemplateColumns:'70px 1fr 48px', gap:10, alignItems:'center' }}>
@@ -372,14 +379,41 @@ function ResultScreen({ empInfo, questions, answers, score, resultDetails, onFin
           </button>
           {accordionOpen && (
             <div style={{ maxHeight:600, overflowY:'auto' }}>
-              {questions.map((q, i) => {
-                const detail = detailMap[q.id]
-                const unknownAnswer = !detail && q.ans === -1
-                const isCorrect = detail ? detail.correct : (!unknownAnswer && answers[i] === q.ans)
-                const correctLabel = detail ? detail.answer : (unknownAnswer ? null : LABEL[q.ans])
-                const correctIdx = detail ? LETTER_IDX[detail.answer] : (unknownAnswer ? null : q.ans)
-                const myLabel = detail ? detail.user_answer : (answers[i] !== null ? LABEL[answers[i]] : null)
-                const myIdx = detail ? LETTER_IDX[detail.user_answer] : answers[i]
+              {hasServerResults ? submitResults.map((r, i) => {
+                const isOpen = expandedRow === i
+                return (
+                  <div key={r.q_id || i} style={{ borderTop:'1px solid var(--border)' }}>
+                    <div
+                      onClick={() => setExpandedRow(isOpen ? null : i)}
+                      style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 24px', cursor:'pointer' }}
+                    >
+                      <span style={{ fontSize:12, fontWeight:800, color:'var(--text-muted)', width:24, flexShrink:0 }}>{i+1}</span>
+                      <span style={{ flex:1, fontSize:13, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{r.question}</span>
+                      <span style={{ width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, flexShrink:0, background: r.correct ? 'var(--success-light)' : 'var(--danger-light)', color: r.correct ? 'var(--success)' : 'var(--danger)' }}>{r.correct ? 'O' : 'X'}</span>
+                      <span style={{ fontSize:11, color:'var(--text-muted)', width:150, textAlign:'right', flexShrink:0, whiteSpace:'nowrap' }}>내 답: {r.user_answer || '미응답'} · 정답: {r.answer}</span>
+                      <span style={{ fontSize:14, color:'var(--text-muted)', flexShrink:0 }}>{isOpen ? '▴' : '▾'}</span>
+                    </div>
+                    {isOpen && (
+                      <div style={{ padding:'0 24px 16px 60px', display:'flex', flexDirection:'column', gap:8 }}>
+                        {['A','B','C','D'].map(k => r.options?.[k] && (
+                          <div key={k} style={{ fontSize:12, color: k === r.answer ? 'var(--success)' : k === r.user_answer ? 'var(--danger)' : 'var(--text-muted)', fontWeight: (k === r.answer || k === r.user_answer) ? 700 : 400 }}>
+                            {k}. {r.options[k]}
+                            {k === r.answer && '  (정답)'}
+                            {k === r.user_answer && k !== r.answer && '  (내 답)'}
+                          </div>
+                        ))}
+                        {r.explanation && (
+                          <div style={{ fontSize:12, color:'var(--text)', background:'var(--bg)', borderRadius:8, padding:'10px 12px', marginTop:4, lineHeight:1.6 }}>
+                            💡 {r.explanation}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              }) : questions.map((q, i) => {
+                const unknownAnswer = q.ans === -1
+                const isCorrect = !unknownAnswer && answers[i] === q.ans
                 return (
                   <div key={i} style={{ padding:'12px 24px', borderTop:'1px solid var(--border)' }}>
                     <div style={{ display:'flex', alignItems:'center', gap:12 }}>
@@ -436,7 +470,7 @@ export default function Exam() {
   const [timerSeconds, setTimerSeconds] = useState(3600)
   const [examId, setExamId] = useState(null)
   const [score, setScore] = useState(null)
-  const [resultDetails, setResultDetails] = useState(null)
+  const [submitResults, setSubmitResults] = useState(null)
   const timerRef = useRef(null)
   const handleSubmitRef = useRef(null)
   const historyGuardPushedRef = useRef(false)
@@ -535,7 +569,7 @@ export default function Exam() {
       const res = await fetch('/api/exam/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ team_code: teamCode }),
+        body: JSON.stringify({ team_code: teamCode, employee_id: empInfo.empno }),
       })
       if (res.ok) {
         const data = await res.json()
@@ -578,7 +612,7 @@ export default function Exam() {
         const LMAP = ['A','B','C','D']
         const answersDict = {}
         const timesDict = {}
-        questions.forEach((q, i) => { answersDict[q.id] = answers[i] !== null ? LMAP[answers[i]] : 'A'; timesDict[q.id] = 30 })
+        questions.forEach((q, i) => { answersDict[q.id] = answers[i] !== null ? LMAP[answers[i]] : ''; timesDict[q.id] = 30 })
         const token = sessionStorage.getItem('token')
         const res = await fetch('/api/exam/submit', {
           method: 'POST',
@@ -588,7 +622,7 @@ export default function Exam() {
         if (res.ok) {
           const data = await res.json()
           setScore(data.score)
-          setResultDetails(data.results || null)
+          setSubmitResults(data.results || null)
           setTimeout(() => setScreen('result'), 2000)
           return
         }
@@ -646,7 +680,7 @@ export default function Exam() {
         />
       )}
       {screen === 'result' && score !== null && (
-        <ResultScreen empInfo={empInfo} questions={questions} answers={answers} score={score} resultDetails={resultDetails} onFinish={handleFinish} />
+        <ResultScreen empInfo={empInfo} questions={questions} answers={answers} score={score} submitResults={submitResults} onFinish={handleFinish} />
       )}
     </>
   )
