@@ -207,6 +207,12 @@ def unassign_user(exam_set_id: str, employee_id: str, _: dict = Depends(require_
     return unassign_user_from_exam_set(employee_id, exam_set_id)
 
 
+@router.delete("/exam-sets/{exam_set_id}")
+def delete_exam_set(exam_set_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import delete_exam_set as _delete
+    return _delete(exam_set_id)
+
+
 @router.get("/exam-sets/{exam_set_id}/results")
 def get_exam_set_results(exam_set_id: str, _: dict = Depends(require_admin)):
     from repositories import result_repo

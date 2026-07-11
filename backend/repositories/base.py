@@ -70,6 +70,9 @@ class ExamSetRepository(ABC):
     @abstractmethod
     def unassign_user(self, exam_set_id: str, employee_id: str) -> bool: ...
 
+    @abstractmethod
+    def delete_exam_set(self, exam_set_id: str) -> bool: ...
+
 
 class TeamRepository(ABC):
     @abstractmethod

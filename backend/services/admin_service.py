@@ -374,6 +374,13 @@ def unassign_user_from_exam_set(employee_id: str, exam_set_id: str) -> dict:
     return {"success": True, "employee_id": employee_id, "exam_set_id": exam_set_id}
 
 
+def delete_exam_set(exam_set_id: str) -> dict:
+    from repositories import exam_set_repo
+    if not exam_set_repo.delete_exam_set(exam_set_id):
+        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
+    return {"deleted": True, "exam_set_id": exam_set_id}
+
+
 def seed_mock_data() -> dict:
     from repositories import user_repo
     from repositories.local_json import load_local_admins
