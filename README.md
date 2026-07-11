@@ -247,10 +247,10 @@ npm run dev   # http://localhost:5173
 |---|---|---|
 | ~~Claude API 문제 생성~~ | ~~`ai_engine/question_generator.py`~~ | ✅ 구현 완료 (anthropic SDK) |
 | ~~Google Sheets 저장 백엔드~~ | ~~`repositories/`~~ | ✅ 구현 완료 (`sheets_repo.py`) |
-| 응시자 JWT 검증 | `api/exam.py` | `/api/exam/*` 라우트 인증 미적용 |
-| 서버 측 로그아웃 | `api/auth.py` | 클라이언트 sessionStorage 삭제만 처리 |
-| 결과 리포트 PDF 내보내기 | — | 미착수 |
-| 비밀번호 초기화 | — | 미착수 |
+| ~~응시자 JWT 검증~~ | ~~`api/exam.py`~~ | ✅ 구현 완료 — `/api/exam/*` 전체 `require_auth` 필수화 |
+| ~~서버 측 로그아웃~~ | ~~`api/auth.py`~~ | ✅ 구현 완료 — jti 블록리스트 기반 토큰 무효화 |
+| 결과 리포트 PDF 내보내기 | — | 백엔드 데이터(문제 텍스트·카테고리·보기) 보강 완료, 실제 PDF 렌더링은 프론트 담당 |
+| ~~비밀번호 초기화~~ | ~~`api/admin.py`~~ | ✅ 구현 완료 — 관리자가 임시 비밀번호 발급 |
 
 ### 난이도 auto_confirmed 로직
 관리자가 특정 문항을 **3회 연속 동일 난이도**로 override하면 `auto_confirmed: true` 반환.
@@ -275,10 +275,11 @@ npm run dev   # http://localhost:5173
 - [x] Claude API 문제 생성 (`question_generator.py`, anthropic SDK)
 - [x] Drive 교육자료(PDF/PPTX) 자동 스캔 → AI 문제 생성 반영 (`material_service.py`)
 - [x] 관리자 화면 "운영 모드"·"Claude API" 실제 상태 체크 (`GET /api/admin/system-status`)
-- [ ] 응시자 전용 JWT 검증 (`/api/exam/*`)
+- [x] 응시자 전용 JWT 검증 (`/api/exam/*`)
+- [x] 서버 측 로그아웃 (jti 블록리스트)
+- [x] 비밀번호 초기화 기능 (관리자 임시 비밀번호 발급)
 - [ ] 난이도 AI 자동 확정 피드백 루프
-- [ ] 결과 리포트 PDF 내보내기
-- [ ] 비밀번호 초기화 기능
+- [ ] 결과 리포트 PDF 내보내기 (백엔드 데이터 보강 완료, 프론트 렌더링 남음)
 
 ---
 
@@ -298,7 +299,7 @@ Vercel 대시보드 → 프로젝트 → **Settings → Environment Variables**
 |---|---|---|
 | `JWT_SECRET_KEY` | JWT 서명 키 (랜덤 문자열로 교체 필수) | **즉시 설정** |
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | Service Account JSON 전체 내용 | ✅ 설정 완료 |
-| `CLAUDE_API_KEY` | Claude API 키 | Claude 연동 시 |
+| `CLAUDE_API_KEY` | Claude API 키 | ✅ 설정 완료 |
 
 > ⚠️ `JWT_SECRET_KEY`를 설정하지 않으면 기본값(`ojt-dev-secret-change-in-prod-2026`)이 사용됩니다. 반드시 Vercel 환경변수로 덮어쓰세요.
 

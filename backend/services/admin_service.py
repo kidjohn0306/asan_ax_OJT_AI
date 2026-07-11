@@ -1,13 +1,10 @@
-import json
 import logging
 import os
 import time
-from pathlib import Path
 
 from fastapi import HTTPException
 from services.difficulty import update_difficulty_from_feedback
 
-MOCK_DIR = Path(__file__).parent.parent / "mock_data"
 TEAM_KEY_MAP = {"T1": "team1", "T2": "team2", "T3": "team3"}
 
 # pool_key(문제 저장 위치: common/team1/team2/.../safety/general) -> 문제의 category 필드에 쓰이는
@@ -25,38 +22,36 @@ def _get_repos():
     return question_repo, result_repo, feedback_repo
 
 
-_USERS_TMP = Path("/tmp/users.json")
-_USERS_FILE = MOCK_DIR / "users.json"
-
-
-def _load_users() -> dict:
-    target = _USERS_TMP if _USERS_TMP.exists() else _USERS_FILE
-    with open(target, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _save_users(data: dict):
-    try:
-        with open(_USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except OSError:
-        with open(_USERS_TMP, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-
 def fetch_users() -> dict:
-    data = _load_users()
-    return {"users": data["approved_users"]}
+    from repositories import user_repo
+    return {"users": user_repo.list_users()}
 
 
 def delete_user(employee_id: str) -> dict:
-    data = _load_users()
-    before = len(data["approved_users"])
-    data["approved_users"] = [u for u in data["approved_users"] if u["employee_id"] != employee_id]
-    if len(data["approved_users"]) == before:
+    from repositories import user_repo
+    if not user_repo.delete_user(employee_id):
         raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
-    _save_users(data)
     return {"deleted": True, "employee_id": employee_id}
+
+
+def reset_user_password(employee_id: str) -> dict:
+    """관리자가 사용자 비밀번호를 임시 비밀번호로 초기화. 실제 발급된 비밀번호는
+    이메일 연동이 없어 응답으로 반환 — 관리자가 직접 사용자에게 전달해야 함."""
+    import secrets
+    import string
+    from repositories import user_repo
+    from repositories.local_json import update_local_admin_password
+    from services.auth_service import pwd_context
+
+    alphabet = string.ascii_uppercase + string.digits
+    temp_password = "".join(secrets.choice(alphabet) for _ in range(10))
+    password_hash = pwd_context.hash(temp_password)
+
+    if not (user_repo.update_user(employee_id, {"password_hash": password_hash})
+            or update_local_admin_password(employee_id, password_hash)):
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    return {"employee_id": employee_id, "temp_password": temp_password}
 
 
 def fetch_exam_count() -> dict:
@@ -65,15 +60,15 @@ def fetch_exam_count() -> dict:
 
 
 def fetch_user_count() -> dict:
-    data = _load_users()
-    return {"count": len(data["approved_users"])}
+    from repositories import user_repo
+    return {"count": len(user_repo.list_users())}
 
 
 def fetch_team_headcounts() -> dict:
     """팀별 실제 소속(승인된) 인원수 — 팀 관리 화면에서 정원과 대조하기 위한 실제 값."""
-    data = _load_users()
+    from repositories import user_repo
     counts: dict = {}
-    for u in data["approved_users"]:
+    for u in user_repo.list_users():
         team = u.get("team") or "미배정"
         counts[team] = counts.get(team, 0) + 1
     return {"headcounts": counts}
@@ -104,15 +99,6 @@ def fetch_logs(team=None, date_from=None, date_to=None) -> dict:
             "difficulty_dist": _calc_diff_dist(r.get("results", [])),
         }
         logs.append(log)
-
-    if not logs:
-        logs = [
-            {"name": "홍길동", "team": "T1", "date": "2026-06-14", "score": 92, "pass": True,  "difficulty_dist": {"상": 2, "중": 5, "하": 3}},
-            {"name": "김철수", "team": "T2", "date": "2026-06-14", "score": 64, "pass": False, "difficulty_dist": {"상": 3, "중": 4, "하": 3}},
-            {"name": "박영희", "team": "T1", "date": "2026-06-13", "score": 88, "pass": True,  "difficulty_dist": {"상": 2, "중": 5, "하": 3}},
-            {"name": "이민수", "team": "T3", "date": "2026-06-13", "score": 65, "pass": False, "difficulty_dist": {"상": 3, "중": 4, "하": 3}},
-            {"name": "최지훈", "team": "T2", "date": "2026-06-12", "score": 95, "pass": True,  "difficulty_dist": {"상": 2, "중": 6, "하": 2}},
-        ]
 
     if team:
         logs = [l for l in logs if l["team"] == team]
@@ -418,10 +404,11 @@ def reject_question(question_id: str, reason: str) -> dict:
 
 
 def approve_new_user(employee_id: str, name: str, team: str, exam_date: str) -> dict:
-    data = _load_users()
-    all_users = data["approved_users"] + data["admins"]
+    from repositories import user_repo
+    from repositories.local_json import load_local_admins
 
-    if any(u["employee_id"] == employee_id for u in all_users):
+    all_ids = {u["employee_id"] for u in user_repo.list_users()} | {a["employee_id"] for a in load_local_admins()}
+    if employee_id in all_ids:
         raise HTTPException(status_code=409, detail="이미 등록된 사원번호입니다.")
 
     new_user = {
@@ -433,8 +420,7 @@ def approve_new_user(employee_id: str, name: str, team: str, exam_date: str) -> 
         "exam_date": exam_date,
         "approved": True,
     }
-    data["approved_users"].append(new_user)
-    _save_users(data)
+    user_repo.add_user(new_user)
 
     return {"approved": True, "employee_id": employee_id, "name": name, "team": team, "exam_date": exam_date}
 
@@ -498,6 +484,15 @@ def create_exam_round_from_paper(exam_set_id: str, name: str = None, created_by:
 
 def assign_user_to_exam_set(employee_id: str, exam_id: str) -> dict:
     from repositories import exam_set_repo
+
+    # 한 응시자는 동시에 하나의 시험(회차)에만 배정되어야 한다. 그렇지 않으면 이전에
+    # 배정된 회차가 그대로 남아있어, 새 회차로 재배정해도 실제 출제 시 어느 회차를 써야
+    # 할지 모호해지고 이전 문제가 그대로 나오는 버그로 이어진다.
+    for s in exam_set_repo.list_exam_sets():
+        other_id = s.get("exam_id")
+        if other_id and other_id != exam_id and employee_id in s.get("assigned_users", []):
+            exam_set_repo.unassign_user(other_id, employee_id)
+
     if not exam_set_repo.assign_user(exam_id, employee_id):
         raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
     return {"success": True, "employee_id": employee_id, "exam_id": exam_id}
@@ -528,9 +523,18 @@ def set_pass_score(exam_id: str, pass_score: int) -> dict:
     return {"success": True, "exam_id": exam_id, "pass_score": pass_score}
 
 
+def delete_exam_set(exam_id: str) -> dict:
+    from repositories import exam_set_repo
+    if not exam_set_repo.delete_exam_set(exam_id):
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    return {"deleted": True, "exam_id": exam_id}
+
+
 def seed_mock_data() -> dict:
-    data = _load_users()
-    existing_ids = {u["employee_id"] for u in data["approved_users"] + data["admins"]}
+    from repositories import user_repo
+    from repositories.local_json import load_local_admins
+
+    existing_ids = {u["employee_id"] for u in user_repo.list_users()} | {a["employee_id"] for a in load_local_admins()}
     seed_users = [
         {"employee_id": "2024001", "password_hash": "mock_hash", "name": "김테스트", "team": "T1", "role": "examinee", "exam_date": "2026-07-10", "approved": True},
         {"employee_id": "2024002", "password_hash": "mock_hash", "name": "이테스트", "team": "T2", "role": "examinee", "exam_date": "2026-07-10", "approved": True},
@@ -539,10 +543,9 @@ def seed_mock_data() -> dict:
     added = 0
     for u in seed_users:
         if u["employee_id"] not in existing_ids:
-            data["approved_users"].append(u)
+            user_repo.add_user(u)
             existing_ids.add(u["employee_id"])
             added += 1
-    _save_users(data)
     return {"seeded_users": added, "message": f"더미 사용자 {added}명 추가 완료 (기존 계정 skip)"}
 
 
@@ -587,9 +590,8 @@ def fetch_system_status() -> dict:
 
 
 def fetch_dashboard_stats() -> dict:
-    from repositories import question_repo, result_repo, exam_set_repo
-    data = _load_users()
-    total_users = len(data.get("approved_users", []))
+    from repositories import question_repo, result_repo, exam_set_repo, user_repo
+    total_users = len(user_repo.list_users())
     sets = exam_set_repo.list_exam_sets()
     active_sets = [s for s in sets if s.get("status") == "active"]
     assigned_count = sum(len(s.get("assigned_users", [])) for s in active_sets)
@@ -619,8 +621,10 @@ def bulk_upload_users(csv_text: str) -> dict:
     if not required_cols.issubset(set(fieldnames)):
         raise HTTPException(status_code=400, detail=f"CSV에 필수 컬럼이 없습니다: {', '.join(sorted(required_cols))}")
 
-    data = _load_users()
-    all_ids = {u["employee_id"] for u in data["approved_users"] + data["admins"]}
+    from repositories import user_repo
+    from repositories.local_json import load_local_admins
+
+    all_ids = {u["employee_id"] for u in user_repo.list_users()} | {a["employee_id"] for a in load_local_admins()}
     success, skipped, errors = 0, 0, 0
     for row in rows:
         try:
@@ -634,7 +638,7 @@ def bulk_upload_users(csv_text: str) -> dict:
             if eid in all_ids:
                 skipped += 1
                 continue
-            data["approved_users"].append({
+            user_repo.add_user({
                 "employee_id": eid,
                 "password_hash": "mock_hash",
                 "name": name,
@@ -647,7 +651,6 @@ def bulk_upload_users(csv_text: str) -> dict:
             success += 1
         except Exception:
             errors += 1
-    _save_users(data)
     return {"success": success, "skipped": skipped, "errors": errors, "total": success + skipped + errors}
 
 

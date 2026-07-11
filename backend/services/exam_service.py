@@ -68,6 +68,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
                             total_count: int = 25, manual_dist: dict = None,
                             employee_id: str = "") -> dict:
     q_repo, r_repo, s_repo = _get_repos()
+    data = q_repo.get_all_questions()
 
     assigned_set = None if preview else _find_assigned_exam_set(employee_id)
 
@@ -75,15 +76,15 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
         exam_name = assigned_set.get("name") or DEFAULT_EXAM_NAME
         round_exam_id = assigned_set.get("exam_id", "")
         team_code = assigned_set.get("team_code", team_code)
-        questions = [q_repo.get_question(qid) for qid in assigned_set.get("question_ids", [])]
-        questions = [q for q in questions if q]
+        # 개별 get_question() 호출 대신 전체를 한 번에 불러와 id로 조회 — Sheets API 왕복 횟수를 줄인다.
+        all_by_id = {q["question_id"]: q for pool in data.values() for q in pool}
+        questions = [all_by_id[qid] for qid in assigned_set.get("question_ids", []) if qid in all_by_id]
     else:
         exam_name = DEFAULT_EXAM_NAME
         round_exam_id = ""
         # T1/T2/T3는 기존 team1/team2/team3 문제풀에 매핑(하위호환), 그 외 신규 팀은 team_code 자체를 풀 키로 사용
         team_key = TEAM_KEY_MAP.get(team_code, team_code)
 
-        data = q_repo.get_all_questions()
         # preview 모드는 approved+reviewing 포함, 실제 시험은 approved만
         allowed = {"approved", "reviewing"} if preview else {"approved"}
         pool = (
@@ -109,14 +110,16 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
         # 스냅샷 저장 (approved 문제 정보 + 정답 고정)
         snapshot = {
             q["question_id"]: {
-                "question":   q["question"],
-                "answer":     q["answer"],
-                "difficulty": q.get("admin_override") or q.get("difficulty_ai") or q.get("difficulty_init"),
-                "option_a":   q["option_a"],
-                "option_b":   q["option_b"],
-                "option_c":   q["option_c"],
-                "option_d":   q["option_d"],
-                "version":    q.get("version", 1),
+                "question":    q["question"],
+                "category":    q.get("category", ""),
+                "answer":      q["answer"],
+                "explanation": q.get("explanation", ""),
+                "difficulty":  q.get("admin_override") or q.get("difficulty_ai") or q.get("difficulty_init"),
+                "option_a":    q["option_a"],
+                "option_b":    q["option_b"],
+                "option_c":    q["option_c"],
+                "option_d":    q["option_d"],
+                "version":     q.get("version", 1),
             }
             for q in questions
         }
@@ -192,9 +195,18 @@ def score_and_save(result_id: str, answers: dict, response_times: dict, employee
             difficulty_summary[difficulty][key] += 1
         results.append({
             "q_id": qid,
+            "question": q_snap.get("question", ""),
+            "category": q_snap.get("category", ""),
+            "options": {
+                "A": q_snap.get("option_a", ""),
+                "B": q_snap.get("option_b", ""),
+                "C": q_snap.get("option_c", ""),
+                "D": q_snap.get("option_d", ""),
+            },
             "correct": correct,
             "answer": q_snap["answer"],
             "user_answer": user_ans,
+            "explanation": q_snap.get("explanation", ""),
             "difficulty": difficulty,
             "response_time": response_times.get(qid, 0),
         })

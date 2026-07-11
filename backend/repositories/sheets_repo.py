@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import functools
+import threading
 from datetime import datetime, timezone
 from repositories.base import ExamSetRepository, ResultRepository, SnapshotRepository
 from repositories.local_json import (
@@ -12,6 +13,7 @@ from repositories.local_json import (
     LocalQuestionStatsRepository,
     LocalQuestionRepository,
     LocalMaterialRepository,
+    LocalUserRepository,
 )
 
 
@@ -33,7 +35,7 @@ def _fallback_on_error(local_cls):
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_TAB = "exam_sets"
-HEADERS = ["exam_set_id", "name", "team_code", "question_ids", "assigned_users", "created_at", "exam_datetime", "pass_score", "exam_id"]
+HEADERS = ["exam_set_id", "name", "team_code", "question_ids", "assigned_users", "created_at", "exam_datetime", "pass_score", "status", "created_by", "exam_id"]
 # 컬럼 문자 매핑 — 헤더 순서와 반드시 일치해야 한다.
 _COLUMNS = {h: chr(ord("A") + i) for i, h in enumerate(HEADERS)}
 
@@ -71,12 +73,15 @@ QUESTIONS_HEADERS = [
 MATERIAL_CACHE_TAB = "material_cache"
 MATERIAL_CACHE_HEADERS = ["category", "files_json", "scanned_at"]
 
+USERS_TAB = "users"
+USERS_HEADERS = ["employee_id", "password_hash", "name", "team", "role", "exam_date", "approved"]
+
 
 def _default_sheet_id():
     return (
         os.getenv("GOOGLE_SHEETS_ID")
         or os.getenv("GOOGLE_EXAM_SETS_SHEET_ID")
-        or "1l-79bi-ZctkIN3NNrKuQuyDJ8hJjEyOmTWPfoDsZl8E"
+        or "1bHMEYi5_MxdtxM9Vt1CEpgP28Eu6vJwE_QLZn0USLV0"
     )
 
 
@@ -135,11 +140,28 @@ def _ensure_tab(svc, spreadsheet_id: str, tab: str, headers: list[str]) -> None:
         ).execute()
 
 
+# httplib2.Http (google-api-python-client의 기본 전송 계층)는 스레드 안전하지 않다.
+# FastAPI가 동기 라우트를 스레드풀에서 동시 실행하므로, 서비스 클라이언트를 프로세스
+# 전체에서 하나만 만들어 공유하면 동시 요청 시 응답이 뒤섞이거나(잘못된 값) 크래시가
+# 난다. 스레드마다 하나씩만 만들어 재사용해 이 문제를 피한다.
+_thread_local = threading.local()
+
+
+def _thread_local_sheets_service():
+    if not hasattr(_thread_local, "service"):
+        _thread_local.service = _build_sheets_service()
+    return _thread_local.service
+
+
 class SheetsExamSetRepository(ExamSetRepository):
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+        self._sheet_id = None
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _maybe_ensure_tab(self):
         if not self._tab_ready:
@@ -152,13 +174,41 @@ class SheetsExamSetRepository(ExamSetRepository):
         return self._svc.spreadsheets().values()
 
     def _ensure_tab(self):
-        _ensure_tab(self._svc, self._spreadsheet_id, SHEET_TAB, HEADERS)
+        """exam_sets 탭이 없으면 생성하고 헤더를 추가한다."""
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        existing = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta.get("sheets", [])}
+
+        if SHEET_TAB not in existing:
+            resp = self._svc.spreadsheets().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": SHEET_TAB}}}]},
+            ).execute()
+            self._sheet_id = resp["replies"][0]["addSheet"]["properties"]["sheetId"]
+        else:
+            self._sheet_id = existing[SHEET_TAB]
+
+        # 헤더 확인 — 없으면 새로 쓰고, 이전 스키마(컬럼 수 부족)면 최신 컬럼까지 확장해 갱신한다.
+        # 기존 값과 정확히 일치할 때만 안 건드리는 방식(!=)은 스키마가 계속 진화하는 동안
+        # 서로 다른 코드가 번갈아 덮어써 헤더가 왔다갔다하는 문제가 있어, 컬럼 수가 부족할 때만 확장한다.
+        last_col = chr(ord("A") + len(HEADERS) - 1)
+        res = self._values().get(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{SHEET_TAB}!A1:{last_col}1",
+        ).execute()
+        current_header = res.get("values", [[]])[0] if res.get("values") else []
+        if len(current_header) < len(HEADERS):
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{SHEET_TAB}!A1",
+                valueInputOption="RAW",
+                body={"values": [HEADERS]},
+            ).execute()
 
     def _read_all_rows(self) -> list[list]:
         """헤더를 제외한 데이터 행 반환 (raw list)."""
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A:I",
+            range=f"{SHEET_TAB}!A:K",
         ).execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -179,7 +229,11 @@ class SheetsExamSetRepository(ExamSetRepository):
             "created_at": _get(5),
             "exam_datetime": _get(6),
             "pass_score": pass_score,
-            "exam_id": _get(8),
+            # 예전 스키마로 만들어진 세트는 status 컬럼이 없어 빈 문자열로 읽히는데, 그걸 그대로
+            # "미확정"으로 두면 배정 조회(_find_assigned_exam_set)에서 영원히 걸러지므로 active로 간주한다.
+            "status": _get(8) or "active",
+            "created_by": _get(9),
+            "exam_id": _get(10),
         }
 
     @staticmethod
@@ -193,14 +247,16 @@ class SheetsExamSetRepository(ExamSetRepository):
             data.get("created_at", ""),
             data.get("exam_datetime", ""),
             str(data.get("pass_score", 70)),
+            data.get("status", "active"),
+            data.get("created_by", ""),
             data.get("exam_id", ""),
         ]
 
     def _find_sheet_row(self, exam_id: str) -> int:
-        """1-based 행 번호 반환 (헤더=1, 첫 데이터=2). 없으면 -1. exam_id(회차 PK, I열)로 찾는다."""
+        """1-based 행 번호 반환 (헤더=1, 첫 데이터=2). 없으면 -1. exam_id(회차 PK, K열)로 찾는다."""
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!I:I",
+            range=f"{SHEET_TAB}!K:K",
         ).execute()
         for i, row in enumerate(res.get("values", []), start=1):
             if row and row[0] == exam_id:
@@ -238,9 +294,12 @@ class SheetsExamSetRepository(ExamSetRepository):
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
         data.setdefault("exam_datetime", "")
         data.setdefault("pass_score", 70)
+        data.setdefault("question_ids", [])
+        data.setdefault("status", "active")
+        data.setdefault("created_by", "")
         self._values().append(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A:I",
+            range=f"{SHEET_TAB}!A:K",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [self._dict_to_row(data)]},
@@ -300,6 +359,23 @@ class SheetsExamSetRepository(ExamSetRepository):
         ).execute()
         return True
 
+    @_fallback_on_error(LocalExamSetRepository)
+    def delete_exam_set(self, exam_id: str) -> bool:
+        self._maybe_ensure_tab()
+        row_idx = self._find_sheet_row(exam_id)
+        if row_idx == -1:
+            return False
+        self._svc.spreadsheets().batchUpdate(
+            spreadsheetId=self._spreadsheet_id,
+            body={"requests": [{"deleteDimension": {"range": {
+                "sheetId": self._sheet_id,
+                "dimension": "ROWS",
+                "startIndex": row_idx - 1,
+                "endIndex": row_idx,
+            }}}]},
+        ).execute()
+        return True
+
 
 class SheetsResultRepository(ResultRepository):
     """Google Sheets 'results' 탭 기반 ResultRepository.
@@ -310,8 +386,11 @@ class SheetsResultRepository(ResultRepository):
 
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _maybe_ensure_tab(self):
         if not self._tab_ready:
@@ -417,8 +496,11 @@ class SheetsSnapshotRepository(SnapshotRepository):
 
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _maybe_ensure_tab(self):
         if not self._tab_ready:
@@ -458,9 +540,12 @@ class SheetsSnapshotRepository(SnapshotRepository):
 class SheetsTeamRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
         self._sheet_id = None
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _values(self):
         return self._svc.spreadsheets().values()
@@ -590,8 +675,11 @@ class SheetsTeamRepository:
 class SheetsQuestionStatsRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _values(self):
         return self._svc.spreadsheets().values()
@@ -701,8 +789,11 @@ class SheetsQuestionStatsRepository:
 class SheetsQuestionRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _values(self):
         return self._svc.spreadsheets().values()
@@ -883,8 +974,11 @@ class SheetsQuestionRepository:
 class SheetsMaterialRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _values(self):
         return self._svc.spreadsheets().values()
@@ -975,3 +1069,132 @@ class SheetsMaterialRepository:
                 valueInputOption="RAW",
                 body={"values": [row]},
             ).execute()
+
+
+class SheetsUserRepository:
+    def __init__(self):
+        self._spreadsheet_id = _default_sheet_id()
+        self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
+
+    def _values(self):
+        return self._svc.spreadsheets().values()
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            self._ensure_tab()
+            self._tab_ready = True
+
+    def _ensure_tab(self):
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        existing = [s["properties"]["title"] for s in meta.get("sheets", [])]
+        if USERS_TAB not in existing:
+            self._svc.spreadsheets().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": USERS_TAB}}}]},
+            ).execute()
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A1:G1").execute()
+        if not res.get("values"):
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{USERS_TAB}!A1",
+                valueInputOption="RAW",
+                body={"values": [USERS_HEADERS]},
+            ).execute()
+
+    def _read_all_rows(self) -> list:
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A:G").execute()
+        rows = res.get("values", [])
+        return rows[1:] if len(rows) > 1 else []
+
+    @staticmethod
+    def _row_to_dict(row: list) -> dict:
+        def _get(i): return row[i] if len(row) > i else ""
+        return {
+            "employee_id": _get(0),
+            "password_hash": _get(1),
+            "name": _get(2),
+            "team": _get(3),
+            "role": _get(4) or "examinee",
+            "exam_date": _get(5),
+            "approved": _get(6) in ("TRUE", "True", True),
+        }
+
+    @staticmethod
+    def _dict_to_row(data: dict) -> list:
+        return [
+            data.get("employee_id", ""),
+            data.get("password_hash", ""),
+            data.get("name", ""),
+            data.get("team", ""),
+            data.get("role", "examinee"),
+            data.get("exam_date", ""),
+            "TRUE" if data.get("approved") else "FALSE",
+        ]
+
+    def _find_row_index(self, employee_id: str) -> int:
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A:A").execute()
+        for i, row in enumerate(res.get("values", []), start=1):
+            if row and row[0] == employee_id:
+                return i
+        return -1
+
+    @_fallback_on_error(LocalUserRepository)
+    def list_users(self) -> list:
+        self._maybe_ensure_tab()
+        return [self._row_to_dict(r) for r in self._read_all_rows() if r and r[0]]
+
+    @_fallback_on_error(LocalUserRepository)
+    def find_user(self, employee_id: str) -> dict | None:
+        self._maybe_ensure_tab()
+        for row in self._read_all_rows():
+            if row and row[0] == employee_id:
+                return self._row_to_dict(row)
+        return None
+
+    @_fallback_on_error(LocalUserRepository)
+    def add_user(self, user: dict) -> None:
+        self._maybe_ensure_tab()
+        self._values().append(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{USERS_TAB}!A:G",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [self._dict_to_row(user)]},
+        ).execute()
+
+    @_fallback_on_error(LocalUserRepository)
+    def delete_user(self, employee_id: str) -> bool:
+        self._maybe_ensure_tab()
+        row_idx = self._find_row_index(employee_id)
+        if row_idx == -1:
+            return False
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        sheet_id = next(s["properties"]["sheetId"] for s in meta["sheets"] if s["properties"]["title"] == USERS_TAB)
+        self._svc.spreadsheets().batchUpdate(
+            spreadsheetId=self._spreadsheet_id,
+            body={"requests": [{"deleteDimension": {"range": {
+                "sheetId": sheet_id, "dimension": "ROWS",
+                "startIndex": row_idx - 1, "endIndex": row_idx,
+            }}}]},
+        ).execute()
+        return True
+
+    @_fallback_on_error(LocalUserRepository)
+    def update_user(self, employee_id: str, fields: dict) -> bool:
+        self._maybe_ensure_tab()
+        row_idx = self._find_row_index(employee_id)
+        if row_idx == -1:
+            return False
+        user = self.find_user(employee_id)
+        user.update(fields)
+        self._values().update(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{USERS_TAB}!A{row_idx}:G{row_idx}",
+            valueInputOption="RAW",
+            body={"values": [self._dict_to_row(user)]},
+        ).execute()
+        return True

@@ -204,6 +204,9 @@ function Dashboard({ onNavigate }) {
   const [modalLoading, setModalLoading] = useState(false)
   const [systemStatus, setSystemStatus] = useState(null)
 
+  const [recent, setRecent] = useState([])
+  const [recentLoading, setRecentLoading] = useState(true)
+
   useEffect(() => {
     apiFetch('GET', '/api/admin/stats')
       .then(d => { setStats(d); setApiStatus('정상') })
@@ -215,6 +218,10 @@ function Dashboard({ onNavigate }) {
     apiFetch('GET', '/api/admin/system-status')
       .then(setSystemStatus)
       .catch(() => setSystemStatus(null))
+    apiFetch('GET', '/api/admin/logs')
+      .then(d => setRecent([...(d.logs || [])].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5)))
+      .catch(() => setRecent([]))
+      .finally(() => setRecentLoading(false))
   }, [])
 
   const EXAM_STATUS_FILTERS = [
@@ -252,14 +259,6 @@ function Dashboard({ onNavigate }) {
     } catch (e) { setModalData({ error: e.message }) }
     finally { setModalLoading(false) }
   }
-
-  const recent = [
-    { name:'홍길동', team:'T1', score:92, pass:true,  date:'2026-06-14' },
-    { name:'김철수', team:'T2', score:64, pass:false, date:'2026-06-14' },
-    { name:'박영희', team:'T1', score:88, pass:true,  date:'2026-06-13' },
-    { name:'이민수', team:'T3', score:65, pass:false, date:'2026-06-13' },
-    { name:'최지훈', team:'T2', score:95, pass:true,  date:'2026-06-12' },
-  ]
 
   const [seeding, setSeeding] = useState(false)
   async function seedMock() {
@@ -379,7 +378,11 @@ function Dashboard({ onNavigate }) {
 
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
         <Card title="최근 응시 이력" noPad>
-          {recent.map((r, i) => (
+          {recentLoading ? (
+            <div style={{ padding:'20px', textAlign:'center', fontSize:13, color:'var(--text-muted)' }}>불러오는 중...</div>
+          ) : recent.length === 0 ? (
+            <div style={{ padding:'20px', textAlign:'center', fontSize:13, color:'var(--text-muted)' }}>아직 응시 기록이 없습니다.</div>
+          ) : recent.map((r, i) => (
             <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 20px', borderBottom: i < recent.length-1 ? '1px solid var(--border)' : 'none' }}>
               <span style={{ width:7, height:7, borderRadius:'50%', flexShrink:0, background: r.pass ? 'var(--success)' : 'var(--danger)' }} />
               <span style={{ flex:1, fontSize:13, color:'var(--text)', fontWeight:500 }}>{r.name}</span>
@@ -1917,6 +1920,18 @@ function ExamAssign({ toast }) {
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
   }
 
+  async function handleDeleteSet(setId, setName, e) {
+    e.stopPropagation()
+    if (!window.confirm(`"${setName}" 시험세트를 삭제할까요? 배정 정보도 함께 사라지며 되돌릴 수 없습니다.`)) return
+    try {
+      await apiFetch('DELETE', `/api/admin/exam-sets/${setId}`)
+      toast('시험세트가 삭제됐습니다.')
+      if (viewedSetId === setId) { setViewedSetId(''); setAssignees([]) }
+      const setsData = await apiFetch('GET', '/api/admin/exam-sets')
+      setSets(setsData.sets || [])
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+  }
+
   const selectedUserObj = users.find(u => u.employee_id === selectedUser)
   const filteredUsers = userQuery.trim()
     ? users.filter(u =>
@@ -2064,7 +2079,7 @@ function ExamAssign({ toast }) {
       {sets.length > 0 && (
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
           <Card title="시험세트 목록">
-            <DataTable headers={['이름','팀','문항 수','시험 일시','생성일']}>
+            <DataTable headers={['이름','팀','문항 수','시험 일시','생성일','']}>
               {sets.map(s => (
                 <tr key={s.exam_id}
                   onClick={() => { setViewedSetId(s.exam_id); loadAssignees(s.exam_id) }}
@@ -2074,6 +2089,12 @@ function ExamAssign({ toast }) {
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{(s.question_ids || []).length}문항</td>
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.exam_datetime ? s.exam_datetime.slice(0,16).replace('T',' ') : '미정'}</td>
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.created_at ? s.created_at.slice(0,10) : '-'}</td>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', textAlign:'right' }}>
+                    <button onClick={(e) => handleDeleteSet(s.exam_id, s.name, e)}
+                      style={{ fontSize:12, color:'var(--danger)', background:'none', border:'1px solid var(--danger)', borderRadius:6, padding:'4px 10px', cursor:'pointer', fontFamily:'var(--font)' }}>
+                      삭제
+                    </button>
+                  </td>
                 </tr>
               ))}
             </DataTable>

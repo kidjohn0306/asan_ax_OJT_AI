@@ -76,6 +76,9 @@ class ExamSetRepository(ABC):
     @abstractmethod
     def update_exam_set(self, exam_id: str, fields: dict) -> bool: ...
 
+    @abstractmethod
+    def delete_exam_set(self, exam_id: str) -> bool: ...
+
 
 class TeamRepository(ABC):
     @abstractmethod
@@ -106,6 +109,26 @@ class QuestionStatsRepository(ABC):
 
     @abstractmethod
     def list_flagged(self) -> list: ...
+
+
+class UserRepository(ABC):
+    """승인된 응시자(examinee) 계정 관리. 관리자 계정은 보안(비밀번호 해시 노출 방지)을
+    위해 항상 로컬 파일에만 저장하며 이 Repository의 대상이 아니다."""
+
+    @abstractmethod
+    def list_users(self) -> list: ...
+
+    @abstractmethod
+    def find_user(self, employee_id: str) -> dict | None: ...
+
+    @abstractmethod
+    def add_user(self, user: dict) -> None: ...
+
+    @abstractmethod
+    def delete_user(self, employee_id: str) -> bool: ...
+
+    @abstractmethod
+    def update_user(self, employee_id: str, fields: dict) -> bool: ...
 
 
 class MaterialRepository(ABC):

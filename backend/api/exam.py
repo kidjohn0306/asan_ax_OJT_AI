@@ -1,11 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
 
+from api.deps import require_auth
+
 router = APIRouter()
-security = HTTPBearer()
-_optional_bearer = HTTPBearer(auto_error=False)
 
 # 팀 관리 기능으로 T1/T2/T3 외 임의의 team_code를 생성할 수 있으므로 Literal로 제한하지 않는다.
 # (admin.py의 TeamCode = str 와 동일하게 맞춤 — 새로 만든 팀 소속 사용자는 이 값이 그대로 넘어온다)
@@ -35,7 +34,7 @@ def assigned_exam_name(employee_id: str = ""):
 
 
 @router.post("/generate")
-def generate_exam(body: GenerateRequest):
+def generate_exam(body: GenerateRequest, auth: dict = Depends(require_auth)):
     """
     팀코드 입력 → 25문항 자동 출제
     구성: 공통5 + 팀별10 + 환경안전5 + 일반상식5
@@ -47,24 +46,17 @@ def generate_exam(body: GenerateRequest):
 
 
 @router.post("/submit")
-def submit_exam(body: SubmitRequest, creds: HTTPAuthorizationCredentials = Depends(_optional_bearer)):
+def submit_exam(body: SubmitRequest, auth: dict = Depends(require_auth)):
     """
     답안 + 응답시간 → 자동 채점 → Google Drive 결과로그 저장
     관리자 계정으로 제출 시 채점은 하되 결과 저장 생략
     """
-    skip_save = False
-    if creds:
-        try:
-            from services.auth_service import decode_token
-            payload = decode_token(creds.credentials)
-            skip_save = payload.get("role") == "admin"
-        except Exception:
-            skip_save = False
+    skip_save = auth.get("role") == "admin"
     from services.exam_service import score_and_save
     return score_and_save(body.result_id, body.answers, body.response_times, body.employee_id, body.name, skip_save=skip_save)
 
 
 @router.get("/result/{result_id}")
-def get_result(result_id: str):
+def get_result(result_id: str, auth: dict = Depends(require_auth)):
     from services.exam_service import get_exam_result
     return get_exam_result(result_id)
