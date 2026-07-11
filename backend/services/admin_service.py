@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import time
 from pathlib import Path
 
 from fastapi import HTTPException
@@ -224,6 +225,15 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
         provider = os.getenv("AI_PROVIDER", "mock")
         logging.exception(f"AI 문제 생성 실패 (provider={provider}): {e}")
         raise HTTPException(status_code=502, detail="AI 문제 생성에 실패했습니다. 잠시 후 다시 시도해주세요.")
+
+    # 생성기가 자체 부여한 question_id(예: "팀-CLAUDE-001")는 category_label의 첫 글자만 써서
+    # team1/team2/team3처럼 category_label이 같은(둘 다 "팀별") 다른 팀끼리 ID가 충돌한다.
+    # get_question()은 ID만으로 전체 풀을 검색하므로, 충돌 시 엉뚱한 팀의(이미 승인/반려된) 문제가
+    # 대신 조회되어 승인·반려·난이도 조정이 잘못된 문제에 적용되는 심각한 버그로 이어진다.
+    # pool_key(팀별로 고유) + 생성 시각(배치별로 고유)을 넣어 전역 유일성을 보장한다.
+    batch_stamp = int(time.time() * 1000)
+    for i, q in enumerate(questions):
+        q["question_id"] = f"{category}-{batch_stamp}-{i+1:03d}"
 
     passed, failed_list = [], []
     for q in questions:
