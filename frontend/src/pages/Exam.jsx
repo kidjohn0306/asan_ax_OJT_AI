@@ -312,12 +312,20 @@ function ScoringScreen({ title, sub }) {
 }
 
 /* ── ResultScreen ───────────────────────────────────────────── */
-function ResultScreen({ empInfo, questions, answers, score, onFinish }) {
+function ResultScreen({ empInfo, questions, answers, score, resultDetails, onFinish }) {
   const [accordionOpen, setAccordionOpen] = useState(false)
   const pass = score >= 70
 
+  const LETTER_IDX = { A:0, B:1, C:2, D:3 }
+  const detailMap = {}
+  ;(resultDetails || []).forEach(r => { detailMap[r.q_id] = r })
+
   const catResults = { 공통:{c:0,t:5}, 팀별:{c:0,t:10}, 환경안전:{c:0,t:5}, 일반상식:{c:0,t:5} }
-  questions.forEach((q, i) => { if (answers[i] === q.ans) catResults[q.cat].c++ })
+  questions.forEach((q, i) => {
+    const detail = detailMap[q.id]
+    const correct = detail ? detail.correct : answers[i] === q.ans
+    if (correct) catResults[q.cat].c++
+  })
 
   return (
     <div style={{ minHeight:'100vh', display:'flex', flexDirection:'column', background:'var(--bg)', fontFamily:'var(--font)' }}>
@@ -373,14 +381,28 @@ function ResultScreen({ empInfo, questions, answers, score, onFinish }) {
           {accordionOpen && (
             <div style={{ maxHeight:600, overflowY:'auto' }}>
               {questions.map((q, i) => {
-                const unknownAnswer = q.ans === -1
-                const isCorrect = !unknownAnswer && answers[i] === q.ans
+                const detail = detailMap[q.id]
+                const unknownAnswer = !detail && q.ans === -1
+                const isCorrect = detail ? detail.correct : (!unknownAnswer && answers[i] === q.ans)
+                const correctLabel = detail ? detail.answer : (unknownAnswer ? null : LABEL[q.ans])
+                const correctIdx = detail ? LETTER_IDX[detail.answer] : (unknownAnswer ? null : q.ans)
+                const myLabel = detail ? detail.user_answer : (answers[i] !== null ? LABEL[answers[i]] : null)
+                const myIdx = detail ? LETTER_IDX[detail.user_answer] : answers[i]
                 return (
-                  <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 24px', borderTop:'1px solid var(--border)' }}>
-                    <span style={{ fontSize:12, fontWeight:800, color:'var(--text-muted)', width:24, flexShrink:0 }}>{i+1}</span>
-                    <span style={{ flex:1, fontSize:13, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{q.q}</span>
-                    <span style={{ width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, flexShrink:0, background: unknownAnswer ? '#f1f5f9' : isCorrect ? 'var(--success-light)' : 'var(--danger-light)', color: unknownAnswer ? 'var(--text-muted)' : isCorrect ? 'var(--success)' : 'var(--danger)' }}>{unknownAnswer ? '−' : isCorrect ? 'O' : 'X'}</span>
-                    <span style={{ fontSize:11, color:'var(--text-muted)', width:80, textAlign:'right', flexShrink:0 }}>정답: {unknownAnswer ? '(서버)' : LABEL[q.ans]}</span>
+                  <div key={i} style={{ padding:'12px 24px', borderTop:'1px solid var(--border)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                      <span style={{ fontSize:12, fontWeight:800, color:'var(--text-muted)', width:24, flexShrink:0 }}>{i+1}</span>
+                      <span style={{ flex:1, fontSize:13, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{q.q}</span>
+                      <span style={{ width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, flexShrink:0, background: unknownAnswer ? '#f1f5f9' : isCorrect ? 'var(--success-light)' : 'var(--danger-light)', color: unknownAnswer ? 'var(--text-muted)' : isCorrect ? 'var(--success)' : 'var(--danger)' }}>{unknownAnswer ? '−' : isCorrect ? 'O' : 'X'}</span>
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2, marginTop:6, paddingLeft:36 }}>
+                      {!unknownAnswer && !isCorrect && myLabel != null && (
+                        <span style={{ fontSize:11, color:'var(--danger)' }}>내 답: {myLabel}. {q.opts[myIdx]}</span>
+                      )}
+                      <span style={{ fontSize:11, color:'var(--text-muted)' }}>
+                        정답: {unknownAnswer ? '(서버 채점)' : `${correctLabel}. ${q.opts[correctIdx]}`}
+                      </span>
+                    </div>
                   </div>
                 )
               })}
@@ -422,6 +444,7 @@ export default function Exam() {
   const [timerSeconds, setTimerSeconds] = useState(3600)
   const [examId, setExamId] = useState(null)
   const [score, setScore] = useState(null)
+  const [resultDetails, setResultDetails] = useState(null)
   const timerRef = useRef(null)
   const handleSubmitRef = useRef(null)
 
@@ -462,7 +485,7 @@ export default function Exam() {
   }, [screen])
 
   async function handleStart() {
-    setScreen('scoring')
+    setScreen('loading')
     const teamRaw = empInfo.team
     const teamCode = teamRaw.startsWith('2') ? 'T2' : teamRaw.startsWith('3') ? 'T3' : 'T1'
     const token = sessionStorage.getItem('token')
@@ -523,6 +546,7 @@ export default function Exam() {
         if (res.ok) {
           const data = await res.json()
           setScore(data.score)
+          setResultDetails(data.results || null)
           setTimeout(() => setScreen('result'), 2000)
           return
         }
@@ -559,6 +583,7 @@ export default function Exam() {
       {screen === 'confirm' && (
         <ConfirmScreen answers={answers} onBack={() => setScreen('exam')} onSubmit={handleSubmit} />
       )}
+      {screen === 'loading' && <ScoringScreen title="문제를 불러오는 중입니다..." sub="잠시만 기다려주세요" />}
       {screen === 'scoring' && <ScoringScreen title="채점 중입니다..." sub="잠시만 기다려주세요" />}
       {showAdminNotice && (
         <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:100 }}>
@@ -579,7 +604,7 @@ export default function Exam() {
         />
       )}
       {screen === 'result' && score !== null && (
-        <ResultScreen empInfo={empInfo} questions={questions} answers={answers} score={score} onFinish={handleFinish} />
+        <ResultScreen empInfo={empInfo} questions={questions} answers={answers} score={score} resultDetails={resultDetails} onFinish={handleFinish} />
       )}
     </>
   )
