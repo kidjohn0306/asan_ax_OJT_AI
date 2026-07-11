@@ -13,7 +13,8 @@ asan_ax_OJT_AI/
 ├── api/index.py              # Vercel 진입점 — backend/main.py의 app을 임포트
 ├── ai_engine/                # AI 문제 생성 엔진 (루트 위치 — sys.path에 의해 임포트됨)
 │   ├── router.py             # AI_PROVIDER 환경변수로 생성기 선택
-│   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) — _build_prompt/_call_api/_parse_response
+│   ├── _shared.py            # gemini/claude 생성기 공통 로직 — truncate_material/build_prompt/parse_response
+│   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) — _call_api만 자체 구현, 나머지는 _shared 사용
 │   └── question_generator.py # Claude API (claude-sonnet-5, anthropic SDK) + mock 생성기(_mock_generate) 겸용
 ├── backend/
 │   ├── main.py               # FastAPI 앱, frontend/dist/ StaticFiles 마운트, load_dotenv(override=True)
@@ -22,8 +23,9 @@ asan_ax_OJT_AI/
 │   │   ├── auth.py, exam.py, admin.py, drive.py
 │   ├── services/             # 비즈니스 로직
 │   │   ├── exam_service.py   # 출제·채점·스냅샷 저장 (PASS_SCORE=70) + 출제횟수 increment_batch
-│   │   ├── admin_service.py  # 문제관리, 사용자승인, AI 생성, 팀CRUD, CSV업로드, 대시보드통계
+│   │   ├── admin_service.py  # 문제관리, 사용자승인, AI 생성, 팀CRUD, CSV업로드, 대시보드통계, 시스템 상태 조회
 │   │   ├── drive_service.py  # Google Drive 서비스 계정 인증
+│   │   ├── material_service.py # Drive 교육자료 스캔·캐싱 (아래 "교육자료 자동 스캔" 참고)
 │   │   └── generation/       # gates.py — run_gates (V-01~V-07 순수 함수 검증 규칙)
 │   ├── repositories/         # 저장소 추상화 레이어
 │   │   ├── base.py           # 추상 인터페이스 (Question/Result/Snapshot/Feedback/ExamSet/Team/QuestionStats)
@@ -122,6 +124,18 @@ PDF/PPTX 교육자료를 스캔해 텍스트를 추출하고, AI 문제 생성(`
 - 파일당 20,000자·카테고리당 40,000자로 텍스트를 잘라 저장 (Sheets 셀 5만자 한도 방지 + 프롬프트 폭주 방지)
 - 파일 크기가 `DRIVE_MATERIAL_MAX_FILE_SIZE_MB`(기본 25MB)를 넘으면 다운로드를 건너뛰고 스캔 응답의 `skipped`에 사유와 함께 표시됨 (실제 교육용 PPTX에 영상·고해상도 이미지가 포함되면 수십~수백 MB로 커질 수 있어, 필요 시 이 값을 올려서 재스캔할 것)
 - `team_code`는 Drive 쿼리에 그대로 들어가므로 `[a-zA-Z0-9_-]+` 패턴만 허용 (쿼리 인젝션 방지)
+
+### 시스템 상태 실제 체크 (`GET /api/admin/system-status`)
+관리자 화면(대시보드/설정)의 "운영 모드"·"Claude API" 표시는 하드코딩이 아니라 이 엔드포인트가 반환하는
+`AI_PROVIDER`/`STORAGE_BACKEND`/`CLAUDE_API_KEY`·`GEMINI_API_KEY` 설정 여부를 그대로 보여준다.
+Google Drive 상태는 기존 `GET /api/drive/status`(실제 연결 시도)를 그대로 사용 — 이 엔드포인트에서 중복 확인하지 않음.
+
+### AI 생성 문제의 category 필드 — pool_key와 혼동 주의
+`admin_service.generate_ai_questions`에서 `category`(예: `"team1"`, `add_question`의 저장 위치 키)와
+문제의 `category` 필드에 실제로 들어가야 하는 한글 라벨(`"공통"/"팀별"/"환경안전"/"일반상식"` —
+`gates.py`의 `VALID_CATEGORIES`, 프론트 카테고리 필터가 기준으로 삼는 값)은 다른 개념이다.
+`_category_label_for_pool()`로 변환해서 AI 생성기에는 라벨을, `q_repo.add_question()`에는 pool_key를 각각 전달해야 한다
+(예전에 이 둘을 같은 변수로 섞어 쓰다가 게이트 검증(V-04)이 무력화되고 프론트 필터에서 AI 생성 문제가 누락되는 버그가 있었음).
 
 ## PR/커밋 규칙
 

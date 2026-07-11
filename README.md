@@ -53,6 +53,7 @@ asan_ax_OJT_AI/
 │   └── requirements.txt
 ├── ai_engine/                # AI 문제 생성 엔진 (루트 위치)
 │   ├── router.py             # AI_PROVIDER 환경변수로 생성기 선택
+│   ├── _shared.py            # gemini/claude 생성기 공통 로직 (프롬프트 생성·응답 파싱·자료 절단)
 │   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) ✅
 │   └── question_generator.py # Claude API (완전 구현) + _mock_generate() ✅
 ├── frontend/
@@ -137,6 +138,7 @@ npm run dev   # http://localhost:5173
 | `exam_service.py` | ✅ 완료 | 출제·채점·스냅샷 저장 (Repository 패턴). 스냅샷 없으면 HTTP 410 |
 | `admin_service.py` | ✅ 완료 | 이력 조회·사용자 승인·난이도 override·AI 생성·팀CRUD·CSV업로드·대시보드통계 |
 | `drive_service.py` | ✅ 완료 | 서비스 계정 인증, 파일 목록·다운로드·업로드 구현 |
+| `material_service.py` | ✅ 완료 | Drive 교육자료(PDF/PPTX) 스캔·텍스트추출·캐싱, AI 문제 생성에 자동 반영 |
 | `difficulty.py` | ✅ 완료 | 정답률(50%)·응답시간(30%)·백분위(20%) 규칙 기반, admin override 연결 |
 | `api/admin.py` | ✅ 완료 | 모든 라우트 `require_admin` JWT 의존성으로 보호 |
 | `repositories/` | ✅ 완료 | Repository 패턴. `STORAGE_BACKEND=local\|sheets\|drive` 선택 |
@@ -181,6 +183,9 @@ npm run dev   # http://localhost:5173
 | GET  | `/api/admin/question-stats` | Admin JWT | 전체 문제 출제 횟수 조회 |
 | GET  | `/api/admin/question-stats/flagged` | Admin JWT | 자주 출제 문제 목록 (exam_count≥5) |
 | POST | `/api/admin/seed-mock-data` | Admin JWT | 더미 사용자 주입 (테스트용) |
+| GET  | `/api/admin/system-status` | Admin JWT | 실제 운영 모드(AI_PROVIDER 등)·API 키 설정 여부 조회 |
+| GET  | `/api/admin/materials/status` | Admin JWT | 교육자료 폴더의 신규/변경 파일 감지 (team_code 쿼리) |
+| POST | `/api/admin/materials/scan` | Admin JWT | 감지된 신규 파일 다운로드·텍스트추출·캐싱 실행 |
 | GET  | `/api/drive/status` | 없음 | Google Drive 연결 상태 확인 |
 | GET  | `/api/drive/files?folder_id={id}` | 없음 | 폴더 내 파일 목록 조회 |
 | POST | `/api/drive/download` | 없음 | Drive 파일 다운로드 |
@@ -214,6 +219,19 @@ npm run dev   # http://localhost:5173
 | `GOOGLE_SERVICE_ACCOUNT_JSON` | — | Service Account JSON 전체 내용 (Vercel 배포용) |
 | `DRIVE_RESULTS_FOLDER_ID` | — | Drive 결과·스냅샷 저장 폴더 ID (`STORAGE_BACKEND=drive` 시 필요) |
 | `DRIVE_EDUCATION_MATERIALS_FOLDER_ID` | — | 교육자료(PDF/PPTX) 루트 폴더 ID. 하위 `common`/`team1`/`team2`/`team3` 폴더를 스캔해 AI 문제 생성에 자동 반영 |
+| `DRIVE_MATERIAL_MAX_FILE_SIZE_MB` | `25` | 교육자료 파일 다운로드 크기 상한 (초과 시 스캔에서 제외, 응답의 `skipped`에 표시) |
+
+---
+
+## 교육자료 자동 스캔 (Drive → AI 문제 생성)
+
+`DRIVE_EDUCATION_MATERIALS_FOLDER_ID`를 설정하면 그 하위 `common`/`team1`/`team2`/`team3` 폴더의 PDF/PPTX를
+스캔해 텍스트를 추출하고, AI 문제 생성 시 자동으로 포함합니다.
+
+- 관리자가 "시험 생성" 화면에서 팀을 선택하면 새/변경된 자료가 있는지 자동 확인하고, 있으면 알림 배너를 띄웁니다.
+- 배너의 "지금 스캔하기"를 눌러야만 실제로 다운로드·텍스트추출·캐시 갱신이 일어납니다 (자동 스캔 없음).
+- 변경 없는 파일은 캐시된 텍스트를 그대로 재사용해 Drive 호출·추출 비용을 아낍니다.
+- 관리자가 "교육자료 추가 입력" textarea에 직접 붙여넣은 텍스트는 캐시된 텍스트 뒤에 보충 내용으로 덧붙습니다.
 
 ---
 
@@ -272,6 +290,8 @@ npm run dev   # http://localhost:5173
 - [x] CSV 대량 사원 업로드 (`POST /api/admin/upload-users`)
 - [x] AI 토큰 절약 — 교육자료 4000자 초과 시 자동 트런케이션
 - [x] Claude API 문제 생성 (`question_generator.py`, anthropic SDK)
+- [x] Drive 교육자료(PDF/PPTX) 자동 스캔 → AI 문제 생성 반영 (`material_service.py`)
+- [x] 관리자 화면 "운영 모드"·"Claude API" 실제 상태 체크 (`GET /api/admin/system-status`)
 - [ ] 응시자 전용 JWT 검증 (`/api/exam/*`)
 - [ ] 난이도 AI 자동 확정 피드백 루프
 - [ ] 결과 리포트 PDF 내보내기
