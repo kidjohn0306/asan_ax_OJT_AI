@@ -48,9 +48,22 @@ def _find_assigned_exam_set(employee_id: str) -> dict | None:
     return None
 
 
+def _filter_by_exam_count(pool: list, max_exam_count: int | None) -> list:
+    if not max_exam_count:
+        return pool
+    try:
+        from repositories import question_stats_repo
+        stats = question_stats_repo.list_all_stats()
+    except Exception:
+        return pool
+    filtered = [q for q in pool if stats.get(q.get("question_id"), {}).get("exam_count", 0) < max_exam_count]
+    # 필터링으로 풀이 텅 비면 배분이 아예 불가능해지므로, 그럴 땐 제한을 적용하지 않고 원래 풀을 반환
+    return filtered if filtered else pool
+
+
 def generate_exam_questions(team_code: str, preview: bool = False, config: dict = None,
                             total_count: int = 25, manual_dist: dict = None,
-                            employee_id: str = "") -> dict:
+                            employee_id: str = "", max_exam_count: int | None = None) -> dict:
     q_repo, r_repo, s_repo = _get_repos()
     data = q_repo.get_all_questions()
 
@@ -74,6 +87,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
             + [q for q in data.get("safety",  []) if q.get("status") in allowed]
             + [q for q in data.get("general", []) if q.get("status") in allowed]
         )
+        pool = _filter_by_exam_count(pool, max_exam_count)
 
         dist = manual_dist if manual_dist else _calc_dist(total_count)
         questions = _pick_by_difficulty(pool, dist)

@@ -24,6 +24,7 @@ class PreviewExamRequest(BaseModel):
     total_count: int = 25
     manual_dist: Optional[dict] = None
     config: Optional[dict] = None
+    max_exam_count: Optional[int] = None
 
 
 class GenerateAIRequest(BaseModel):
@@ -161,7 +162,8 @@ def preview_exam(body: PreviewExamRequest, _: dict = Depends(require_admin)):
     from services.exam_service import generate_exam_questions
     return generate_exam_questions(
         body.team_code, preview=True, config=body.config,
-        total_count=body.total_count, manual_dist=body.manual_dist
+        total_count=body.total_count, manual_dist=body.manual_dist,
+        max_exam_count=body.max_exam_count
     )
 
 
