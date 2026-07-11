@@ -33,7 +33,7 @@ def _fallback_on_error(local_cls):
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_TAB = "exam_sets"
-HEADERS = ["exam_set_id", "name", "team_code", "assigned_users", "created_at"]
+HEADERS = ["exam_set_id", "name", "team_code", "assigned_users", "created_at", "question_ids", "status", "created_by"]
 
 RESULTS_TAB = "results"
 RESULTS_HEADERS = [
@@ -119,12 +119,14 @@ class SheetsExamSetRepository(ExamSetRepository):
                 body={"requests": [{"addSheet": {"properties": {"title": SHEET_TAB}}}]},
             ).execute()
 
-        # 헤더 확인
+        # 헤더 확인 — 없으면 새로 쓰고, 이전 스키마(컬럼 수 부족)면 최신 컬럼까지 확장해 갱신한다.
+        # (question_ids/status/created_by가 나중에 추가된 컬럼이라, 먼저 만들어진 시트는 헤더가 5개뿐일 수 있음)
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A1:E1",
+            range=f"{SHEET_TAB}!A1:H1",
         ).execute()
-        if not res.get("values"):
+        current_header = res.get("values", [[]])[0] if res.get("values") else []
+        if len(current_header) < len(HEADERS):
             self._values().update(
                 spreadsheetId=self._spreadsheet_id,
                 range=f"{SHEET_TAB}!A1",
@@ -136,7 +138,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         """헤더를 제외한 데이터 행 반환 (raw list)."""
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A:E",
+            range=f"{SHEET_TAB}!A:H",
         ).execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -148,12 +150,21 @@ class SheetsExamSetRepository(ExamSetRepository):
             assigned = json.loads(_get(3)) if _get(3) else []
         except (json.JSONDecodeError, ValueError):
             assigned = []
+        try:
+            question_ids = json.loads(_get(5)) if _get(5) else []
+        except (json.JSONDecodeError, ValueError):
+            question_ids = []
         return {
             "exam_set_id": _get(0),
             "name": _get(1),
             "team_code": _get(2),
             "assigned_users": assigned,
             "created_at": _get(4),
+            "question_ids": question_ids,
+            # 예전 스키마로 만들어진 세트는 status 컬럼이 없어 빈 문자열로 읽히는데, 그걸 그대로
+            # "미확정"으로 두면 배정 조회(_find_assigned_exam_set)에서 영원히 걸러지므로 active로 간주한다.
+            "status": _get(6) or "active",
+            "created_by": _get(7),
         }
 
     @staticmethod
@@ -164,6 +175,9 @@ class SheetsExamSetRepository(ExamSetRepository):
             data.get("team_code", ""),
             json.dumps(data.get("assigned_users", []), ensure_ascii=False),
             data.get("created_at", ""),
+            json.dumps(data.get("question_ids", []), ensure_ascii=False),
+            data.get("status", "active"),
+            data.get("created_by", ""),
         ]
 
     def _find_sheet_row(self, exam_set_id: str) -> int:
@@ -206,9 +220,12 @@ class SheetsExamSetRepository(ExamSetRepository):
         self._maybe_ensure_tab()
         data.setdefault("assigned_users", [])
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        data.setdefault("question_ids", [])
+        data.setdefault("status", "active")
+        data.setdefault("created_by", "")
         self._values().append(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A:E",
+            range=f"{SHEET_TAB}!A:H",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [self._dict_to_row(data)]},
