@@ -2,6 +2,7 @@ import os
 import json
 import logging
 import functools
+import threading
 from datetime import datetime, timezone
 from repositories.base import ExamSetRepository, ResultRepository, SnapshotRepository
 from repositories.local_json import (
@@ -72,7 +73,7 @@ def _default_sheet_id():
     return (
         os.getenv("GOOGLE_SHEETS_ID")
         or os.getenv("GOOGLE_EXAM_SETS_SHEET_ID")
-        or "1l-79bi-ZctkIN3NNrKuQuyDJ8hJjEyOmTWPfoDsZl8E"
+        or "1bHMEYi5_MxdtxM9Vt1CEpgP28Eu6vJwE_QLZn0USLV0"
     )
 
 
@@ -92,11 +93,27 @@ def _build_sheets_service():
     return build("sheets", "v4", credentials=creds)
 
 
+# httplib2.Http (google-api-python-client의 기본 전송 계층)는 스레드 안전하지 않다.
+# FastAPI가 동기 라우트를 스레드풀에서 동시 실행하므로, 서비스 클라이언트를 프로세스
+# 전체에서 하나만 만들어 공유하면 동시 요청 시 응답이 뒤섞이거나(잘못된 값) 크래시가
+# 난다. 스레드마다 하나씩만 만들어 재사용해 이 문제를 피한다.
+_thread_local = threading.local()
+
+
+def _thread_local_sheets_service():
+    if not hasattr(_thread_local, "service"):
+        _thread_local.service = _build_sheets_service()
+    return _thread_local.service
+
+
 class SheetsExamSetRepository(ExamSetRepository):
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _maybe_ensure_tab(self):
         if not self._tab_ready:
@@ -259,8 +276,11 @@ class SheetsExamSetRepository(ExamSetRepository):
 class SheetsResultRepository(ResultRepository):
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _values(self):
         return self._svc.spreadsheets().values()
@@ -382,8 +402,11 @@ class SheetsResultRepository(ResultRepository):
 class SheetsSnapshotRepository(SnapshotRepository):
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _values(self):
         return self._svc.spreadsheets().values()
@@ -449,9 +472,12 @@ class SheetsSnapshotRepository(SnapshotRepository):
 class SheetsTeamRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
         self._sheet_id = None
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _values(self):
         return self._svc.spreadsheets().values()
@@ -581,8 +607,11 @@ class SheetsTeamRepository:
 class SheetsQuestionStatsRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _values(self):
         return self._svc.spreadsheets().values()
@@ -692,8 +721,11 @@ class SheetsQuestionStatsRepository:
 class SheetsQuestionRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _values(self):
         return self._svc.spreadsheets().values()
@@ -874,8 +906,11 @@ class SheetsQuestionRepository:
 class SheetsMaterialRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
-        self._svc = _build_sheets_service()
         self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
 
     def _values(self):
         return self._svc.spreadsheets().values()

@@ -105,15 +105,6 @@ def fetch_logs(team=None, date_from=None, date_to=None) -> dict:
         }
         logs.append(log)
 
-    if not logs:
-        logs = [
-            {"name": "홍길동", "team": "T1", "date": "2026-06-14", "score": 92, "pass": True,  "difficulty_dist": {"상": 2, "중": 5, "하": 3}},
-            {"name": "김철수", "team": "T2", "date": "2026-06-14", "score": 64, "pass": False, "difficulty_dist": {"상": 3, "중": 4, "하": 3}},
-            {"name": "박영희", "team": "T1", "date": "2026-06-13", "score": 88, "pass": True,  "difficulty_dist": {"상": 2, "중": 5, "하": 3}},
-            {"name": "이민수", "team": "T3", "date": "2026-06-13", "score": 65, "pass": False, "difficulty_dist": {"상": 3, "중": 4, "하": 3}},
-            {"name": "최지훈", "team": "T2", "date": "2026-06-12", "score": 95, "pass": True,  "difficulty_dist": {"상": 2, "중": 6, "하": 2}},
-        ]
-
     if team:
         logs = [l for l in logs if l["team"] == team]
     if date_from:
@@ -121,6 +112,34 @@ def fetch_logs(team=None, date_from=None, date_to=None) -> dict:
     if date_to:
         logs = [l for l in logs if l["date"] <= date_to]
     return {"logs": logs}
+
+
+def fetch_results_summary() -> dict:
+    """응시 결과 전체 집계 — 결과 분석 화면의 통계 카드·부서별 평균 점수용."""
+    _, r_repo, _ = _get_repos()
+    all_results = list(r_repo.get_all_results().values())
+
+    count = len(all_results)
+    avg_score = round(sum(r.get("score", 0) for r in all_results) / count, 1) if count else 0
+    pass_count = sum(1 for r in all_results if r.get("pass"))
+
+    correct = sum(1 for r in all_results for item in r.get("results", []) if item.get("correct"))
+    total_answers = sum(len(r.get("results", [])) for r in all_results)
+    accuracy = round(correct / total_answers * 100, 1) if total_answers else 0
+
+    team_scores: dict = {}
+    for r in all_results:
+        team = r.get("team_code") or "미배정"
+        team_scores.setdefault(team, []).append(r.get("score", 0))
+    team_avg_score = {team: round(sum(scores) / len(scores), 1) for team, scores in team_scores.items()}
+
+    return {
+        "count": count,
+        "avg_score": avg_score,
+        "accuracy": accuracy,
+        "pass_count": pass_count,
+        "team_avg_score": team_avg_score,
+    }
 
 
 def _calc_diff_dist(results: list) -> dict:

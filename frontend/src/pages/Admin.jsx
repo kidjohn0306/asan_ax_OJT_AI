@@ -165,6 +165,9 @@ function Dashboard({ onNavigate }) {
   const [driveStatus, setDriveStatus] = useState('확인 중...')
   const [systemStatus, setSystemStatus] = useState(null)
 
+  const [recent, setRecent] = useState([])
+  const [recentLoading, setRecentLoading] = useState(true)
+
   useEffect(() => {
     apiFetch('GET', '/api/admin/stats')
       .then(d => { setStats(d); setApiStatus('정상') })
@@ -175,15 +178,11 @@ function Dashboard({ onNavigate }) {
     apiFetch('GET', '/api/admin/system-status')
       .then(setSystemStatus)
       .catch(() => setSystemStatus(null))
+    apiFetch('GET', '/api/admin/logs')
+      .then(d => setRecent([...(d.logs || [])].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5)))
+      .catch(() => setRecent([]))
+      .finally(() => setRecentLoading(false))
   }, [])
-
-  const recent = [
-    { name:'홍길동', team:'T1', score:92, pass:true,  date:'2026-06-14' },
-    { name:'김철수', team:'T2', score:64, pass:false, date:'2026-06-14' },
-    { name:'박영희', team:'T1', score:88, pass:true,  date:'2026-06-13' },
-    { name:'이민수', team:'T3', score:65, pass:false, date:'2026-06-13' },
-    { name:'최지훈', team:'T2', score:95, pass:true,  date:'2026-06-12' },
-  ]
 
   const [seeding, setSeeding] = useState(false)
   async function seedMock() {
@@ -257,7 +256,11 @@ function Dashboard({ onNavigate }) {
 
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
         <Card title="최근 응시 이력" noPad>
-          {recent.map((r, i) => (
+          {recentLoading ? (
+            <div style={{ padding:'20px', textAlign:'center', fontSize:13, color:'var(--text-muted)' }}>불러오는 중...</div>
+          ) : recent.length === 0 ? (
+            <div style={{ padding:'20px', textAlign:'center', fontSize:13, color:'var(--text-muted)' }}>아직 응시 기록이 없습니다.</div>
+          ) : recent.map((r, i) => (
             <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 20px', borderBottom: i < recent.length-1 ? '1px solid var(--border)' : 'none' }}>
               <span style={{ width:7, height:7, borderRadius:'50%', flexShrink:0, background: r.pass ? 'var(--success)' : 'var(--danger)' }} />
               <span style={{ flex:1, fontSize:13, color:'var(--text)', fontWeight:500 }}>{r.name}</span>
@@ -1393,34 +1396,59 @@ function Users({ toast }) {
 }
 
 /* ── 결과 분석 ───────────────────────────────────────────────── */
+const TEAM_BAR_COLORS = ['var(--accent)', 'var(--success)', '#F59E0B', 'var(--purple)', '#EC4899', '#0EA5E9']
+
 function Results() {
-  const resultData = [
-    { name:'홍길동', dept:'생산팀', score:92, pass:true,  date:'2026.06.14' },
-    { name:'김철수', dept:'생산팀', score:64, pass:false, date:'2026.06.14' },
-    { name:'박영희', dept:'품질팀', score:88, pass:true,  date:'2026.06.13' },
-    { name:'이민수', dept:'설비팀', score:65, pass:false, date:'2026.06.13' },
-    { name:'최지훈', dept:'품질팀', score:95, pass:true,  date:'2026.06.12' },
-  ]
-  const bars = [['생산팀',85,'var(--accent)'],['품질팀',91,'var(--success)'],['설비팀',76,'#F59E0B'],['인사팀',82,'var(--purple)']]
+  const [logs, setLogs] = useState([])
+  const [summary, setSummary] = useState(null)
+  const [teams, setTeams] = useState([])
+  const [search, setSearch] = useState('')
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    Promise.all([
+      apiFetch('GET', '/api/admin/logs'),
+      apiFetch('GET', '/api/admin/results-summary'),
+      apiFetch('GET', '/api/admin/teams'),
+    ]).then(([logsRes, summaryRes, teamsRes]) => {
+      setLogs(logsRes.logs || [])
+      setSummary(summaryRes)
+      setTeams(teamsRes.teams || [])
+    }).catch(() => {}).finally(() => setLoading(false))
+  }, [])
+
+  const teamName = (code) => teams.find(t => t.team_code === code)?.team_name || code
+  const filteredLogs = logs.filter(l => l.name.toLowerCase().includes(search.toLowerCase()))
+  const sortedLogs = [...filteredLogs].sort((a, b) => b.date.localeCompare(a.date))
+  const teamAvgEntries = Object.entries(summary?.team_avg_score || {}).sort((a, b) => b[1] - a[1])
 
   return (
     <div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
-        <StatCard iconName="user"  iconColor="#2563EB" iconBg="#EFF6FF" label="응시 인원" value="18"   unit="명" />
-        <StatCard iconName="star"  iconColor="#D97706" iconBg="#FFFBEB" label="평균 점수" value="84.6" unit="점" />
-        <StatCard iconName="check" iconColor="#059669" iconBg="#ECFDF5" label="정답률"    value="77.8" unit="%" />
-        <StatCard iconName="chart" iconColor="#7C3AED" iconBg="#F5F3FF" label="합격자"    value="14"   unit="명" />
+        <StatCard iconName="user"  iconColor="#2563EB" iconBg="#EFF6FF" label="응시 인원" value={summary?.count ?? '-'}      unit="명" />
+        <StatCard iconName="star"  iconColor="#D97706" iconBg="#FFFBEB" label="평균 점수" value={summary?.avg_score ?? '-'}  unit="점" />
+        <StatCard iconName="check" iconColor="#059669" iconBg="#ECFDF5" label="정답률"    value={summary?.accuracy ?? '-'}   unit="%" />
+        <StatCard iconName="chart" iconColor="#7C3AED" iconBg="#F5F3FF" label="합격자"    value={summary?.pass_count ?? '-'} unit="명" />
       </div>
 
       <Card title="응시자 결과 목록" noPad>
         <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border)' }}>
-          <input placeholder="이름 검색" style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', maxWidth:220, width:'100%', outline:'none' }} />
+          <input
+            placeholder="이름 검색"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', maxWidth:220, width:'100%', outline:'none' }}
+          />
         </div>
-        <DataTable headers={['이름','부서','점수','결과','응시일']}>
-          {resultData.map((r, i) => (
+        <DataTable headers={['이름','팀','점수','결과','응시일']}>
+          {loading ? (
+            <tr><td colSpan={5} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>불러오는 중...</td></tr>
+          ) : sortedLogs.length === 0 ? (
+            <tr><td colSpan={5} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>응시 기록이 없습니다.</td></tr>
+          ) : sortedLogs.map((r, i) => (
             <tr key={i}>
               <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:500 }}>{r.name}</td>
-              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{r.dept}</td>
+              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{teamName(r.team)}</td>
               <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{r.score}점</td>
               <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><Badge type={r.pass ? 'success' : 'danger'}>{r.pass ? '합격' : '재교육'}</Badge></td>
               <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{r.date}</td>
@@ -1429,60 +1457,20 @@ function Results() {
         </DataTable>
       </Card>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:16 }}>
-        <div style={{ border:'1px solid var(--border)', borderRadius:8, padding:20, background:'var(--card)' }}>
-          <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:14, textTransform:'uppercase', letterSpacing:'0.04em' }}>부서별 평균 점수</div>
-          {bars.map(([label, pct, color]) => (
-            <div key={label} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-              <span style={{ fontSize:11, color:'var(--text-muted)', width:36, textAlign:'right', flexShrink:0 }}>{label}</span>
-              <div style={{ flex:1, height:6, background:'var(--border)', borderRadius:3, overflow:'hidden' }}>
-                <div style={{ height:'100%', borderRadius:3, background:color, width:`${pct}%` }} />
-              </div>
-              <span style={{ fontSize:11, fontWeight:700, color:'var(--text)', width:26, fontVariantNumeric:'tabular-nums' }}>{pct}</span>
+      <div style={{ border:'1px solid var(--border)', borderRadius:8, padding:20, background:'var(--card)', marginTop:16 }}>
+        <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:14, textTransform:'uppercase', letterSpacing:'0.04em' }}>팀별 평균 점수</div>
+        {teamAvgEntries.length === 0 ? (
+          <div style={{ fontSize:13, color:'var(--text-muted)', padding:'8px 0' }}>집계할 응시 기록이 없습니다.</div>
+        ) : teamAvgEntries.map(([code, avg], i) => (
+          <div key={code} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+            <span style={{ fontSize:11, color:'var(--text-muted)', width:56, textAlign:'right', flexShrink:0, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{teamName(code)}</span>
+            <div style={{ flex:1, height:6, background:'var(--border)', borderRadius:3, overflow:'hidden' }}>
+              <div style={{ height:'100%', borderRadius:3, background: TEAM_BAR_COLORS[i % TEAM_BAR_COLORS.length], width:`${Math.min(avg, 100)}%` }} />
             </div>
-          ))}
-        </div>
-        <div style={{ border:'1px solid var(--border)', borderRadius:8, padding:20, background:'var(--card)' }}>
-          <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:14, textTransform:'uppercase', letterSpacing:'0.04em' }}>문항 유형별 정답률</div>
-          <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-            <svg width={80} height={80} viewBox="0 0 72 72">
-              <circle cx="36" cy="36" r="26" fill="none" stroke="var(--border)" strokeWidth="10"/>
-              <circle cx="36" cy="36" r="26" fill="none" stroke="#3b82f6" strokeWidth="10" strokeDasharray="138.9 163.4" strokeDashoffset="0" transform="rotate(-90 36 36)"/>
-              <circle cx="36" cy="36" r="26" fill="none" stroke="#f59e0b" strokeWidth="10" strokeDasharray="111.1 163.4" strokeDashoffset="-138.9" transform="rotate(-90 36 36)"/>
-              <circle cx="36" cy="36" r="26" fill="none" stroke="#10b981" strokeWidth="10" strokeDasharray="147.1 163.4" strokeDashoffset="-250" transform="rotate(-90 36 36)"/>
-              <text x="36" y="33" textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--text-muted)">평균</text>
-              <text x="36" y="44" textAnchor="middle" fontSize="11" fontWeight="800" fill="var(--text)">81%</text>
-            </svg>
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {[['#3b82f6','객관식','85%'],['#f59e0b','주관식','68%'],['#10b981','OX문제','90%']].map(([c,l,v]) => (
-                <div key={l} style={{ display:'flex', alignItems:'center', gap:7, fontSize:12, color:'var(--text)' }}>
-                  <span style={{ width:8, height:8, borderRadius:'50%', background:c, flexShrink:0 }} />
-                  <span>{l}</span>
-                  <span style={{ fontWeight:700, marginLeft:4, fontVariantNumeric:'tabular-nums' }}>{v}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, padding:16, marginBottom:14 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-          <div style={{ width:28, height:28, background:'var(--accent)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <Icon name="ai" size={14} style={{ color:'white' }} />
-          </div>
-          <span style={{ fontSize:13, fontWeight:700, color:'#1E3A8A' }}>AI 분석 결과</span>
-        </div>
-        {['설비점검 안전과정 항목의 정답률이 42%로 낮습니다.','비상상황 대응 절차 관련 문제의 정답률이 높습니다.','추가 교육 및 현장 OJT 강화가 필요합니다.'].map((t,i) => (
-          <div key={i} style={{ display:'flex', gap:8, fontSize:12, color:'#1E40AF', lineHeight:1.5, marginBottom: i < 2 ? 6 : 0 }}>
-            <span style={{ width:4, height:4, borderRadius:'50%', background:'var(--accent)', flexShrink:0, marginTop:6 }} />
-            {t}
+            <span style={{ fontSize:11, fontWeight:700, color:'var(--text)', width:32, fontVariantNumeric:'tabular-nums' }}>{avg}</span>
           </div>
         ))}
       </div>
-      <button style={{ width:'100%', border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:8, padding:11, fontFamily:'var(--font)', fontSize:13, fontWeight:700, cursor:'pointer' }}>
-        상세 분석 리포트 보기 →
-      </button>
     </div>
   )
 }
