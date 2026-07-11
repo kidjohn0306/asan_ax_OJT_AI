@@ -49,6 +49,27 @@ def delete_user(employee_id: str) -> dict:
     return {"deleted": True, "employee_id": employee_id}
 
 
+def reset_user_password(employee_id: str) -> dict:
+    """관리자가 사용자 비밀번호를 임시 비밀번호로 초기화. 실제 발급된 비밀번호는
+    이메일 연동이 없어 응답으로 반환 — 관리자가 직접 사용자에게 전달해야 함."""
+    import secrets
+    import string
+    from services.auth_service import pwd_context
+
+    data = _load_users()
+    all_users = data["approved_users"] + data["admins"]
+    user = next((u for u in all_users if u["employee_id"] == employee_id), None)
+    if not user:
+        raise HTTPException(status_code=404, detail="사용자를 찾을 수 없습니다.")
+
+    alphabet = string.ascii_uppercase + string.digits
+    temp_password = "".join(secrets.choice(alphabet) for _ in range(10))
+    user["password_hash"] = pwd_context.hash(temp_password)
+    _save_users(data)
+
+    return {"employee_id": employee_id, "temp_password": temp_password}
+
+
 def fetch_exam_count() -> dict:
     _, r_repo, _ = _get_repos()
     return {"count": r_repo.count()}
