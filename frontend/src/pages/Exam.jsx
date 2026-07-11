@@ -390,7 +390,7 @@ function ResultScreen({ empInfo, questions, answers, score, submitResults, onFin
                       <span style={{ fontSize:12, fontWeight:800, color:'var(--text-muted)', width:24, flexShrink:0 }}>{i+1}</span>
                       <span style={{ flex:1, fontSize:13, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{r.question}</span>
                       <span style={{ width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, flexShrink:0, background: r.correct ? 'var(--success-light)' : 'var(--danger-light)', color: r.correct ? 'var(--success)' : 'var(--danger)' }}>{r.correct ? 'O' : 'X'}</span>
-                      <span style={{ fontSize:11, color:'var(--text-muted)', width:110, textAlign:'right', flexShrink:0 }}>내 답: {r.user_answer || '미응답'} · 정답: {r.answer}</span>
+                      <span style={{ fontSize:11, color:'var(--text-muted)', width:150, textAlign:'right', flexShrink:0, whiteSpace:'nowrap' }}>내 답: {r.user_answer || '미응답'} · 정답: {r.answer}</span>
                       <span style={{ fontSize:14, color:'var(--text-muted)', flexShrink:0 }}>{isOpen ? '▴' : '▾'}</span>
                     </div>
                     {isOpen && (
