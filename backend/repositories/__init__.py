@@ -8,6 +8,7 @@ from repositories.local_json import (
     LocalTeamRepository,
     LocalQuestionStatsRepository,
     LocalMaterialRepository,
+    LocalUserRepository,
 )
 
 _backend = os.getenv("STORAGE_BACKEND", "local")
@@ -105,3 +106,16 @@ if _use_sheets:
         material_repo = LocalMaterialRepository()
 else:
     material_repo = LocalMaterialRepository()
+
+# 승인된 응시자 저장소 — Sheets 우선, 실패 시 Local 폴백. 관리자 계정은 별도로
+# repositories.local_json.load_local_admins()가 항상 로컬에서만 읽는다.
+if _use_sheets:
+    try:
+        from repositories.sheets_repo import SheetsUserRepository
+        user_repo = SheetsUserRepository()
+    except Exception as _e:
+        import logging
+        logging.warning(f"SheetsUserRepository 초기화 실패, Local로 폴백: {_e}")
+        user_repo = LocalUserRepository()
+else:
+    user_repo = LocalUserRepository()

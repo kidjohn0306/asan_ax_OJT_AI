@@ -415,11 +415,20 @@ function ResultScreen({ empInfo, questions, answers, score, submitResults, onFin
                 const unknownAnswer = q.ans === -1
                 const isCorrect = !unknownAnswer && answers[i] === q.ans
                 return (
-                  <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 24px', borderTop:'1px solid var(--border)' }}>
-                    <span style={{ fontSize:12, fontWeight:800, color:'var(--text-muted)', width:24, flexShrink:0 }}>{i+1}</span>
-                    <span style={{ flex:1, fontSize:13, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{q.q}</span>
-                    <span style={{ width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, flexShrink:0, background: unknownAnswer ? '#f1f5f9' : isCorrect ? 'var(--success-light)' : 'var(--danger-light)', color: unknownAnswer ? 'var(--text-muted)' : isCorrect ? 'var(--success)' : 'var(--danger)' }}>{unknownAnswer ? '−' : isCorrect ? 'O' : 'X'}</span>
-                    <span style={{ fontSize:11, color:'var(--text-muted)', width:80, textAlign:'right', flexShrink:0 }}>정답: {unknownAnswer ? '(서버)' : LABEL[q.ans]}</span>
+                  <div key={i} style={{ padding:'12px 24px', borderTop:'1px solid var(--border)' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                      <span style={{ fontSize:12, fontWeight:800, color:'var(--text-muted)', width:24, flexShrink:0 }}>{i+1}</span>
+                      <span style={{ flex:1, fontSize:13, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{q.q}</span>
+                      <span style={{ width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, flexShrink:0, background: unknownAnswer ? '#f1f5f9' : isCorrect ? 'var(--success-light)' : 'var(--danger-light)', color: unknownAnswer ? 'var(--text-muted)' : isCorrect ? 'var(--success)' : 'var(--danger)' }}>{unknownAnswer ? '−' : isCorrect ? 'O' : 'X'}</span>
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2, marginTop:6, paddingLeft:36 }}>
+                      {!unknownAnswer && !isCorrect && myLabel != null && (
+                        <span style={{ fontSize:11, color:'var(--danger)' }}>내 답: {myLabel}. {q.opts[myIdx]}</span>
+                      )}
+                      <span style={{ fontSize:11, color:'var(--text-muted)' }}>
+                        정답: {unknownAnswer ? '(서버 채점)' : `${correctLabel}. ${q.opts[correctIdx]}`}
+                      </span>
+                    </div>
                   </div>
                 )
               })}
