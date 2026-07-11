@@ -123,6 +123,127 @@ def fetch_logs(team=None, date_from=None, date_to=None) -> dict:
     return {"logs": logs}
 
 
+def fetch_results_analysis() -> dict:
+    """결과 분석 화면용 실제 응시 결과 집계 — 시험 회차(exam_id) 단위로 그룹화한다.
+    같은 시험지(exam_set_id)를 여러 회차가 공유할 수 있으므로 회차 단위로 묶어야 한다.
+    데이터가 없으면 빈 요약을 반환한다(목업으로 채우지 않음)."""
+    from repositories import team_repo, exam_set_repo
+    _, r_repo, _ = _get_repos()
+    all_results = list(r_repo.get_all_results().values())
+
+    team_names = {t["team_code"]: t["team_name"] for t in team_repo.list_teams()}
+    exam_meta = {s["exam_id"]: s for s in exam_set_repo.list_exam_sets()}
+
+    groups: dict = {}
+    for r in all_results:
+        groups.setdefault(r.get("exam_id") or "legacy", []).append(r)
+
+    exams = []
+    for exam_id, group in groups.items():
+        meta = exam_meta.get(exam_id, {})
+        team_code = meta.get("team_code") or group[0].get("team_code", "-")
+        takers = sorted(
+            [
+                {
+                    "employee_id": r.get("employee_id", "-"),
+                    "name": r.get("name") or "-",
+                    "score": r.get("score", 0),
+                    "pass": r.get("pass", False),
+                    "date": r.get("submitted_at", "")[:10],
+                    "results": r.get("results", []),
+                }
+                for r in group
+            ],
+            key=lambda x: x["date"],
+            reverse=True,
+        )
+        g_count = len(group)
+        g_correct = sum(1 for r in group for q in r.get("results", []) if q.get("correct"))
+        g_answered = sum(len(r.get("results", [])) for r in group)
+        exams.append({
+            "exam_id": exam_id,
+            "exam_set_id": meta.get("exam_set_id", exam_id),
+            "name": meta.get("name") or "미배정 시험(레거시)",
+            "team_code": team_code,
+            "team_name": team_names.get(team_code, team_code),
+            "exam_datetime": meta.get("exam_datetime") or meta.get("created_at", ""),
+            "taker_count": g_count,
+            "avg_score": round(sum(r.get("score", 0) for r in group) / g_count, 1),
+            "pass_count": sum(1 for r in group if r.get("pass")),
+            "accuracy_pct": round(g_correct / g_answered * 100, 1) if g_answered else 0,
+            "takers": takers,
+        })
+    exams.sort(key=lambda x: (x["exam_datetime"] or "", x["takers"][0]["date"] if x["takers"] else ""), reverse=True)
+
+    if not all_results:
+        return {
+            "summary": {"count": 0, "avg_score": 0, "accuracy_pct": 0, "pass_count": 0},
+            "team_averages": [],
+            "difficulty_accuracy": {},
+            "exams": [],
+            "insights": [],
+        }
+
+    count = len(all_results)
+    avg_score = round(sum(r.get("score", 0) for r in all_results) / count, 1)
+    pass_count = sum(1 for r in all_results if r.get("pass"))
+
+    total_correct = total_answered = 0
+    diff_totals = {"상": {"correct": 0, "total": 0}, "중": {"correct": 0, "total": 0}, "하": {"correct": 0, "total": 0}}
+    for r in all_results:
+        for q in r.get("results", []):
+            total_answered += 1
+            if q.get("correct"):
+                total_correct += 1
+            d = q.get("difficulty")
+            if d in diff_totals:
+                diff_totals[d]["total"] += 1
+                if q.get("correct"):
+                    diff_totals[d]["correct"] += 1
+    accuracy_pct = round(total_correct / total_answered * 100, 1) if total_answered else 0
+
+    difficulty_accuracy = {
+        d: {**v, "pct": round(v["correct"] / v["total"] * 100, 1) if v["total"] else 0}
+        for d, v in diff_totals.items()
+    }
+
+    team_scores: dict = {}
+    for r in all_results:
+        team_scores.setdefault(r.get("team_code", "-"), []).append(r.get("score", 0))
+    team_averages = sorted(
+        [
+            {
+                "team_code": code,
+                "team_name": team_names.get(code, code),
+                "avg_score": round(sum(scores) / len(scores), 1),
+                "count": len(scores),
+            }
+            for code, scores in team_scores.items()
+        ],
+        key=lambda x: x["avg_score"],
+    )
+
+    insights = []
+    if team_averages:
+        weakest_team = team_averages[0]
+        insights.append(f"{weakest_team['team_name']} 평균 점수가 {weakest_team['avg_score']}점으로 가장 낮습니다.")
+    scored_diffs = {d: v for d, v in difficulty_accuracy.items() if v["total"] > 0}
+    if scored_diffs:
+        weakest_diff = min(scored_diffs.items(), key=lambda kv: kv[1]["pct"])
+        insights.append(f"난이도 '{weakest_diff[0]}' 문항의 정답률이 {weakest_diff[1]['pct']}%로 가장 낮습니다.")
+    insights.append(
+        f"전체 정답률은 {accuracy_pct}%, 합격률은 {round(pass_count / count * 100, 1)}%입니다."
+    )
+
+    return {
+        "summary": {"count": count, "avg_score": avg_score, "accuracy_pct": accuracy_pct, "pass_count": pass_count},
+        "team_averages": team_averages,
+        "difficulty_accuracy": difficulty_accuracy,
+        "exams": exams,
+        "insights": insights,
+    }
+
+
 def _calc_diff_dist(results: list) -> dict:
     dist = {"상": 0, "중": 0, "하": 0}
     for r in results:
@@ -328,6 +449,7 @@ def create_exam_set(name: str, team_code: str, question_ids: list, created_by: s
     from repositories import exam_set_repo
     data = {
         "exam_set_id": f"set-{str(uuid.uuid4())[:8]}",
+        "exam_id": f"exam-{str(uuid.uuid4())[:8]}",
         "name": name,
         "team_code": team_code,
         "question_ids": question_ids,
@@ -337,27 +459,73 @@ def create_exam_set(name: str, team_code: str, question_ids: list, created_by: s
     return exam_set_repo.create_exam_set(data)
 
 
-def assign_user_to_exam_set(employee_id: str, exam_set_id: str) -> dict:
+def list_question_papers() -> list:
+    """시험지(문제 구성) 목록 — 같은 exam_set_id를 쓰는 여러 회차 중 대표 1건씩만 반환."""
     from repositories import exam_set_repo
-    if not exam_set_repo.assign_user(exam_set_id, employee_id):
-        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
-    return {"success": True, "employee_id": employee_id, "exam_set_id": exam_set_id}
+    papers = {}
+    for s in exam_set_repo.list_exam_sets():
+        key = s.get("exam_set_id")
+        if key and key not in papers:
+            papers[key] = {
+                "exam_set_id": key,
+                "name": s.get("name"),
+                "team_code": s.get("team_code"),
+                "question_count": len(s.get("question_ids", [])),
+                "created_at": s.get("created_at"),
+            }
+    return sorted(papers.values(), key=lambda p: p.get("created_at") or "", reverse=True)
 
 
-def unassign_user_from_exam_set(employee_id: str, exam_set_id: str) -> dict:
+def create_exam_round_from_paper(exam_set_id: str, name: str = None, created_by: str = "") -> dict:
+    """기존 시험지(exam_set_id)의 문제 구성을 재사용해 새 시험 회차를 만든다.
+    배정 대상·일시·커트라인은 새로 시작(빈 배정, 미정 일시, 기본 커트라인 70점)."""
+    import uuid
     from repositories import exam_set_repo
-    if not exam_set_repo.unassign_user(exam_set_id, employee_id):
-        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
-    return {"success": True, "employee_id": employee_id, "exam_set_id": exam_set_id}
+    source = next((s for s in exam_set_repo.list_exam_sets() if s.get("exam_set_id") == exam_set_id), None)
+    if not source:
+        raise HTTPException(status_code=404, detail="시험지를 찾을 수 없습니다.")
+    data = {
+        "exam_set_id": exam_set_id,
+        "exam_id": f"exam-{str(uuid.uuid4())[:8]}",
+        "name": name or source.get("name"),
+        "team_code": source.get("team_code"),
+        "question_ids": source.get("question_ids", []),
+        "created_by": created_by,
+        "status": "active",
+    }
+    return exam_set_repo.create_exam_set(data)
 
 
-def set_exam_datetime(exam_set_id: str, exam_datetime: str) -> dict:
+def assign_user_to_exam_set(employee_id: str, exam_id: str) -> dict:
     from repositories import exam_set_repo
-    success = exam_set_repo.update_exam_set(exam_set_id, {"exam_datetime": exam_datetime})
+    if not exam_set_repo.assign_user(exam_id, employee_id):
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    return {"success": True, "employee_id": employee_id, "exam_id": exam_id}
+
+
+def unassign_user_from_exam_set(employee_id: str, exam_id: str) -> dict:
+    from repositories import exam_set_repo
+    if not exam_set_repo.unassign_user(exam_id, employee_id):
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    return {"success": True, "employee_id": employee_id, "exam_id": exam_id}
+
+
+def set_exam_datetime(exam_id: str, exam_datetime: str) -> dict:
+    from repositories import exam_set_repo
+    success = exam_set_repo.update_exam_set(exam_id, {"exam_datetime": exam_datetime})
     if not success:
         from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
-    return {"success": True, "exam_set_id": exam_set_id, "exam_datetime": exam_datetime}
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    return {"success": True, "exam_id": exam_id, "exam_datetime": exam_datetime}
+
+
+def set_pass_score(exam_id: str, pass_score: int) -> dict:
+    from repositories import exam_set_repo
+    success = exam_set_repo.update_exam_set(exam_id, {"pass_score": pass_score})
+    if not success:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    return {"success": True, "exam_id": exam_id, "pass_score": pass_score}
 
 
 def seed_mock_data() -> dict:
@@ -483,23 +651,23 @@ def bulk_upload_users(csv_text: str) -> dict:
     return {"success": success, "skipped": skipped, "errors": errors, "total": success + skipped + errors}
 
 
-def get_exam_set_assignees(exam_set_id: str) -> list:
+def get_exam_set_assignees(exam_id: str) -> list:
     from repositories import exam_set_repo
-    exam_set = exam_set_repo.get_exam_set(exam_set_id)
+    exam_set = exam_set_repo.get_exam(exam_id)
     if not exam_set:
-        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
     assigned_ids = exam_set.get("assigned_users", [])
     all_users = fetch_users().get("users", [])
     return [u for u in all_users if u.get("employee_id") in assigned_ids]
 
 
-def get_exam_set_questions(exam_set_id: str) -> dict:
+def get_exam_set_questions(exam_id: str) -> dict:
     from repositories import exam_set_repo, question_repo
 
-    exam_set = exam_set_repo.get_exam_set(exam_set_id)
+    exam_set = exam_set_repo.get_exam(exam_id)
     if not exam_set:
         from fastapi import HTTPException
-        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
 
     questions = []
     for qid in exam_set.get("question_ids", []):
@@ -520,6 +688,7 @@ def get_exam_set_questions(exam_set_id: str) -> dict:
 
     return {
         "exam_set": {
+            "exam_id": exam_set.get("exam_id"),
             "exam_set_id": exam_set.get("exam_set_id"),
             "name": exam_set.get("name"),
             "team_code": exam_set.get("team_code"),

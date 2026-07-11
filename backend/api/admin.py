@@ -1,7 +1,7 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 from api.deps import require_admin
@@ -50,12 +50,21 @@ class CreateExamSetRequest(BaseModel):
     question_ids: list[str]
 
 
+class FromPaperRequest(BaseModel):
+    exam_set_id: str
+    name: Optional[str] = None
+
+
 class AssignUserRequest(BaseModel):
     employee_id: str
 
 
 class ScheduleExamRequest(BaseModel):
     exam_datetime: str
+
+
+class PassScoreRequest(BaseModel):
+    pass_score: int = Field(ge=0, le=100)
 
 
 class CreateTeamRequest(BaseModel):
@@ -181,46 +190,70 @@ def create_exam_set(body: CreateExamSetRequest, _: dict = Depends(require_admin)
     return _create(body.name, body.team_code, body.question_ids)
 
 
-@router.post("/exam-sets/{exam_set_id}/assign")
-def assign_user(exam_set_id: str, body: AssignUserRequest, _: dict = Depends(require_admin)):
+@router.get("/exam-sets/papers")
+def list_question_papers(_: dict = Depends(require_admin)):
+    from services.admin_service import list_question_papers as _list
+    return {"papers": _list()}
+
+
+@router.post("/exam-sets/from-paper")
+def create_exam_round_from_paper(body: FromPaperRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import create_exam_round_from_paper as _create
+    return _create(body.exam_set_id, body.name)
+
+
+@router.post("/exam-sets/{exam_id}/assign")
+def assign_user(exam_id: str, body: AssignUserRequest, _: dict = Depends(require_admin)):
     from services.admin_service import assign_user_to_exam_set
-    return assign_user_to_exam_set(body.employee_id, exam_set_id)
+    return assign_user_to_exam_set(body.employee_id, exam_id)
 
 
-@router.get("/exam-sets/{exam_set_id}/assignees")
-def get_exam_set_assignees(exam_set_id: str, _: dict = Depends(require_admin)):
+@router.get("/exam-sets/{exam_id}/assignees")
+def get_exam_set_assignees(exam_id: str, _: dict = Depends(require_admin)):
     from services.admin_service import get_exam_set_assignees as _get
-    return {"assignees": _get(exam_set_id)}
+    return {"assignees": _get(exam_id)}
 
 
-@router.delete("/exam-sets/{exam_set_id}/assign/{employee_id}")
-def unassign_user(exam_set_id: str, employee_id: str, _: dict = Depends(require_admin)):
+@router.delete("/exam-sets/{exam_id}/assign/{employee_id}")
+def unassign_user(exam_id: str, employee_id: str, _: dict = Depends(require_admin)):
     from services.admin_service import unassign_user_from_exam_set
-    return unassign_user_from_exam_set(employee_id, exam_set_id)
+    return unassign_user_from_exam_set(employee_id, exam_id)
 
 
-@router.patch("/exam-sets/{exam_set_id}/schedule")
-def schedule_exam(exam_set_id: str, body: ScheduleExamRequest, _: dict = Depends(require_admin)):
+@router.patch("/exam-sets/{exam_id}/schedule")
+def schedule_exam(exam_id: str, body: ScheduleExamRequest, _: dict = Depends(require_admin)):
     from services.admin_service import set_exam_datetime
-    return set_exam_datetime(exam_set_id, body.exam_datetime)
+    return set_exam_datetime(exam_id, body.exam_datetime)
 
 
-@router.get("/exam-sets/{exam_set_id}/results")
-def get_exam_set_results(exam_set_id: str, _: dict = Depends(require_admin)):
+@router.patch("/exam-sets/{exam_id}/pass-score")
+def set_pass_score(exam_id: str, body: PassScoreRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import set_pass_score as _set
+    return _set(exam_id, body.pass_score)
+
+
+@router.get("/exam-sets/{exam_id}/results")
+def get_exam_set_results(exam_id: str, _: dict = Depends(require_admin)):
     from repositories import result_repo
-    return {"results": result_repo.list_results_by_set(exam_set_id)}
+    return {"results": result_repo.list_results_by_exam(exam_id)}
 
 
-@router.get("/exam-sets/{exam_set_id}/questions")
-def get_exam_set_questions(exam_set_id: str, _: dict = Depends(require_admin)):
+@router.get("/exam-sets/{exam_id}/questions")
+def get_exam_set_questions(exam_id: str, _: dict = Depends(require_admin)):
     from services.admin_service import get_exam_set_questions as _get
-    return _get(exam_set_id)
+    return _get(exam_id)
 
 
 @router.post("/seed-mock-data")
 def seed_mock_data(_: dict = Depends(require_admin)):
     from services.admin_service import seed_mock_data as _seed
     return _seed()
+
+
+@router.get("/results-analysis")
+def get_results_analysis(_: dict = Depends(require_admin)):
+    from services.admin_service import fetch_results_analysis
+    return fetch_results_analysis()
 
 
 @router.get("/stats")

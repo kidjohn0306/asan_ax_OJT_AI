@@ -18,7 +18,7 @@ class GenerateRequest(BaseModel):
 
 
 class SubmitRequest(BaseModel):
-    exam_id: str
+    result_id: str
     answers: dict[str, str]          # { "C-001": "A", "T1-001": "C", ... }
     response_times: dict[str, float]  # { "C-001": 12.5, ... }  단위: 초
     employee_id: Optional[str] = ""
@@ -61,10 +61,10 @@ def submit_exam(body: SubmitRequest, creds: HTTPAuthorizationCredentials = Depen
         except Exception:
             skip_save = False
     from services.exam_service import score_and_save
-    return score_and_save(body.exam_id, body.answers, body.response_times, body.employee_id, body.name, skip_save=skip_save)
+    return score_and_save(body.result_id, body.answers, body.response_times, body.employee_id, body.name, skip_save=skip_save)
 
 
-@router.get("/result/{exam_id}")
-def get_result(exam_id: str):
+@router.get("/result/{result_id}")
+def get_result(result_id: str):
     from services.exam_service import get_exam_result
-    return get_exam_result(exam_id)
+    return get_exam_result(result_id)

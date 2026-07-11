@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Fragment } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, apiUpload, logout as apiLogout } from '../api'
 
@@ -236,7 +236,7 @@ function Dashboard({ onNavigate }) {
     setModalLoading(true)
     setModalData(null)
     try {
-      const d = await apiFetch('GET', `/api/admin/exam-sets/${set.exam_set_id}/questions`)
+      const d = await apiFetch('GET', `/api/admin/exam-sets/${set.exam_id}/questions`)
       setModalData(d)
     } catch (e) { setModalData({ error: e.message }) }
     finally { setModalLoading(false) }
@@ -247,7 +247,7 @@ function Dashboard({ onNavigate }) {
     setModalLoading(true)
     setModalData(null)
     try {
-      const d = await apiFetch('GET', `/api/admin/exam-sets/${set.exam_set_id}/results`)
+      const d = await apiFetch('GET', `/api/admin/exam-sets/${set.exam_id}/results`)
       setModalData(d)
     } catch (e) { setModalData({ error: e.message }) }
     finally { setModalLoading(false) }
@@ -328,7 +328,7 @@ function Dashboard({ onNavigate }) {
           recentSets.map((s, i) => {
             const status = getExamStatus(s.exam_datetime)
             return (
-            <div key={s.exam_set_id} style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 20px', borderBottom: i < recentSets.length - 1 ? '1px solid var(--border)' : 'none' }}>
+            <div key={s.exam_id} style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 20px', borderBottom: i < recentSets.length - 1 ? '1px solid var(--border)' : 'none' }}>
               <div style={{ flex:1, minWidth:0 }}>
                 <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                   <span style={{ fontSize:14, fontWeight:700, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.name}</span>
@@ -1569,95 +1569,143 @@ function Users({ toast }) {
 
 /* ── 결과 분석 ───────────────────────────────────────────────── */
 function Results() {
-  const resultData = [
-    { name:'홍길동', dept:'생산팀', score:92, pass:true,  date:'2026.06.14' },
-    { name:'김철수', dept:'생산팀', score:64, pass:false, date:'2026.06.14' },
-    { name:'박영희', dept:'품질팀', score:88, pass:true,  date:'2026.06.13' },
-    { name:'이민수', dept:'설비팀', score:65, pass:false, date:'2026.06.13' },
-    { name:'최지훈', dept:'품질팀', score:95, pass:true,  date:'2026.06.12' },
-  ]
-  const bars = [['생산팀',85,'var(--accent)'],['품질팀',91,'var(--success)'],['설비팀',76,'#F59E0B'],['인사팀',82,'var(--purple)']]
+  const [data, setData] = useState(null)
+  const [error, setError] = useState('')
+  const [teamFilter, setTeamFilter] = useState([])
+  const [selectedExamId, setSelectedExamId] = useState(null)
+  const [expandedTaker, setExpandedTaker] = useState(null)
+
+  useEffect(() => {
+    apiFetch('GET', '/api/admin/results-analysis')
+      .then(setData)
+      .catch(e => setError(e.message))
+  }, [])
+
+  if (error) {
+    return <Card><p style={{ fontSize:13, color:'var(--danger)', textAlign:'center', padding:'24px 0' }}>조회 실패: {error}</p></Card>
+  }
+  if (!data) {
+    return <Card><p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>불러오는 중...</p></Card>
+  }
+  if (data.summary.count === 0) {
+    return <Card><p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>아직 응시 결과가 없습니다.</p></Card>
+  }
+
+  const selectedExam = selectedExamId ? data.exams.find(e => e.exam_id === selectedExamId) : null
+  const teamOptions = [...new Map(data.exams.map(e => [e.team_code, e.team_name])).entries()]
+  const filteredExams = data.exams.filter(e => teamFilter.length === 0 || teamFilter.includes(e.team_code))
+
+  function toggleTeamFilter(teamCode) {
+    setTeamFilter(prev => prev.includes(teamCode) ? prev.filter(t => t !== teamCode) : [...prev, teamCode])
+  }
+
+  function openExam(examSetId) {
+    setSelectedExamId(examSetId)
+    setExpandedTaker(null)
+  }
 
   return (
     <div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
-        <StatCard iconName="user"  iconColor="#2563EB" iconBg="#EFF6FF" label="응시 인원" value="18"   unit="명" />
-        <StatCard iconName="star"  iconColor="#D97706" iconBg="#FFFBEB" label="평균 점수" value="84.6" unit="점" />
-        <StatCard iconName="check" iconColor="#059669" iconBg="#ECFDF5" label="정답률"    value="77.8" unit="%" />
-        <StatCard iconName="chart" iconColor="#7C3AED" iconBg="#F5F3FF" label="합격자"    value="14"   unit="명" />
-      </div>
-
-      <Card title="응시자 결과 목록" noPad>
-        <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border)' }}>
-          <input placeholder="이름 검색" style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', maxWidth:220, width:'100%', outline:'none' }} />
-        </div>
-        <DataTable headers={['이름','부서','점수','결과','응시일']}>
-          {resultData.map((r, i) => (
-            <tr key={i}>
-              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:500 }}>{r.name}</td>
-              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{r.dept}</td>
-              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{r.score}점</td>
-              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><Badge type={r.pass ? 'success' : 'danger'}>{r.pass ? '합격' : '재교육'}</Badge></td>
-              <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{r.date}</td>
-            </tr>
-          ))}
-        </DataTable>
-      </Card>
-
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14, marginBottom:16 }}>
-        <div style={{ border:'1px solid var(--border)', borderRadius:8, padding:20, background:'var(--card)' }}>
-          <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:14, textTransform:'uppercase', letterSpacing:'0.04em' }}>부서별 평균 점수</div>
-          {bars.map(([label, pct, color]) => (
-            <div key={label} style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
-              <span style={{ fontSize:11, color:'var(--text-muted)', width:36, textAlign:'right', flexShrink:0 }}>{label}</span>
-              <div style={{ flex:1, height:6, background:'var(--border)', borderRadius:3, overflow:'hidden' }}>
-                <div style={{ height:'100%', borderRadius:3, background:color, width:`${pct}%` }} />
-              </div>
-              <span style={{ fontSize:11, fontWeight:700, color:'var(--text)', width:26, fontVariantNumeric:'tabular-nums' }}>{pct}</span>
-            </div>
-          ))}
-        </div>
-        <div style={{ border:'1px solid var(--border)', borderRadius:8, padding:20, background:'var(--card)' }}>
-          <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:14, textTransform:'uppercase', letterSpacing:'0.04em' }}>문항 유형별 정답률</div>
-          <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-            <svg width={80} height={80} viewBox="0 0 72 72">
-              <circle cx="36" cy="36" r="26" fill="none" stroke="var(--border)" strokeWidth="10"/>
-              <circle cx="36" cy="36" r="26" fill="none" stroke="#3b82f6" strokeWidth="10" strokeDasharray="138.9 163.4" strokeDashoffset="0" transform="rotate(-90 36 36)"/>
-              <circle cx="36" cy="36" r="26" fill="none" stroke="#f59e0b" strokeWidth="10" strokeDasharray="111.1 163.4" strokeDashoffset="-138.9" transform="rotate(-90 36 36)"/>
-              <circle cx="36" cy="36" r="26" fill="none" stroke="#10b981" strokeWidth="10" strokeDasharray="147.1 163.4" strokeDashoffset="-250" transform="rotate(-90 36 36)"/>
-              <text x="36" y="33" textAnchor="middle" fontSize="9" fontWeight="700" fill="var(--text-muted)">평균</text>
-              <text x="36" y="44" textAnchor="middle" fontSize="11" fontWeight="800" fill="var(--text)">81%</text>
-            </svg>
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {[['#3b82f6','객관식','85%'],['#f59e0b','주관식','68%'],['#10b981','OX문제','90%']].map(([c,l,v]) => (
-                <div key={l} style={{ display:'flex', alignItems:'center', gap:7, fontSize:12, color:'var(--text)' }}>
-                  <span style={{ width:8, height:8, borderRadius:'50%', background:c, flexShrink:0 }} />
-                  <span>{l}</span>
-                  <span style={{ fontWeight:700, marginLeft:4, fontVariantNumeric:'tabular-nums' }}>{v}</span>
-                </div>
+      {selectedExam ? (
+        <Card title={selectedExam.name} noPad action={<BtnOutlineSm onClick={() => setSelectedExamId(null)}>← 시험 목록으로</BtnOutlineSm>}>
+          <div style={{ padding:'12px 20px', borderBottom:'1px solid var(--border)', display:'flex', gap:22, fontSize:12, color:'var(--text-muted)', flexWrap:'wrap' }}>
+            <span>팀 <b style={{ color:'var(--text)' }}>{selectedExam.team_name}</b></span>
+            <span>응시 인원 <b style={{ color:'var(--text)' }}>{selectedExam.taker_count}명</b></span>
+            <span>평균 점수 <b style={{ color:'var(--text)' }}>{selectedExam.avg_score}점</b></span>
+            <span>정답률 <b style={{ color:'var(--text)' }}>{selectedExam.accuracy_pct}%</b></span>
+            <span>합격자 <b style={{ color:'var(--text)' }}>{selectedExam.pass_count}명</b></span>
+          </div>
+          <DataTable headers={['이름','점수','결과','응시일','']}>
+            {selectedExam.takers.map((t, i) => (
+              <Fragment key={i}>
+                <tr style={{ cursor:'pointer' }} onClick={() => setExpandedTaker(expandedTaker === i ? null : i)}>
+                  <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:500 }}>{t.name}</td>
+                  <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{t.score}점</td>
+                  <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><Badge type={t.pass ? 'success' : 'danger'}>{t.pass ? '합격' : '재교육'}</Badge></td>
+                  <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{t.date}</td>
+                  <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--accent)', whiteSpace:'nowrap' }}>{expandedTaker === i ? '접기 ▲' : '상세 ▼'}</td>
+                </tr>
+                {expandedTaker === i && (
+                  <tr>
+                    <td colSpan={5} style={{ padding:'4px 18px 16px', borderBottom:'1px solid var(--border)', background:'#FAFAFA' }}>
+                      {t.results.length === 0 ? (
+                        <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>문항별 상세 데이터가 없습니다.</p>
+                      ) : (
+                        <table style={{ width:'100%', borderCollapse:'collapse' }}>
+                          <thead>
+                            <tr>{['문항','난이도','정답','응답','정오'].map(h => (
+                              <th key={h} style={{ textAlign:'left', fontSize:11, fontWeight:700, color:'var(--text-muted)', padding:'6px 8px', borderBottom:'1px solid var(--border)' }}>{h}</th>
+                            ))}</tr>
+                          </thead>
+                          <tbody>
+                            {t.results.map((q, qi) => (
+                              <tr key={qi}>
+                                <td style={{ fontSize:12, padding:'6px 8px' }}>{q.q_id}</td>
+                                <td style={{ fontSize:12, padding:'6px 8px' }}>{q.difficulty || '-'}</td>
+                                <td style={{ fontSize:12, padding:'6px 8px' }}>{q.answer || '-'}</td>
+                                <td style={{ fontSize:12, padding:'6px 8px' }}>{q.user_answer || '-'}</td>
+                                <td style={{ fontSize:12, padding:'6px 8px' }}><Badge type={q.correct ? 'success' : 'danger'}>{q.correct ? '정답' : '오답'}</Badge></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+                    </td>
+                  </tr>
+                )}
+              </Fragment>
+            ))}
+          </DataTable>
+        </Card>
+      ) : (
+        <Card
+          title="시험 목록"
+          noPad
+          action={
+            <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+              {teamOptions.map(([code, name]) => (
+                <label key={code} style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, cursor:'pointer', color: teamFilter.includes(code) ? 'var(--text)' : 'var(--text-muted)', fontWeight: teamFilter.includes(code) ? 700 : 400 }}>
+                  <input type="checkbox" checked={teamFilter.includes(code)} onChange={() => toggleTeamFilter(code)} style={{ accentColor:'var(--accent)', cursor:'pointer', margin:0 }} />
+                  {name}
+                </label>
               ))}
             </div>
-          </div>
-        </div>
-      </div>
+          }
+        >
+          <DataTable headers={['시험명','팀','응시일','인원','평균점수','정답률','합격자']}>
+            {filteredExams.length === 0 ? (
+              <tr><td colSpan={7} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>표시할 시험이 없습니다.</td></tr>
+            ) : filteredExams.map(e => (
+              <tr key={e.exam_id} style={{ cursor:'pointer' }} onClick={() => openExam(e.exam_id)}>
+                <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:500 }}>{e.name}</td>
+                <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{e.team_name}</td>
+                <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{e.exam_datetime ? e.exam_datetime.slice(0,10) : '-'}</td>
+                <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontVariantNumeric:'tabular-nums' }}>{e.taker_count}명</td>
+                <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{e.avg_score}점</td>
+                <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontVariantNumeric:'tabular-nums' }}>{e.accuracy_pct}%</td>
+                <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontVariantNumeric:'tabular-nums' }}>{e.pass_count}명</td>
+              </tr>
+            ))}
+          </DataTable>
+        </Card>
+      )}
 
-      <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, padding:16, marginBottom:14 }}>
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-          <div style={{ width:28, height:28, background:'var(--accent)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <Icon name="ai" size={14} style={{ color:'white' }} />
+      {data.insights.length > 0 && (
+        <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, padding:16, marginBottom:14 }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+            <div style={{ width:28, height:28, background:'var(--accent)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <Icon name="chart" size={14} style={{ color:'white' }} />
+            </div>
+            <span style={{ fontSize:13, fontWeight:700, color:'#1E3A8A' }}>분석 인사이트</span>
           </div>
-          <span style={{ fontSize:13, fontWeight:700, color:'#1E3A8A' }}>AI 분석 결과</span>
+          {data.insights.map((t,i) => (
+            <div key={i} style={{ display:'flex', gap:8, fontSize:12, color:'#1E40AF', lineHeight:1.5, marginBottom: i < data.insights.length-1 ? 6 : 0 }}>
+              <span style={{ width:4, height:4, borderRadius:'50%', background:'var(--accent)', flexShrink:0, marginTop:6 }} />
+              {t}
+            </div>
+          ))}
         </div>
-        {['설비점검 안전과정 항목의 정답률이 42%로 낮습니다.','비상상황 대응 절차 관련 문제의 정답률이 높습니다.','추가 교육 및 현장 OJT 강화가 필요합니다.'].map((t,i) => (
-          <div key={i} style={{ display:'flex', gap:8, fontSize:12, color:'#1E40AF', lineHeight:1.5, marginBottom: i < 2 ? 6 : 0 }}>
-            <span style={{ width:4, height:4, borderRadius:'50%', background:'var(--accent)', flexShrink:0, marginTop:6 }} />
-            {t}
-          </div>
-        ))}
-      </div>
-      <button style={{ width:'100%', border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:8, padding:11, fontFamily:'var(--font)', fontSize:13, fontWeight:700, cursor:'pointer' }}>
-        상세 분석 리포트 보기 →
-      </button>
+      )}
     </div>
   )
 }
@@ -1764,15 +1812,43 @@ function ExamAssign({ toast }) {
   const [focusedIdx, setFocusedIdx] = useState(-1)
   const [examDatetime, setExamDatetime] = useState('')
   const [savingSchedule, setSavingSchedule] = useState(false)
+  const [passScore, setPassScore] = useState(70)
+  const [savingPassScore, setSavingPassScore] = useState(false)
+  const [papers, setPapers] = useState([])
+  const [selectedPaperId, setSelectedPaperId] = useState('')
+  const [newRoundName, setNewRoundName] = useState('')
+  const [creatingRound, setCreatingRound] = useState(false)
+
+  function loadSets() {
+    return apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
+  }
 
   useEffect(() => {
-    apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
+    loadSets()
     apiFetch('GET', '/api/admin/users').then(d => setUsers(d.users || [])).catch(() => {})
+    apiFetch('GET', '/api/admin/exam-sets/papers').then(d => setPapers(d.papers || [])).catch(() => {})
   }, [])
 
+  async function handleCreateFromPaper() {
+    if (!selectedPaperId) { toast('시험지를 선택하세요.', 'error'); return }
+    setCreatingRound(true)
+    try {
+      const created = await apiFetch('POST', '/api/admin/exam-sets/from-paper', {
+        exam_set_id: selectedPaperId,
+        ...(newRoundName.trim() ? { name: newRoundName.trim() } : {}),
+      })
+      toast('기존 시험지로 새 시험을 만들었습니다.')
+      setNewRoundName('')
+      await loadSets()
+      setSelectedSet(created.exam_id)
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+    finally { setCreatingRound(false) }
+  }
+
   useEffect(() => {
-    const s = sets.find(s => s.exam_set_id === selectedSet)
+    const s = sets.find(s => s.exam_id === selectedSet)
     setExamDatetime(s?.exam_datetime ? s.exam_datetime.slice(0, 16) : '')
+    setPassScore(s?.pass_score ?? 70)
   }, [selectedSet, sets])
 
   async function handleSaveSchedule() {
@@ -1787,6 +1863,18 @@ function ExamAssign({ toast }) {
     finally { setSavingSchedule(false) }
   }
 
+  async function handleSavePassScore() {
+    if (!selectedSet) return
+    setSavingPassScore(true)
+    try {
+      await apiFetch('PATCH', `/api/admin/exam-sets/${selectedSet}/pass-score`, { pass_score: passScore })
+      toast('합격 커트라인이 저장됐습니다.')
+      const setsData = await apiFetch('GET', '/api/admin/exam-sets')
+      setSets(setsData.sets || [])
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+    finally { setSavingPassScore(false) }
+  }
+
 
 
   async function loadAssignees(setId) {
@@ -1799,7 +1887,7 @@ function ExamAssign({ toast }) {
 
   async function handleAssign() {
     if (!selectedSet || !selectedUser) { toast('시험세트와 응시자를 선택하세요.', 'error'); return }
-    const set = sets.find(s => s.exam_set_id === selectedSet)
+    const set = sets.find(s => s.exam_id === selectedSet)
     if (set?.assigned_users?.includes(selectedUser)) { toast('이미 배정된 인원입니다.', 'error'); return }
     setLoading(true)
     try {
@@ -1852,10 +1940,37 @@ function ExamAssign({ toast }) {
     else if (e.key === 'Escape') { setDropdownOpen(false) }
   }
 
-  const viewedSet = sets.find(s => s.exam_set_id === viewedSetId)
+  const viewedSet = sets.find(s => s.exam_id === viewedSetId)
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
+      <Card title="기존 시험지로 새 시험 만들기">
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험지 선택</label>
+            <select value={selectedPaperId} onChange={e => setSelectedPaperId(e.target.value)}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
+              <option value="">-- 시험지 선택 --</option>
+              {papers.map(p => <option key={p.exam_set_id} value={p.exam_set_id}>{p.name} ({p.team_code} · {p.question_count}문항)</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>새 시험명 (비워두면 시험지 이름 그대로)</label>
+            <input
+              type="text"
+              value={newRoundName}
+              onChange={e => setNewRoundName(e.target.value)}
+              placeholder="예: 2026년 2차 OJT 평가"
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
+            />
+          </div>
+          <button onClick={handleCreateFromPaper} disabled={creatingRound}
+            style={{ height:48, background:'var(--accent)', color:'white', border:'none', borderRadius:10, fontSize:15, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', opacity: creatingRound ? 0.6 : 1 }}>
+            {creatingRound ? '만드는 중...' : '이 시험지로 새 시험 만들기'}
+          </button>
+        </div>
+      </Card>
+
       <Card title="시험 배정">
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
           <div>
@@ -1863,7 +1978,7 @@ function ExamAssign({ toast }) {
             <select value={selectedSet} onChange={e => setSelectedSet(e.target.value)}
               style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
               <option value="">-- 시험세트 선택 --</option>
-              {sets.map(s => <option key={s.exam_set_id} value={s.exam_set_id}>{s.name} ({s.team_code})</option>)}
+              {sets.map(s => <option key={s.exam_id} value={s.exam_id}>{s.name} ({s.team_code})</option>)}
             </select>
           </div>
           {selectedSet && (
@@ -1879,6 +1994,27 @@ function ExamAssign({ toast }) {
                 <button onClick={handleSaveSchedule} disabled={savingSchedule}
                   style={{ height:44, padding:'0 16px', border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', whiteSpace:'nowrap', opacity: savingSchedule ? 0.6 : 1 }}>
                   {savingSchedule ? '저장 중...' : '일시 저장'}
+                </button>
+              </div>
+            </div>
+          )}
+          {selectedSet && (
+            <div>
+              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>합격 커트라인</label>
+              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  max={100}
+                  value={passScore}
+                  onChange={e => setPassScore(e.target.value === '' ? '' : Number(e.target.value))}
+                  style={{ width:100, height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
+                />
+                <span style={{ fontSize:13, color:'var(--text-muted)' }}>점 이상 합격</span>
+                <button onClick={handleSavePassScore} disabled={savingPassScore}
+                  style={{ height:44, padding:'0 16px', border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', whiteSpace:'nowrap', marginLeft:'auto', opacity: savingPassScore ? 0.6 : 1 }}>
+                  {savingPassScore ? '저장 중...' : '커트라인 저장'}
                 </button>
               </div>
             </div>
@@ -1930,10 +2066,10 @@ function ExamAssign({ toast }) {
           <Card title="시험세트 목록">
             <DataTable headers={['이름','팀','문항 수','시험 일시','생성일']}>
               {sets.map(s => (
-                <tr key={s.exam_set_id}
-                  onClick={() => { setViewedSetId(s.exam_set_id); loadAssignees(s.exam_set_id) }}
-                  style={{ cursor:'pointer', background: viewedSetId === s.exam_set_id ? 'var(--accent-light)' : 'white' }}>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600, color: viewedSetId === s.exam_set_id ? 'var(--accent-dark)' : 'var(--text)' }}>{s.name}</td>
+                <tr key={s.exam_id}
+                  onClick={() => { setViewedSetId(s.exam_id); loadAssignees(s.exam_id) }}
+                  style={{ cursor:'pointer', background: viewedSetId === s.exam_id ? 'var(--accent-light)' : 'white' }}>
+                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600, color: viewedSetId === s.exam_id ? 'var(--accent-dark)' : 'var(--text)' }}>{s.name}</td>
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.team_code}</td>
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{(s.question_ids || []).length}문항</td>
                   <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.exam_datetime ? s.exam_datetime.slice(0,16).replace('T',' ') : '미정'}</td>
@@ -1999,7 +2135,7 @@ function ExamStatus({ toast }) {
         <select value={selectedSet} onChange={e => loadResults(e.target.value)}
           style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
           <option value="">-- 시험세트 선택 --</option>
-          {sets.map(s => <option key={s.exam_set_id} value={s.exam_set_id}>{s.name} ({s.team_code})</option>)}
+          {sets.map(s => <option key={s.exam_id} value={s.exam_id}>{s.name} ({s.team_code})</option>)}
         </select>
       </Card>
 

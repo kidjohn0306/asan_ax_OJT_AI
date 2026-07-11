@@ -73,13 +73,13 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
 
     if assigned_set:
         exam_name = assigned_set.get("name") or DEFAULT_EXAM_NAME
-        exam_set_id = assigned_set.get("exam_set_id", "")
+        round_exam_id = assigned_set.get("exam_id", "")
         team_code = assigned_set.get("team_code", team_code)
         questions = [q_repo.get_question(qid) for qid in assigned_set.get("question_ids", [])]
         questions = [q for q in questions if q]
     else:
         exam_name = DEFAULT_EXAM_NAME
-        exam_set_id = ""
+        round_exam_id = ""
         # T1/T2/T3는 기존 team1/team2/team3 문제풀에 매핑(하위호환), 그 외 신규 팀은 team_code 자체를 풀 키로 사용
         team_key = TEAM_KEY_MAP.get(team_code, team_code)
 
@@ -103,7 +103,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
             questions += remaining[:total_count - len(questions)]
         random.shuffle(questions)
 
-    exam_id = str(uuid.uuid4())
+    result_id = str(uuid.uuid4())
 
     if not preview:
         # 스냅샷 저장 (approved 문제 정보 + 정답 고정)
@@ -122,11 +122,12 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
         }
         snapshot["_meta"] = {
             "team_code": team_code,
-            "exam_set_id": exam_set_id,
+            "exam_id": round_exam_id,
             "name": exam_name,
+            "pass_score": assigned_set.get("pass_score", PASS_SCORE) if assigned_set else PASS_SCORE,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
-        s_repo.save_snapshot(exam_id, snapshot)
+        s_repo.save_snapshot(result_id, snapshot)
 
         # 출제 횟수 트래킹 — 실패해도 시험 생성은 계속
         try:
@@ -136,7 +137,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
             pass
 
     return {
-        "exam_id": exam_id,
+        "result_id": result_id,
         "team_code": team_code,
         "name": exam_name,
         "preview": preview,
@@ -159,10 +160,10 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
     }
 
 
-def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_id: str = "", name: str = "", skip_save: bool = False) -> dict:
+def score_and_save(result_id: str, answers: dict, response_times: dict, employee_id: str = "", name: str = "", skip_save: bool = False) -> dict:
     q_repo, r_repo, s_repo = _get_repos()
 
-    snapshot = s_repo.get_snapshot(exam_id)
+    snapshot = s_repo.get_snapshot(result_id)
     if not snapshot:
         raise HTTPException(
             status_code=410,
@@ -199,12 +200,12 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_i
         })
 
     result_data = {
-        "exam_id": exam_id,
+        "result_id": result_id,
         "employee_id": employee_id,
-        "exam_set_id": meta.get("exam_set_id") or "legacy",
+        "exam_id": meta.get("exam_id") or "legacy",
         "name": name,
         "score": score,
-        "pass": score >= PASS_SCORE,
+        "pass": score >= meta.get("pass_score", PASS_SCORE),
         "difficulty_summary": difficulty_summary,
         "results": results,
         "team_code": meta.get("team_code", ""),
@@ -216,9 +217,9 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_i
     return result_data
 
 
-def get_exam_result(exam_id: str) -> dict:
+def get_exam_result(result_id: str) -> dict:
     _, r_repo, _ = _get_repos()
-    result = r_repo.get_result(exam_id)
+    result = r_repo.get_result(result_id)
     if not result:
         raise HTTPException(status_code=404, detail="결과를 찾을 수 없습니다.")
     return result

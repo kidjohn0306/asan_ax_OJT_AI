@@ -33,18 +33,18 @@ def _fallback_on_error(local_cls):
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_TAB = "exam_sets"
-HEADERS = ["exam_set_id", "name", "team_code", "question_ids", "assigned_users", "created_at", "exam_datetime"]
+HEADERS = ["exam_set_id", "name", "team_code", "question_ids", "assigned_users", "created_at", "exam_datetime", "pass_score", "exam_id"]
 # 컬럼 문자 매핑 — 헤더 순서와 반드시 일치해야 한다.
 _COLUMNS = {h: chr(ord("A") + i) for i, h in enumerate(HEADERS)}
 
 RESULTS_TAB = "results"
 RESULTS_HEADERS = [
-    "exam_id", "exam_set_id", "employee_id", "name", "score",
+    "result_id", "exam_id", "employee_id", "name", "score",
     "pass", "team_code", "submitted_at", "difficulty_summary", "results",
 ]
 
 SNAPSHOTS_SHEET_TAB = "snapshots"
-SNAPSHOTS_HEADERS = ["exam_id", "created_at", "data_json"]
+SNAPSHOTS_HEADERS = ["result_id", "created_at", "data_json"]
 
 _HTTP_TIMEOUT_SECONDS = 15
 
@@ -158,7 +158,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         """헤더를 제외한 데이터 행 반환 (raw list)."""
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A:G",
+            range=f"{SHEET_TAB}!A:I",
         ).execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -166,6 +166,10 @@ class SheetsExamSetRepository(ExamSetRepository):
     @staticmethod
     def _row_to_dict(row: list) -> dict:
         def _get(i): return row[i] if len(row) > i else ""
+        try:
+            pass_score = int(_get(7)) if _get(7) else 70
+        except ValueError:
+            pass_score = 70
         return {
             "exam_set_id": _get(0),
             "name": _get(1),
@@ -174,6 +178,8 @@ class SheetsExamSetRepository(ExamSetRepository):
             "assigned_users": _safe_json_list(_get(4)),
             "created_at": _get(5),
             "exam_datetime": _get(6),
+            "pass_score": pass_score,
+            "exam_id": _get(8),
         }
 
     @staticmethod
@@ -186,16 +192,18 @@ class SheetsExamSetRepository(ExamSetRepository):
             json.dumps(data.get("assigned_users", []), ensure_ascii=False),
             data.get("created_at", ""),
             data.get("exam_datetime", ""),
+            str(data.get("pass_score", 70)),
+            data.get("exam_id", ""),
         ]
 
-    def _find_sheet_row(self, exam_set_id: str) -> int:
-        """1-based 행 번호 반환 (헤더=1, 첫 데이터=2). 없으면 -1."""
+    def _find_sheet_row(self, exam_id: str) -> int:
+        """1-based 행 번호 반환 (헤더=1, 첫 데이터=2). 없으면 -1. exam_id(회차 PK, I열)로 찾는다."""
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A:A",
+            range=f"{SHEET_TAB}!I:I",
         ).execute()
         for i, row in enumerate(res.get("values", []), start=1):
-            if row and row[0] == exam_set_id:
+            if row and row[0] == exam_id:
                 return i
         return -1
 
@@ -215,11 +223,11 @@ class SheetsExamSetRepository(ExamSetRepository):
         return [self._row_to_dict(r) for r in self._read_all_rows()]
 
     @_fallback_on_error(LocalExamSetRepository)
-    def get_exam_set(self, exam_set_id: str) -> dict | None:
+    def get_exam(self, exam_id: str) -> dict | None:
         self._maybe_ensure_tab()
         for row in self._read_all_rows():
             d = self._row_to_dict(row)
-            if d["exam_set_id"] == exam_set_id:
+            if d["exam_id"] == exam_id:
                 return d
         return None
 
@@ -229,9 +237,10 @@ class SheetsExamSetRepository(ExamSetRepository):
         data.setdefault("assigned_users", [])
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
         data.setdefault("exam_datetime", "")
+        data.setdefault("pass_score", 70)
         self._values().append(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A:G",
+            range=f"{SHEET_TAB}!A:I",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [self._dict_to_row(data)]},
@@ -239,9 +248,9 @@ class SheetsExamSetRepository(ExamSetRepository):
         return data
 
     @_fallback_on_error(LocalExamSetRepository)
-    def assign_user(self, exam_set_id: str, employee_id: str) -> bool:
+    def assign_user(self, exam_id: str, employee_id: str) -> bool:
         self._maybe_ensure_tab()
-        row_idx = self._find_sheet_row(exam_set_id)
+        row_idx = self._find_sheet_row(exam_id)
         if row_idx == -1:
             return False
         res = self._values().get(
@@ -256,9 +265,9 @@ class SheetsExamSetRepository(ExamSetRepository):
         return True
 
     @_fallback_on_error(LocalExamSetRepository)
-    def unassign_user(self, exam_set_id: str, employee_id: str) -> bool:
+    def unassign_user(self, exam_id: str, employee_id: str) -> bool:
         self._maybe_ensure_tab()
-        row_idx = self._find_sheet_row(exam_set_id)
+        row_idx = self._find_sheet_row(exam_id)
         if row_idx == -1:
             return False
         res = self._values().get(
@@ -272,9 +281,9 @@ class SheetsExamSetRepository(ExamSetRepository):
             self._update_assigned_users(row_idx, assigned)
         return True
 
-    def update_exam_set(self, exam_set_id: str, fields: dict) -> bool:
+    def update_exam_set(self, exam_id: str, fields: dict) -> bool:
         self._maybe_ensure_tab()
-        row_idx = self._find_sheet_row(exam_set_id)
+        row_idx = self._find_sheet_row(exam_id)
         if row_idx == -1:
             return False
         updates = []
@@ -333,8 +342,8 @@ class SheetsResultRepository(ResultRepository):
         except (json.JSONDecodeError, ValueError):
             results = []
         return {
-            "exam_id": _get(0),
-            "exam_set_id": _get(1),
+            "result_id": _get(0),
+            "exam_id": _get(1),
             "employee_id": _get(2),
             "name": _get(3),
             "score": int(_get(4)) if _get(4) else 0,
@@ -348,8 +357,8 @@ class SheetsResultRepository(ResultRepository):
     @staticmethod
     def _dict_to_row(data: dict) -> list:
         return [
+            data.get("result_id", ""),
             data.get("exam_id", ""),
-            data.get("exam_set_id", ""),
             data.get("employee_id", ""),
             data.get("name", ""),
             str(data.get("score", 0)),
@@ -373,9 +382,9 @@ class SheetsResultRepository(ResultRepository):
         ).execute()
 
     @_fallback_on_error(LocalResultRepository)
-    def get_result(self, exam_id: str) -> dict | None:
+    def get_result(self, result_id: str) -> dict | None:
         for row in self._read_all_rows():
-            if row and row[0] == exam_id:
+            if row and row[0] == result_id:
                 return self._row_to_dict(row)
         return None
 
@@ -384,8 +393,8 @@ class SheetsResultRepository(ResultRepository):
         results = {}
         for row in self._read_all_rows():
             d = self._row_to_dict(row)
-            if d["exam_id"]:
-                results[d["exam_id"]] = d
+            if d["result_id"]:
+                results[d["result_id"]] = d
         return results
 
     @_fallback_on_error(LocalResultRepository)
@@ -393,10 +402,10 @@ class SheetsResultRepository(ResultRepository):
         return len(self._read_all_rows())
 
     @_fallback_on_error(LocalResultRepository)
-    def list_results_by_set(self, exam_set_id: str) -> list:
+    def list_results_by_exam(self, exam_id: str) -> list:
         return [
             self._row_to_dict(row) for row in self._read_all_rows()
-            if len(row) > 1 and row[1] == exam_set_id
+            if len(row) > 1 and row[1] == exam_id
         ]
 
 
@@ -420,9 +429,9 @@ class SheetsSnapshotRepository(SnapshotRepository):
         return self._svc.spreadsheets().values()
 
     @_fallback_on_error(LocalSnapshotRepository)
-    def save_snapshot(self, exam_id: str, snapshot: dict) -> None:
+    def save_snapshot(self, result_id: str, snapshot: dict) -> None:
         self._maybe_ensure_tab()
-        row = [exam_id, datetime.now(timezone.utc).isoformat(), json.dumps(snapshot, ensure_ascii=False)]
+        row = [result_id, datetime.now(timezone.utc).isoformat(), json.dumps(snapshot, ensure_ascii=False)]
         self._values().append(
             spreadsheetId=self._spreadsheet_id,
             range=f"{SNAPSHOTS_SHEET_TAB}!A:C",
@@ -432,7 +441,7 @@ class SheetsSnapshotRepository(SnapshotRepository):
         ).execute()
 
     @_fallback_on_error(LocalSnapshotRepository)
-    def get_snapshot(self, exam_id: str) -> dict | None:
+    def get_snapshot(self, result_id: str) -> dict | None:
         self._maybe_ensure_tab()
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
@@ -440,7 +449,7 @@ class SheetsSnapshotRepository(SnapshotRepository):
         ).execute()
         rows = res.get("values", [])
         for row in rows[1:]:
-            if row and row[0] == exam_id:
+            if row and row[0] == result_id:
                 data_json = row[2] if len(row) > 2 else ""
                 return json.loads(data_json) if data_json else None
         return None

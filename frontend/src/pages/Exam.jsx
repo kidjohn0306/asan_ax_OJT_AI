@@ -420,7 +420,7 @@ export default function Exam() {
   const [bookmarks, setBookmarks] = useState(new Array(25).fill(false))
   const [currentQ, setCurrentQ] = useState(0)
   const [timerSeconds, setTimerSeconds] = useState(3600)
-  const [examId, setExamId] = useState(null)
+  const [resultId, setResultId] = useState(null)
   const [examName, setExamName] = useState('OJT 기초고사')
   const [score, setScore] = useState(null)
   const timerRef = useRef(null)
@@ -525,7 +525,7 @@ export default function Exam() {
       })
       if (res.ok) {
         const data = await res.json()
-        setExamId(data.exam_id)
+        setResultId(data.result_id)
         if (data.name) setExamName(data.name)
         const qs = data.questions.map(q => ({
           id: q.id, cat: q.category, diff: q.difficulty || '중',
@@ -560,7 +560,7 @@ export default function Exam() {
   async function handleSubmit() {
     stopTimer()
     setScreen('scoring')
-    if (examId) {
+    if (resultId) {
       try {
         const LMAP = ['A','B','C','D']
         const answersDict = {}
@@ -570,7 +570,7 @@ export default function Exam() {
         const res = await fetch('/api/exam/submit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ exam_id: examId, answers: answersDict, response_times: timesDict, employee_id: empInfo.empno, name: empInfo.name }),
+          body: JSON.stringify({ result_id: resultId, answers: answersDict, response_times: timesDict, employee_id: empInfo.empno, name: empInfo.name }),
         })
         if (res.ok) {
           const data = await res.json()
