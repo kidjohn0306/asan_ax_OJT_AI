@@ -22,6 +22,81 @@ def _get_repos():
     return question_repo, result_repo, feedback_repo
 
 
+_VALID_GATE_MODES = {"legacy", "strict"}
+
+
+def _get_gate_mode() -> str:
+    """OJT_GATE_MODE 환경변수(legacy 기본값)로 강화된 7-Gate 사용 여부를 결정한다.
+    잘못된 값은 legacy로 조용히 되돌리지 않고 요청 시 명시적으로 오류를 낸다."""
+    raw = os.getenv("OJT_GATE_MODE", "legacy").strip().lower()
+    if raw not in _VALID_GATE_MODES:
+        raise HTTPException(status_code=500, detail=f"잘못된 OJT_GATE_MODE 설정입니다: {raw!r}")
+    return raw
+
+
+def _gate_response_fields(q: dict) -> dict:
+    """strict 모드에서만 존재하는 gate_snapshot을 API 응답에 additive 필드로 얹는다.
+    legacy 문제는 gate_snapshot이 없으므로 그대로 빈 dict를 반환해 기존 응답 스키마를 보존한다."""
+    snapshot = (q.get("flags") or {}).get("gate_snapshot")
+    if not snapshot:
+        return {}
+    return {
+        "overall_gate_status": snapshot["overall_status"],
+        "gates": snapshot["gates"],
+    }
+
+
+def _generate_ai_questions_strict(
+    questions: list,
+    q_repo,
+    pool_key: str,
+    category_label: str,
+    team_code: str,
+    material_text: str,
+    flagged_question_ids: frozenset,
+) -> tuple:
+    """OJT_GATE_MODE=strict 전용 경로. PASS 여부와 관계없이 모든 Candidate를 정확히 한 번 저장하고,
+    Gate 전체 판정을 기존 flags JSON 안의 gate_snapshot에 보존한다."""
+    from ai_engine.router import get_semantic_gate_verifier
+    from services.generation.gate_service import GateContext, evaluate_candidate
+
+    verifier = get_semantic_gate_verifier()
+    try:
+        approved_questions = [
+            existing for pool in q_repo.get_all_questions().values() for existing in pool
+            if existing.get("status") == "approved"
+        ]
+    except Exception:
+        approved_questions = []
+
+    passed, failed_list = [], []
+    for q in questions:
+        context = GateContext(
+            material_text=material_text,
+            team_code=team_code,
+            pool_key=pool_key,
+            category_label=category_label,
+            approved_questions=tuple(approved_questions),
+            flagged_question_ids=flagged_question_ids,
+        )
+        gate_result = evaluate_candidate(q, context, verifier, mode="strict")
+
+        q["flags"] = {
+            "warning": gate_result["flags"]["warning"],
+            "security_hold": gate_result["flags"]["security_hold"],
+            "gate_snapshot": gate_result,
+        }
+        q["gate_errors"] = gate_result["failed"]
+        q["status"] = "reviewing" if gate_result["pass"] else "draft"
+
+        q_repo.add_question(pool_key, q)
+        approved_questions.append(q)  # 같은 배치의 다음 Candidate와도 V06 중복 비교 대상이 된다.
+
+        (passed if gate_result["pass"] else failed_list).append(q)
+
+    return passed, failed_list
+
+
 def fetch_users() -> dict:
     from repositories import user_repo
     return {"users": user_repo.list_users()}
@@ -218,6 +293,7 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
     rejected_examples = [q for q in rejected if q.get("reject_reason")]
 
     overused_questions = []
+    flagged_ids = set()
     try:
         flagged_ids = {stat["question_id"] for stat in question_stats_repo.list_flagged()}
         if flagged_ids:
@@ -249,18 +325,25 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
     for i, q in enumerate(questions):
         q["question_id"] = f"{category}-{batch_stamp}-{i+1:03d}"
 
-    passed, failed_list = [], []
-    for q in questions:
-        gate_result = run_gates(q)
-        if gate_result["pass"]:
-            q["status"] = "reviewing"
-            q["flags"] = gate_result["flags"]
-            q_repo.add_question(category, q)
-            passed.append(q)
-        else:
-            q["status"] = "draft"
-            q["gate_errors"] = gate_result["failed"]
-            failed_list.append(q)
+    gate_mode = _get_gate_mode()
+    if gate_mode == "strict":
+        passed, failed_list = _generate_ai_questions_strict(
+            questions, q_repo, category, category_label, team_code,
+            material_text, frozenset(flagged_ids),
+        )
+    else:
+        passed, failed_list = [], []
+        for q in questions:
+            gate_result = run_gates(q)
+            if gate_result["pass"]:
+                q["status"] = "reviewing"
+                q["flags"] = gate_result["flags"]
+                q_repo.add_question(category, q)
+                passed.append(q)
+            else:
+                q["status"] = "draft"
+                q["gate_errors"] = gate_result["failed"]
+                failed_list.append(q)
 
     return {
         "team_code": team_code,
@@ -280,6 +363,7 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
                 },
                 "difficulty": q.get("difficulty_ai") or q.get("difficulty_init", "중"),
                 "gate_errors": q.get("gate_errors", []),
+                **_gate_response_fields(q),
             }
             for q in passed + failed_list
         ],
