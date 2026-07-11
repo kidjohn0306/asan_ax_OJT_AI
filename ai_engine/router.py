@@ -28,4 +28,4 @@ def generate_questions_from_material(
 
     # mock (기본값)
     from ai_engine.question_generator import _mock_generate
-    return _mock_generate(category, count)
+    return _mock_generate(category, count, difficulty_hint)

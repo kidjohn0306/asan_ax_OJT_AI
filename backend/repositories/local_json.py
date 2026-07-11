@@ -10,6 +10,7 @@ from repositories.base import (
     ExamSetRepository,
     TeamRepository,
     QuestionStatsRepository,
+    MaterialRepository,
 )
 
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
@@ -373,3 +374,31 @@ class LocalQuestionStatsRepository(QuestionStatsRepository):
 
     def list_flagged(self) -> list:
         return [v for v in self._load().values() if v.get("flagged_frequent")]
+
+
+class LocalMaterialRepository(MaterialRepository):
+    _file = MOCK_DIR / "material_cache.json"
+    _tmp_file = Path("/tmp/material_cache.json")
+
+    def _load(self) -> dict:
+        target = self._tmp_file if self._tmp_file.exists() else self._file
+        if not target.exists():
+            return {}
+        with open(target, encoding="utf-8") as f:
+            return json.load(f)
+
+    def _save(self, data: dict) -> None:
+        try:
+            with open(self._file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except OSError:
+            with open(self._tmp_file, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def get_manifest(self, category: str) -> dict | None:
+        return self._load().get(category)
+
+    def save_manifest(self, category: str, manifest: dict) -> None:
+        data = self._load()
+        data[category] = manifest
+        self._save(data)

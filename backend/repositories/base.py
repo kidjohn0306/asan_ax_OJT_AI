@@ -103,3 +103,15 @@ class QuestionStatsRepository(ABC):
 
     @abstractmethod
     def list_flagged(self) -> list: ...
+
+
+class MaterialRepository(ABC):
+    """Drive 교육자료 스캔 결과 캐시. category(예: common/team1/team2/team3)별로
+    스캔된 파일 매니페스트(id/name/modifiedTime)와 추출된 텍스트를 저장해
+    변경되지 않은 파일은 재다운로드·재추출하지 않도록 한다."""
+
+    @abstractmethod
+    def get_manifest(self, category: str) -> dict | None: ...
+
+    @abstractmethod
+    def save_manifest(self, category: str, manifest: dict) -> None: ...

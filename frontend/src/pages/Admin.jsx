@@ -127,9 +127,9 @@ function BtnPrimary({ onClick, children, style, disabled }) {
   )
 }
 
-function BtnOutlineSm({ onClick, children, danger }) {
+function BtnOutlineSm({ onClick, children, danger, disabled }) {
   return (
-    <button onClick={onClick} style={{ border:`1.5px solid ${danger ? 'var(--danger)' : 'var(--accent)'}`, background:'white', color: danger ? 'var(--danger)' : 'var(--accent)', borderRadius:6, padding:'6px 13px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer', fontWeight:600, whiteSpace:'nowrap', display:'inline-flex', alignItems:'center', gap:5 }}>
+    <button onClick={onClick} disabled={disabled} style={{ border:`1.5px solid ${danger ? 'var(--danger)' : 'var(--accent)'}`, background:'white', color: danger ? 'var(--danger)' : 'var(--accent)', borderRadius:6, padding:'6px 13px', fontFamily:'var(--font)', fontSize:12, cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.6 : 1, fontWeight:600, whiteSpace:'nowrap', display:'inline-flex', alignItems:'center', gap:5 }}>
       {children}
     </button>
   )
@@ -202,6 +202,7 @@ function Dashboard({ onNavigate }) {
   const [modal, setModal] = useState(null)
   const [modalData, setModalData] = useState(null)
   const [modalLoading, setModalLoading] = useState(false)
+  const [systemStatus, setSystemStatus] = useState(null)
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/stats')
@@ -211,6 +212,9 @@ function Dashboard({ onNavigate }) {
       .then(() => setDriveStatus('연동'))
       .catch(() => setDriveStatus('미연동'))
     apiFetch('GET', '/api/admin/exam-sets').then(d => setExamSets(d.sets || [])).catch(() => {})
+    apiFetch('GET', '/api/admin/system-status')
+      .then(setSystemStatus)
+      .catch(() => setSystemStatus(null))
   }, [])
 
   const EXAM_STATUS_FILTERS = [
@@ -277,12 +281,23 @@ function Dashboard({ onNavigate }) {
     ['clock', '응시 이력',   'history'],
   ]
 
+  const aiProvider = systemStatus?.ai_provider ?? '확인 중'
+  const aiProviderLabel = { mock:'Mock 모드', gemini:'Gemini 연동', claude:'Claude 연동' }[aiProvider] || aiProvider
+  const aiProviderLive = aiProvider === 'claude' ? systemStatus?.claude_key_configured
+    : aiProvider === 'gemini' ? systemStatus?.gemini_key_configured
+    : false
+  const claudeConfigured = systemStatus?.claude_key_configured ?? false
+
   const systemRows = [
-    ['운영 모드',    'Mock 모드',  'USE_MOCK_DATA=true',       'mock'],
+    ['운영 모드',    systemStatus ? aiProviderLabel : '확인 중...', `AI_PROVIDER=${aiProvider}`, aiProvider === 'mock' ? 'mock' : (aiProviderLive ? 'live' : 'offline')],
     ['백엔드 API',   apiStatus,    'FastAPI — localhost:8000', apiStatus === '정상' ? 'live' : 'offline'],
-    ['Claude API',   '미연동',     'ANTHROPIC_API_KEY 필요',   'offline'],
+    ['Claude API',   systemStatus ? (claudeConfigured ? '연동' : '미연동') : '확인 중...', 'CLAUDE_API_KEY 필요', claudeConfigured ? 'live' : 'offline'],
     ['Google Drive', driveStatus,  '서비스 계정 인증',          driveStatus === '연동' ? 'live' : 'mock'],
   ]
+
+  const missingIntegrations = systemStatus && aiProvider === 'mock'
+    ? [!claudeConfigured && 'Claude API', driveStatus !== '연동' && 'Google Drive'].filter(Boolean)
+    : []
 
   return (
     <div>
@@ -332,10 +347,12 @@ function Dashboard({ onNavigate }) {
         )}
       </Card>
 
-      <div style={{ background:'var(--warning-light)', border:'1px solid #FDE68A', borderRadius:8, padding:'9px 16px', marginBottom:16, fontSize:12, color:'var(--warning)', display:'flex', alignItems:'center', gap:8 }}>
-        <span style={{ width:6, height:6, borderRadius:'50%', background:'#F59E0B', flexShrink:0, display:'inline-block' }} />
-        Mock 모드 — Claude API · Google Drive 없이 작동 중.
-      </div>
+      {missingIntegrations.length > 0 && (
+        <div style={{ background:'var(--warning-light)', border:'1px solid #FDE68A', borderRadius:8, padding:'9px 16px', marginBottom:16, fontSize:12, color:'var(--warning)', display:'flex', alignItems:'center', gap:8 }}>
+          <span style={{ width:6, height:6, borderRadius:'50%', background:'#F59E0B', flexShrink:0, display:'inline-block' }} />
+          Mock 모드 — {missingIntegrations.join(' · ')} 없이 작동 중.
+        </div>
+      )}
 
       <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
         <StatCard iconName="book"  iconColor="#059669" iconBg="#ECFDF5" label="문제은행 문제수"   value={stats.question_count}  unit="개" />
@@ -460,6 +477,8 @@ function QuestionGenerate({ toast, onNavigate }) {
   const [loading, setLoading] = useState(false)
   const [openPreviewId, setOpenPreviewId] = useState(null)
   const [examName, setExamName] = useState('')
+  const [materialStatus, setMaterialStatus] = useState(null)
+  const [scanning, setScanning] = useState(false)
 
   const DIFF_MAP = { '초급': '하', '중급': '중', '고급': '상' }
   const COUNT_MAP = { '10문항': 10, '20문항': 20, '25문항': 25 }
@@ -467,6 +486,34 @@ function QuestionGenerate({ toast, onNavigate }) {
   useEffect(() => {
     apiFetch('GET', '/api/admin/teams').then(d => setTeams(d.teams || [])).catch(() => {})
   }, [])
+
+  function refreshMaterialStatus() {
+    if (!team) return
+    apiFetch('GET', `/api/admin/materials/status?team_code=${team}`)
+      .then(setMaterialStatus)
+      .catch(() => setMaterialStatus(null))
+  }
+
+  useEffect(refreshMaterialStatus, [team])
+
+  async function scanNewMaterials() {
+    setScanning(true)
+    try {
+      const res = await apiFetch('POST', '/api/admin/materials/scan', { team_code: team })
+      refreshMaterialStatus()
+      const skipped = Object.values(res.categories || {}).flatMap(c => c.skipped || [])
+      if (skipped.length > 0) {
+        toast(`스캔 완료 (일부 파일 제외: ${skipped.map(s => s.name).join(', ')} — 파일 크기 초과)`, 'error')
+      } else {
+        toast('교육자료 스캔 완료! 다음 문제 생성부터 반영됩니다.')
+      }
+    } catch (e) { toast(`스캔 실패: ${e.message}`, 'error') }
+    finally { setScanning(false) }
+  }
+
+  const newMaterialFiles = materialStatus
+    ? Object.values(materialStatus.categories || {}).flatMap(c => c.new_files || [])
+    : []
 
   async function generate() {
     setLoading(true)
@@ -575,6 +622,19 @@ function QuestionGenerate({ toast, onNavigate }) {
           ))}
         </div>
 
+        {materialStatus?.has_new_any && (
+          <div style={{ background:'var(--warning-light)', border:'1px solid #FDE68A', borderRadius:8, padding:'10px 12px', marginBottom:14, fontSize:12, color:'var(--warning)' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6, fontWeight:700 }}>
+              <span style={{ width:6, height:6, borderRadius:'50%', background:'#F59E0B', flexShrink:0, display:'inline-block' }} />
+              새로운 교육자료가 업로드되었습니다
+            </div>
+            <div style={{ color:'var(--text-muted)', marginBottom:8 }}>
+              {newMaterialFiles.map(f => f.name).join(', ')} — 추가로 스캔하여 문제 생성에 반영하시겠습니까?
+            </div>
+            <BtnOutlineSm onClick={scanNewMaterials} disabled={scanning}>{scanning ? '스캔 중...' : '지금 스캔하기'}</BtnOutlineSm>
+          </div>
+        )}
+
         {mode === 'preset' && (<>
           <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>2. 난이도</div>
           <div style={{ display:'flex', border:'1.5px solid var(--border)', borderRadius:7, overflow:'hidden', marginBottom:14 }}>
@@ -588,11 +648,11 @@ function QuestionGenerate({ toast, onNavigate }) {
               <button key={c} onClick={() => setCount(c)} style={{ flex:1, border:'none', borderRight:'1px solid var(--border)', padding:'9px 4px', cursor:'pointer', fontFamily:'var(--font)', fontSize:13, background: count===c ? 'var(--accent)' : 'white', color: count===c ? 'white' : 'var(--text-muted)', fontWeight: count===c ? 700 : 400 }}>{c}</button>
             ))}
           </div>
-          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>4. 교육자료 입력 (선택)</div>
+          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>4. 교육자료 추가 입력 (선택)</div>
           <textarea
             value={material}
             onChange={e => setMaterial(e.target.value)}
-            placeholder="교육자료 텍스트를 붙여넣으세요. 비워두면 Mock 문항을 반환합니다."
+            placeholder="Google Drive에 스캔해둔 교육자료가 자동으로 포함됩니다. 이번 출제에만 추가로 반영할 내용이 있다면 붙여넣으세요."
             style={{ width:'100%', minHeight:88, border:'1.5px solid var(--border)', borderRadius:7, padding:'9px 10px', fontFamily:'var(--font)', fontSize:12, color:'var(--text)', resize:'vertical', boxSizing:'border-box', marginBottom:14, outline:'none' }}
           />
         </>)}
@@ -1042,10 +1102,11 @@ function ExamSheet({ toast, onNavigate }) {
     setSwapTargetIdx(idx)
     try {
       const current = questions[idx]
-      const diff = current.difficulty_ai || current.difficulty_init || ''
+      const currentId = current.id || current.question_id
+      const diff = current.difficulty || ''
       const path = `/api/admin/questions?status=approved${diff ? `&difficulty=${diff}` : ''}`
       const data = await apiFetch('GET', path)
-      const pool = (data.questions || []).filter(q => q.question_id !== current.question_id)
+      const pool = (data.questions || []).filter(q => q.question_id !== currentId)
       setSwapPool(pool.slice(0, 5))
     } catch {
       setSwapPool([])
@@ -1053,9 +1114,25 @@ function ExamSheet({ toast, onNavigate }) {
   }
 
   function swapQuestion(idx, replacement) {
+    // 교체 후보(replacement)는 /api/admin/questions(문제은행 원본 스키마: option_a..d,
+    // difficulty_ai/difficulty_init/admin_override)에서 오지만, 시험지 문항은 미리보기
+    // 스키마(options.A..D, difficulty)를 쓰므로 필드명을 맞춰줘야 함
+    // (안 맞추면 교체된 문항만 난이도 배지·PDF 보기가 깨짐)
+    const normalized = {
+      id: replacement.question_id || replacement.id,
+      category: replacement.category,
+      question: replacement.question,
+      options: replacement.options || {
+        A: replacement.option_a,
+        B: replacement.option_b,
+        C: replacement.option_c,
+        D: replacement.option_d,
+      },
+      difficulty: replacement.difficulty || replacement.admin_override || replacement.difficulty_ai || replacement.difficulty_init || '중',
+    }
     setQuestions(prev => {
       const arr = [...prev]
-      arr[idx] = { ...replacement, _order: arr[idx]._order }
+      arr[idx] = { ...normalized, _order: arr[idx]._order }
       return arr
     })
     setSwapTargetIdx(null)
@@ -1245,7 +1322,7 @@ function ExamSheet({ toast, onNavigate }) {
               const diff = q.difficulty || '중'
               const isSwapOpen = swapTargetIdx === i
               return (
-                <div key={`${q.question_id ?? i}-${i}`} style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, overflow:'hidden', transition:'border-color .15s' }}>
+                <div key={`${q.id ?? q.question_id ?? i}-${i}`} style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, overflow:'hidden', transition:'border-color .15s' }}>
                   <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px' }}>
                     {/* 순서 번호 */}
                     <span style={{ width:24, height:24, borderRadius:'50%', background:'var(--accent)', color:'white', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{i + 1}</span>
@@ -1253,7 +1330,7 @@ function ExamSheet({ toast, onNavigate }) {
                     {/* 문제 내용 */}
                     <div style={{ flex:1, minWidth:0 }}>
                       <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:2 }}>
-                        {q.question_id} · {q.category}
+                        {q.id || q.question_id} · {q.category}
                         <span style={{ marginLeft:6, fontWeight:700, color: diffColor[diff] || 'var(--text-muted)' }}>[{diff}]</span>
                       </div>
                       <div style={{ fontSize:13, color:'var(--text)', fontWeight:500, lineHeight:1.4,
@@ -1588,21 +1665,29 @@ function Results() {
 /* ── 설정 ────────────────────────────────────────────────────── */
 function Settings() {
   const [driveStatus, setDriveStatus] = useState('확인 중...')
+  const [systemStatus, setSystemStatus] = useState(null)
 
   useEffect(() => {
     apiFetch('GET', '/api/drive/status')
       .then(() => setDriveStatus('연동'))
       .catch(() => setDriveStatus('미연동'))
+    apiFetch('GET', '/api/admin/system-status')
+      .then(setSystemStatus)
+      .catch(() => setSystemStatus(null))
   }, [])
+
+  const aiProvider = systemStatus?.ai_provider ?? '확인 중'
+  const aiProviderLabel = { mock:'Mock 모드', gemini:'Gemini 연동', claude:'Claude 연동' }[aiProvider] || aiProvider
+  const claudeConfigured = systemStatus?.claude_key_configured ?? false
 
   const groups = [
     { label:'운영 모드', rows:[
-      ['데이터 소스',  'USE_MOCK_DATA 환경변수',  'Mock 모드', 'mock'],
+      ['데이터 소스',  `AI_PROVIDER 환경변수`,  systemStatus ? aiProviderLabel : '확인 중...', aiProvider === 'mock' ? 'mock' : 'live'],
       ['백엔드 API',   'FastAPI — localhost:8000', '실행 중',   'live'],
       ['JWT 인증',     'python-jose (구현 완료)',   '활성',      'live'],
     ]},
     { label:'외부 연동 현황', rows:[
-      ['Claude API',   'ANTHROPIC_API_KEY 필요',   '미연동',    'offline'],
+      ['Claude API',   'CLAUDE_API_KEY 필요',   systemStatus ? (claudeConfigured ? '연동' : '미연동') : '확인 중...', claudeConfigured ? 'live' : 'offline'],
       ['Google Drive', '서비스 계정 인증',          driveStatus, driveStatus === '연동' ? 'live' : 'mock'],
     ]},
   ]

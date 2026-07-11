@@ -1,3 +1,5 @@
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Literal, Optional
@@ -64,6 +66,10 @@ class CreateTeamRequest(BaseModel):
 
 class UpdateTeamRequest(BaseModel):
     team_name: str
+
+
+class MaterialScanRequest(BaseModel):
+    team_code: TeamCode
 
 
 @router.get("/users")
@@ -223,6 +229,12 @@ def get_stats(_: dict = Depends(require_admin)):
     return fetch_dashboard_stats()
 
 
+@router.get("/system-status")
+def get_system_status(_: dict = Depends(require_admin)):
+    from services.admin_service import fetch_system_status
+    return fetch_system_status()
+
+
 @router.get("/teams")
 def get_teams(_: dict = Depends(require_admin)):
     from services.admin_service import list_teams
@@ -275,6 +287,39 @@ def get_question_stats(_: dict = Depends(require_admin)):
 def get_flagged_questions(_: dict = Depends(require_admin)):
     from repositories import question_stats_repo
     return {"flagged": question_stats_repo.list_flagged()}
+
+
+_CATEGORY_PATTERN = re.compile(r"^[a-zA-Z0-9_-]+$")
+
+
+def _material_categories_for_team(team_code: str) -> list[str]:
+    from services.material_service import categories_for_team
+    categories = categories_for_team(team_code)
+    if not all(_CATEGORY_PATTERN.match(c) for c in categories):
+        raise HTTPException(status_code=400, detail="잘못된 team_code입니다.")
+    return categories
+
+
+@router.get("/materials/status")
+def get_materials_status(team_code: TeamCode, _: dict = Depends(require_admin)):
+    from services.material_service import check_new_materials
+    categories = {cat: check_new_materials(cat) for cat in _material_categories_for_team(team_code)}
+    return {"categories": categories, "has_new_any": any(c["has_new"] for c in categories.values())}
+
+
+@router.post("/materials/scan")
+def scan_materials(body: MaterialScanRequest, _: dict = Depends(require_admin)):
+    from services.material_service import scan_materials as _scan
+    results = {}
+    for cat in _material_categories_for_team(body.team_code):
+        manifest = _scan(cat)
+        results[cat] = {
+            "category": cat,
+            "file_count": len(manifest.get("files", [])),
+            "scanned_at": manifest.get("scanned_at", ""),
+            "skipped": manifest.get("skipped", []),
+        }
+    return {"categories": results}
 
 
 @router.get("/debug/storage")

@@ -512,8 +512,10 @@ export default function Exam() {
 
   async function handleStart() {
     setScreen('loading')
-    const teamRaw = empInfo.team
-    const teamCode = teamRaw.startsWith('2') ? 'T2' : teamRaw.startsWith('3') ? 'T3' : 'T1'
+    // empInfo.team은 로그인 응답에서 그대로 저장된 실제 team_code(T1/T2/T3)이므로
+    // 별도 변환 없이 그대로 사용한다 (과거에는 '2'/'3' 접두사로 재추정했는데,
+    // 팀 코드가 'T1'/'T2'/'T3' 형태라 항상 T1로 오판정되는 버그가 있었음)
+    const teamCode = empInfo.team || 'T1'
     const token = sessionStorage.getItem('token')
     try {
       const res = await fetch('/api/exam/generate', {

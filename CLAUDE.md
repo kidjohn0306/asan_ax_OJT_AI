@@ -1,4 +1,6 @@
-# OJT 평가 시스템 — Claude Code 가이드
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## 프로젝트 개요
 AI 기반 신입사원 OJT 교육 이해도 평가 시스템. FastAPI 백엔드 + Vite React 프론트엔드.
@@ -11,7 +13,8 @@ asan_ax_OJT_AI/
 ├── api/index.py              # Vercel 진입점 — backend/main.py의 app을 임포트
 ├── ai_engine/                # AI 문제 생성 엔진 (루트 위치 — sys.path에 의해 임포트됨)
 │   ├── router.py             # AI_PROVIDER 환경변수로 생성기 선택
-│   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) — _build_prompt/_call_api/_parse_response
+│   ├── _shared.py            # gemini/claude 생성기 공통 로직 — truncate_material/build_prompt/parse_response
+│   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) — _call_api만 자체 구현, 나머지는 _shared 사용
 │   └── question_generator.py # Claude API (claude-sonnet-5, anthropic SDK) + mock 생성기(_mock_generate) 겸용
 ├── backend/
 │   ├── main.py               # FastAPI 앱, frontend/dist/ StaticFiles 마운트, load_dotenv(override=True)
@@ -20,15 +23,16 @@ asan_ax_OJT_AI/
 │   │   ├── auth.py, exam.py, admin.py, drive.py
 │   ├── services/             # 비즈니스 로직
 │   │   ├── exam_service.py   # 출제·채점·스냅샷 저장 (PASS_SCORE=70) + 출제횟수 increment_batch
-│   │   ├── admin_service.py  # 문제관리, 사용자승인, AI 생성, 팀CRUD, CSV업로드, 대시보드통계
+│   │   ├── admin_service.py  # 문제관리, 사용자승인, AI 생성, 팀CRUD, CSV업로드, 대시보드통계, 시스템 상태 조회
 │   │   ├── drive_service.py  # Google Drive 서비스 계정 인증
-│   │   └── generation/       # run_gates (7개 검증 규칙)
+│   │   ├── material_service.py # Drive 교육자료 스캔·캐싱 (아래 "교육자료 자동 스캔" 참고)
+│   │   └── generation/       # gates.py — run_gates (V-01~V-07 순수 함수 검증 규칙)
 │   ├── repositories/         # 저장소 추상화 레이어
-│   │   ├── base.py           # 추상 인터페이스 (Question/Result/Snapshot/Feedback/Team/QuestionStats)
+│   │   ├── base.py           # 추상 인터페이스 (Question/Result/Snapshot/Feedback/ExamSet/Team/QuestionStats)
 │   │   ├── local_json.py     # 로컬 JSON 파일 기반 (로컬 개발용)
 │   │   ├── drive_repo.py     # Google Drive 기반 (STORAGE_BACKEND=drive)
 │   │   ├── sheets_repo.py    # Google Sheets 기반 (STORAGE_BACKEND=sheets) ✅
-│   │   └── __init__.py       # STORAGE_BACKEND 환경변수로 구현체 선택 (team_repo, question_stats_repo 포함)
+│   │   └── __init__.py       # 백엔드 선택 로직 (아래 "저장소 백엔드 선택" 참고)
 │   ├── credentials/          # 서비스 계정 파일 (gitignore됨)
 │   └── mock_data/            # 더미 JSON (users, questions, results)
 ├── frontend/
@@ -36,6 +40,15 @@ asan_ax_OJT_AI/
 │   └── dist/                 # 빌드 결과물 (git 포함 — 수정 후 반드시 재빌드)
 └── vercel.json               # 모든 요청 → api/index.py → FastAPI
 ```
+
+### 모듈 임포트 경로 (sys.path)
+FastAPI 앱은 `backend/` 안에서 `from api import ...`, `from repositories import ...`처럼 절대 임포트를 쓰기 때문에
+sys.path에 두 경로가 순서대로 추가돼야 정상 동작한다:
+1. `api/index.py`가 `backend/` 디렉터리를 sys.path에 추가 (Vercel 진입 시)
+2. `backend/main.py`가 리포 루트(`backend/`의 부모)를 sys.path에 추가 — 루트에 있는 `ai_engine` 임포트용
+
+로컬에서 `cd backend && uvicorn main:app --reload`로 실행하는 경우도 `main.py`가 루트를 sys.path에 넣어주므로 동일하게 동작한다.
+이 구조 때문에 `backend/` 하위 모듈을 리포 루트 기준 상대경로로 옮기거나 독립 실행하면 임포트가 깨지니 주의.
 
 ## 핵심 규칙
 
@@ -71,6 +84,14 @@ Vercel 배포용 키는 Vercel 대시보드 Environment Variables에서 설정 (
 - `drive` — Google Drive에 저장. `DRIVE_RESULTS_FOLDER_ID` 필요
   - ⚠️ 개인 구글 계정 연결 서비스 계정은 Drive 쓰기 할당량 0 → `storageQuotaExceeded` 발생
 
+`backend/repositories/__init__.py`가 실제 구현체를 고르는 세부 규칙 (`STORAGE_BACKEND` 값 하나로 단순 결정되지 않음):
+- `exam_set_repo`는 별도로 `EXAM_SET_STORAGE` 환경변수가 있으면 그 값을 우선하고, 없으면 `STORAGE_BACKEND=sheets`이거나
+  `GOOGLE_SERVICE_ACCOUNT_JSON`이 설정돼 있으면(=프로덕션으로 간주) Sheets를 자동 선택한다.
+- `team_repo`, `question_stats_repo`, `question_repo`(drive 백엔드 제외)는 Sheets 사용 조건일 때 우선 Sheets로 초기화를 시도하고,
+  초기화 예외 발생 시 각각 Local 구현체로 자동 폴백한다 (경고 로그만 남기고 요청은 계속 처리됨).
+- 즉 Sheets 관련 문제(권한 누락, API 오류 등)가 있어도 앱 전체가 죽지 않고 조용히 로컬 저장으로 전환될 수 있으니,
+  "분명 Sheets로 설정했는데 데이터가 로컬에만 남는다" 같은 버그를 조사할 때는 서버 로그의 폴백 경고부터 확인할 것.
+
 ### 스냅샷 시스템
 시험 생성 시 문제·정답을 스냅샷으로 저장 → 채점 시 스냅샷 기준으로 채점.
 스냅샷 없으면 HTTP 410 반환 (문제 변경·세션 만료 대응).
@@ -88,6 +109,33 @@ Vercel 배포용 키는 Vercel 대시보드 Environment Variables에서 설정 (
 - Vercel: `GOOGLE_SERVICE_ACCOUNT_JSON` 환경변수에 JSON 전체 내용 입력
 - 서비스 계정 이메일: `asan-ojt-drive@asanteam4-500207.iam.gserviceaccount.com`
 - Drive 폴더 접근 시 해당 이메일로 폴더 공유 필요
+
+### 교육자료 자동 스캔 (Drive → AI 문제 생성)
+`DRIVE_EDUCATION_MATERIALS_FOLDER_ID` 환경변수에 Drive 폴더 ID를 설정하면, 그 하위의
+`common`/`team1`/`team2`/`team3`(팀별 카테고리명과 동일 — `admin_service.TEAM_KEY_MAP` 참고) 폴더에서
+PDF/PPTX 교육자료를 스캔해 텍스트를 추출하고, AI 문제 생성(`generate_ai_questions`) 시 자동으로 포함한다.
+- `backend/services/material_service.py` — Drive 목록 조회, 파일 id+modifiedTime 기준 변경 감지, 텍스트 추출(pypdf/python-pptx)
+- 변경되지 않은 파일은 재다운로드·재추출하지 않고 캐시된 텍스트를 재사용 (Drive 호출·추출 비용 절감이 목적)
+- 캐시는 `repositories.material_repo`(Sheets `material_cache` 탭 또는 로컬 JSON, Sheets 초기화 실패 시 자동 Local 폴백)에 저장
+- 새/변경 파일 발견 시 즉시 반영하지 않고 관리자 화면(`시험 생성`)에 알림 배너를 띄우며, 관리자가 "지금 스캔하기"를 눌러야 스캔·캐시 갱신됨
+  (`GET /api/admin/materials/status?team_code=`, `POST /api/admin/materials/scan`)
+- 관리자가 "교육자료 추가 입력" textarea에 직접 붙여넣은 텍스트는 Drive 캐시 텍스트 뒤에 보충 내용으로 덧붙여짐 (둘 다 유지, 어느 한쪽도 덮어쓰지 않음)
+- 텍스트 추출 라이브러리: `pypdf`, `python-pptx` (세 requirements.txt 모두에 추가됨)
+- 파일당 20,000자·카테고리당 40,000자로 텍스트를 잘라 저장 (Sheets 셀 5만자 한도 방지 + 프롬프트 폭주 방지)
+- 파일 크기가 `DRIVE_MATERIAL_MAX_FILE_SIZE_MB`(기본 25MB)를 넘으면 다운로드를 건너뛰고 스캔 응답의 `skipped`에 사유와 함께 표시됨 (실제 교육용 PPTX에 영상·고해상도 이미지가 포함되면 수십~수백 MB로 커질 수 있어, 필요 시 이 값을 올려서 재스캔할 것)
+- `team_code`는 Drive 쿼리에 그대로 들어가므로 `[a-zA-Z0-9_-]+` 패턴만 허용 (쿼리 인젝션 방지)
+
+### 시스템 상태 실제 체크 (`GET /api/admin/system-status`)
+관리자 화면(대시보드/설정)의 "운영 모드"·"Claude API" 표시는 하드코딩이 아니라 이 엔드포인트가 반환하는
+`AI_PROVIDER`/`STORAGE_BACKEND`/`CLAUDE_API_KEY`·`GEMINI_API_KEY` 설정 여부를 그대로 보여준다.
+Google Drive 상태는 기존 `GET /api/drive/status`(실제 연결 시도)를 그대로 사용 — 이 엔드포인트에서 중복 확인하지 않음.
+
+### AI 생성 문제의 category 필드 — pool_key와 혼동 주의
+`admin_service.generate_ai_questions`에서 `category`(예: `"team1"`, `add_question`의 저장 위치 키)와
+문제의 `category` 필드에 실제로 들어가야 하는 한글 라벨(`"공통"/"팀별"/"환경안전"/"일반상식"` —
+`gates.py`의 `VALID_CATEGORIES`, 프론트 카테고리 필터가 기준으로 삼는 값)은 다른 개념이다.
+`_category_label_for_pool()`로 변환해서 AI 생성기에는 라벨을, `q_repo.add_question()`에는 pool_key를 각각 전달해야 한다
+(예전에 이 둘을 같은 변수로 섞어 쓰다가 게이트 검증(V-04)이 무력화되고 프론트 필터에서 AI 생성 문제가 누락되는 버그가 있었음).
 
 ## PR/커밋 규칙
 
@@ -117,7 +165,13 @@ uvicorn main:app --reload
 
 # 프론트 개발 서버 HMR (http://localhost:5173)
 cd frontend && npm install && npm run dev
+
+# 프론트 빌드 결과물 로컬 미리보기
+cd frontend && npm run preview
 ```
+
+이 저장소에는 자동화된 테스트 스위트와 린터 설정이 없다 (pytest/eslint 설정 파일 없음).
+변경 검증은 위 로컬 실행 방법으로 실제 플로우(로그인 → 시험 생성/응시 → 채점, 관리자 화면)를 직접 확인하는 방식에 의존한다.
 
 ## 주의사항
 - API 키·시크릿을 코드에 하드코딩하지 말 것
