@@ -46,7 +46,6 @@ if _backend == "sheets":
         snapshot_repo = LocalSnapshotRepository()
     feedback_repo = LocalFeedbackRepository()
 elif _backend == "local":
-    question_repo = LocalQuestionRepository()
     result_repo = LocalResultRepository()
     snapshot_repo = LocalSnapshotRepository()
     feedback_repo = LocalFeedbackRepository()
@@ -82,3 +81,16 @@ if _use_sheets:
         question_stats_repo = LocalQuestionStatsRepository()
 else:
     question_stats_repo = LocalQuestionStatsRepository()
+
+# 문제은행 저장소 — Sheets 우선, 실패 시 Local 폴백 (drive 백엔드는 기존 DriveQuestionRepository 유지)
+if _backend != "drive":
+    if _use_sheets:
+        try:
+            from repositories.sheets_repo import SheetsQuestionRepository
+            question_repo = SheetsQuestionRepository()
+        except Exception as _e:
+            import logging
+            logging.warning(f"SheetsQuestionRepository 초기화 실패, Local로 폴백: {_e}")
+            question_repo = LocalQuestionRepository()
+    else:
+        question_repo = LocalQuestionRepository()

@@ -1,7 +1,34 @@
 import os
 import json
+import logging
+import functools
 from datetime import datetime, timezone
 from repositories.base import ExamSetRepository, ResultRepository, SnapshotRepository
+from repositories.local_json import (
+    LocalExamSetRepository,
+    LocalResultRepository,
+    LocalSnapshotRepository,
+    LocalTeamRepository,
+    LocalQuestionStatsRepository,
+    LocalQuestionRepository,
+)
+
+
+def _fallback_on_error(local_cls):
+    """Sheets API 호출 실패(할당량 초과·API 비활성화 등) 시 동일 시그니처의 Local 저장소로 위임."""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(self, *args, **kwargs):
+            try:
+                return func(self, *args, **kwargs)
+            except Exception as exc:
+                logging.warning(f"{type(self).__name__}.{func.__name__} 실패, {local_cls.__name__}로 폴백: {exc}")
+                if getattr(self, "_local_fallback", None) is None:
+                    self._local_fallback = local_cls()
+                return getattr(self._local_fallback, func.__name__)(*args, **kwargs)
+        return wrapper
+    return decorator
+
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_TAB = "exam_sets"
@@ -9,8 +36,11 @@ HEADERS = ["exam_set_id", "name", "team_code", "question_ids", "assigned_users",
 # 컬럼 문자 매핑 — 헤더 순서와 반드시 일치해야 한다.
 _COLUMNS = {h: chr(ord("A") + i) for i, h in enumerate(HEADERS)}
 
-RESULTS_SHEET_TAB = "results"
-RESULTS_HEADERS = ["exam_id", "employee_id", "exam_set_id", "team_code", "score", "submitted_at", "data_json"]
+RESULTS_TAB = "results"
+RESULTS_HEADERS = [
+    "exam_id", "exam_set_id", "employee_id", "name", "score",
+    "pass", "team_code", "submitted_at", "difficulty_summary", "results",
+]
 
 SNAPSHOTS_SHEET_TAB = "snapshots"
 SNAPSHOTS_HEADERS = ["exam_id", "created_at", "data_json"]
@@ -28,6 +58,14 @@ DEFAULT_TEAMS = [
 STATS_TAB = "question_stats"
 STATS_HEADERS = ["question_id", "exam_count", "last_used_at", "flagged_frequent"]
 FREQUENT_THRESHOLD = 5
+
+QUESTIONS_TAB = "question_bank"
+QUESTIONS_HEADERS = [
+    "pool_key", "question_id", "category", "question",
+    "option_a", "option_b", "option_c", "option_d", "answer",
+    "difficulty_init", "difficulty_ai", "admin_override", "status", "version",
+    "explanation", "flags", "gate_errors", "reject_reason",
+]
 
 
 def _default_sheet_id():
@@ -167,10 +205,12 @@ class SheetsExamSetRepository(ExamSetRepository):
 
     # ── 공개 인터페이스 ──────────────────────────────────────────────────────
 
+    @_fallback_on_error(LocalExamSetRepository)
     def list_exam_sets(self) -> list:
         self._maybe_ensure_tab()
         return [self._row_to_dict(r) for r in self._read_all_rows()]
 
+    @_fallback_on_error(LocalExamSetRepository)
     def get_exam_set(self, exam_set_id: str) -> dict | None:
         self._maybe_ensure_tab()
         for row in self._read_all_rows():
@@ -179,6 +219,7 @@ class SheetsExamSetRepository(ExamSetRepository):
                 return d
         return None
 
+    @_fallback_on_error(LocalExamSetRepository)
     def create_exam_set(self, data: dict) -> dict:
         self._maybe_ensure_tab()
         data.setdefault("assigned_users", [])
@@ -193,6 +234,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         ).execute()
         return data
 
+    @_fallback_on_error(LocalExamSetRepository)
     def assign_user(self, exam_set_id: str, employee_id: str) -> bool:
         self._maybe_ensure_tab()
         row_idx = self._find_sheet_row(exam_set_id)
@@ -209,6 +251,7 @@ class SheetsExamSetRepository(ExamSetRepository):
             self._update_assigned_users(row_idx, assigned)
         return True
 
+    @_fallback_on_error(LocalExamSetRepository)
     def unassign_user(self, exam_set_id: str, employee_id: str) -> bool:
         self._maybe_ensure_tab()
         row_idx = self._find_sheet_row(exam_set_id)
@@ -248,10 +291,8 @@ class SheetsExamSetRepository(ExamSetRepository):
 class SheetsResultRepository(ResultRepository):
     """Google Sheets 'results' 탭 기반 ResultRepository.
 
-    한 행 = 한 응시 결과. 조회 키(exam_id·employee_id·exam_set_id 등)는 별도 열로,
-    전체 결과는 data_json 열에 JSON으로 저장해 스키마 변경에 유연하게 대응한다.
-    (score_and_save()가 만드는 result_data는 difficulty_summary·results 등 중첩 구조를
-    포함하므로, 고정 컬럼이 아닌 JSON 컬럼으로 저장해야 값 손실이 없다.)
+    한 행 = 한 응시 결과. difficulty_summary·results 등 중첩 구조는 JSON 컬럼으로,
+    나머지는 조회·필터링이 쉽도록 고정 컬럼으로 저장한다.
     """
 
     def __init__(self):
@@ -261,7 +302,7 @@ class SheetsResultRepository(ResultRepository):
 
     def _maybe_ensure_tab(self):
         if not self._tab_ready:
-            _ensure_tab(self._svc, self._spreadsheet_id, RESULTS_SHEET_TAB, RESULTS_HEADERS)
+            _ensure_tab(self._svc, self._spreadsheet_id, RESULTS_TAB, RESULTS_HEADERS)
             self._tab_ready = True
 
     def _values(self):
@@ -271,58 +312,87 @@ class SheetsResultRepository(ResultRepository):
         self._maybe_ensure_tab()
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{RESULTS_SHEET_TAB}!A:G",
+            range=f"{RESULTS_TAB}!A:J",
         ).execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
 
     @staticmethod
-    def _row_to_result(row: list) -> dict:
-        data_json = row[6] if len(row) > 6 else ""
-        return json.loads(data_json) if data_json else {}
+    def _row_to_dict(row: list) -> dict:
+        def _get(i): return row[i] if len(row) > i else ""
+        try:
+            difficulty_summary = json.loads(_get(8)) if _get(8) else {}
+        except (json.JSONDecodeError, ValueError):
+            difficulty_summary = {}
+        try:
+            results = json.loads(_get(9)) if _get(9) else []
+        except (json.JSONDecodeError, ValueError):
+            results = []
+        return {
+            "exam_id": _get(0),
+            "exam_set_id": _get(1),
+            "employee_id": _get(2),
+            "name": _get(3),
+            "score": int(_get(4)) if _get(4) else 0,
+            "pass": _get(5) == "TRUE",
+            "team_code": _get(6),
+            "submitted_at": _get(7),
+            "difficulty_summary": difficulty_summary,
+            "results": results,
+        }
 
+    @staticmethod
+    def _dict_to_row(data: dict) -> list:
+        return [
+            data.get("exam_id", ""),
+            data.get("exam_set_id", ""),
+            data.get("employee_id", ""),
+            data.get("name", ""),
+            str(data.get("score", 0)),
+            "TRUE" if data.get("pass") else "FALSE",
+            data.get("team_code", ""),
+            data.get("submitted_at", ""),
+            json.dumps(data.get("difficulty_summary", {}), ensure_ascii=False),
+            json.dumps(data.get("results", []), ensure_ascii=False),
+        ]
+
+    @_fallback_on_error(LocalResultRepository)
     def append_result(self, result: dict) -> None:
         self._maybe_ensure_tab()
-        result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
-        row = [
-            result.get("exam_id", ""),
-            result.get("employee_id", ""),
-            result.get("exam_set_id", ""),
-            result.get("team_code", ""),
-            result.get("score", ""),
-            result.get("submitted_at", ""),
-            json.dumps(result, ensure_ascii=False),
-        ]
+        result.setdefault("submitted_at", datetime.now(timezone.utc).isoformat())
         self._values().append(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{RESULTS_SHEET_TAB}!A:G",
+            range=f"{RESULTS_TAB}!A:J",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
-            body={"values": [row]},
+            body={"values": [self._dict_to_row(result)]},
         ).execute()
 
+    @_fallback_on_error(LocalResultRepository)
     def get_result(self, exam_id: str) -> dict | None:
         for row in self._read_all_rows():
             if row and row[0] == exam_id:
-                return self._row_to_result(row)
+                return self._row_to_dict(row)
         return None
 
+    @_fallback_on_error(LocalResultRepository)
     def get_all_results(self) -> dict:
         results = {}
         for row in self._read_all_rows():
-            r = self._row_to_result(row)
-            key = r.get("exam_id") or (row[0] if row else "")
-            if key:
-                results[key] = r
+            d = self._row_to_dict(row)
+            if d["exam_id"]:
+                results[d["exam_id"]] = d
         return results
 
+    @_fallback_on_error(LocalResultRepository)
     def count(self) -> int:
         return len(self._read_all_rows())
 
+    @_fallback_on_error(LocalResultRepository)
     def list_results_by_set(self, exam_set_id: str) -> list:
         return [
-            self._row_to_result(row) for row in self._read_all_rows()
-            if len(row) > 2 and row[2] == exam_set_id
+            self._row_to_dict(row) for row in self._read_all_rows()
+            if len(row) > 1 and row[1] == exam_set_id
         ]
 
 
@@ -345,6 +415,7 @@ class SheetsSnapshotRepository(SnapshotRepository):
     def _values(self):
         return self._svc.spreadsheets().values()
 
+    @_fallback_on_error(LocalSnapshotRepository)
     def save_snapshot(self, exam_id: str, snapshot: dict) -> None:
         self._maybe_ensure_tab()
         row = [exam_id, datetime.now(timezone.utc).isoformat(), json.dumps(snapshot, ensure_ascii=False)]
@@ -356,6 +427,7 @@ class SheetsSnapshotRepository(SnapshotRepository):
             body={"values": [row]},
         ).execute()
 
+    @_fallback_on_error(LocalSnapshotRepository)
     def get_snapshot(self, exam_id: str) -> dict | None:
         self._maybe_ensure_tab()
         res = self._values().get(
@@ -438,11 +510,13 @@ class SheetsTeamRepository:
                 return i
         return -1
 
+    @_fallback_on_error(LocalTeamRepository)
     def list_teams(self) -> list:
         self._maybe_ensure_tab()
         teams = [self._row_to_dict(r) for r in self._read_all_rows() if r and r[0]]
         return teams if teams else list(DEFAULT_TEAMS)
 
+    @_fallback_on_error(LocalTeamRepository)
     def get_team(self, team_id: str) -> dict | None:
         self._maybe_ensure_tab()
         for row in self._read_all_rows():
@@ -451,6 +525,7 @@ class SheetsTeamRepository:
                 return d
         return None
 
+    @_fallback_on_error(LocalTeamRepository)
     def create_team(self, data: dict) -> dict:
         self._maybe_ensure_tab()
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
@@ -464,6 +539,7 @@ class SheetsTeamRepository:
         ).execute()
         return data
 
+    @_fallback_on_error(LocalTeamRepository)
     def update_team(self, team_id: str, fields: dict) -> dict | None:
         self._maybe_ensure_tab()
         row_idx = self._find_row_index(team_id)
@@ -480,6 +556,7 @@ class SheetsTeamRepository:
         ).execute()
         return team
 
+    @_fallback_on_error(LocalTeamRepository)
     def delete_team(self, team_id: str) -> bool:
         self._maybe_ensure_tab()
         row_idx = self._find_row_index(team_id)
@@ -547,6 +624,7 @@ class SheetsQuestionStatsRepository:
             "flagged_frequent": _get(3) == "TRUE",
         }
 
+    @_fallback_on_error(LocalQuestionStatsRepository)
     def get_stats(self, question_id: str) -> dict | None:
         self._maybe_ensure_tab()
         for row in self._read_all_rows():
@@ -554,14 +632,17 @@ class SheetsQuestionStatsRepository:
                 return self._row_to_dict(row)
         return None
 
+    @_fallback_on_error(LocalQuestionStatsRepository)
     def list_all_stats(self) -> dict:
         self._maybe_ensure_tab()
         return {d["question_id"]: d for d in (self._row_to_dict(r) for r in self._read_all_rows()) if d["question_id"]}
 
+    @_fallback_on_error(LocalQuestionStatsRepository)
     def list_flagged(self) -> list:
         self._maybe_ensure_tab()
         return [d for d in (self._row_to_dict(r) for r in self._read_all_rows()) if d["flagged_frequent"]]
 
+    @_fallback_on_error(LocalQuestionStatsRepository)
     def increment_batch(self, question_ids: list) -> None:
         if not question_ids:
             return
@@ -602,3 +683,185 @@ class SheetsQuestionStatsRepository:
                 insertDataOption="INSERT_ROWS",
                 body={"values": new_rows},
             ).execute()
+
+
+class SheetsQuestionRepository:
+    def __init__(self):
+        self._spreadsheet_id = _default_sheet_id()
+        self._svc = _build_sheets_service()
+        self._tab_ready = False
+
+    def _values(self):
+        return self._svc.spreadsheets().values()
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            self._ensure_tab()
+            self._tab_ready = True
+
+    def _ensure_tab(self):
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        existing = [s["properties"]["title"] for s in meta.get("sheets", [])]
+        if QUESTIONS_TAB not in existing:
+            self._svc.spreadsheets().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": QUESTIONS_TAB}}}]},
+            ).execute()
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{QUESTIONS_TAB}!A1:R1").execute()
+        if not res.get("values"):
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{QUESTIONS_TAB}!A1",
+                valueInputOption="RAW",
+                body={"values": [QUESTIONS_HEADERS]},
+            ).execute()
+
+    def _read_all_rows(self) -> list:
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{QUESTIONS_TAB}!A:R").execute()
+        rows = res.get("values", [])
+        return rows[1:] if len(rows) > 1 else []
+
+    @staticmethod
+    def _row_to_dict(row: list) -> dict:
+        def _get(i): return row[i] if len(row) > i else ""
+        try:
+            flags = json.loads(_get(15)) if _get(15) else {}
+        except (json.JSONDecodeError, ValueError):
+            flags = {}
+        try:
+            gate_errors = json.loads(_get(16)) if _get(16) else []
+        except (json.JSONDecodeError, ValueError):
+            gate_errors = []
+        return {
+            "pool_key": _get(0),
+            "question_id": _get(1),
+            "category": _get(2),
+            "question": _get(3),
+            "option_a": _get(4),
+            "option_b": _get(5),
+            "option_c": _get(6),
+            "option_d": _get(7),
+            "answer": _get(8),
+            "difficulty_init": _get(9),
+            "difficulty_ai": _get(10),
+            "admin_override": _get(11),
+            "status": _get(12),
+            "version": int(_get(13)) if _get(13) else 1,
+            "explanation": _get(14),
+            "flags": flags,
+            "gate_errors": gate_errors,
+            "reject_reason": _get(17),
+        }
+
+    @staticmethod
+    def _dict_to_row(pool_key: str, data: dict) -> list:
+        return [
+            pool_key,
+            data.get("question_id", ""),
+            data.get("category", ""),
+            data.get("question", ""),
+            data.get("option_a", ""),
+            data.get("option_b", ""),
+            data.get("option_c", ""),
+            data.get("option_d", ""),
+            data.get("answer", ""),
+            data.get("difficulty_init", ""),
+            data.get("difficulty_ai", ""),
+            data.get("admin_override", ""),
+            data.get("status", ""),
+            str(data.get("version", 1)),
+            data.get("explanation", ""),
+            json.dumps(data.get("flags", {}), ensure_ascii=False),
+            json.dumps(data.get("gate_errors", []), ensure_ascii=False),
+            data.get("reject_reason", ""),
+        ]
+
+    def _find_row_index(self, question_id: str) -> int:
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{QUESTIONS_TAB}!B:B").execute()
+        for i, row in enumerate(res.get("values", []), start=1):
+            if row and row[0] == question_id:
+                return i
+        return -1
+
+    _CONTENT_FIELDS = {"question", "option_a", "option_b", "option_c", "option_d", "answer", "explanation"}
+
+    @_fallback_on_error(LocalQuestionRepository)
+    def get_all_questions(self) -> dict:
+        self._maybe_ensure_tab()
+        result: dict = {}
+        for row in self._read_all_rows():
+            d = self._row_to_dict(row)
+            pool_key = d.pop("pool_key")
+            if not pool_key:
+                continue
+            result.setdefault(pool_key, []).append(d)
+        return result
+
+    @_fallback_on_error(LocalQuestionRepository)
+    def get_approved_questions(self, team_key: str = None, category: str = None) -> list:
+        data = self.get_all_questions()
+        if team_key:
+            pools = [data.get(team_key, []), data.get("common", []),
+                     data.get("safety", []), data.get("general", [])]
+            flat = [q for pool in pools for q in pool]
+        else:
+            flat = [q for pool in data.values() for q in pool]
+        flat = [q for q in flat if q.get("status") == "approved"]
+        if category:
+            flat = [q for q in flat if q.get("category") == category]
+        return flat
+
+    @_fallback_on_error(LocalQuestionRepository)
+    def list_by_status(self, status: str) -> list:
+        data = self.get_all_questions()
+        return [q for pool in data.values() for q in pool if q.get("status") == status]
+
+    @_fallback_on_error(LocalQuestionRepository)
+    def get_question(self, question_id: str) -> dict:
+        self._maybe_ensure_tab()
+        for row in self._read_all_rows():
+            d = self._row_to_dict(row)
+            if d["question_id"] == question_id:
+                d.pop("pool_key", None)
+                return d
+        return None
+
+    @_fallback_on_error(LocalQuestionRepository)
+    def add_question(self, pool_key: str, question: dict) -> None:
+        self._maybe_ensure_tab()
+        self._values().append(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{QUESTIONS_TAB}!A:R",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [self._dict_to_row(pool_key, question)]},
+        ).execute()
+
+    @_fallback_on_error(LocalQuestionRepository)
+    def update_question(self, question_id: str, fields: dict) -> None:
+        self._maybe_ensure_tab()
+        row_idx = self._find_row_index(question_id)
+        if row_idx == -1:
+            return
+        res = self._values().get(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{QUESTIONS_TAB}!A{row_idx}:R{row_idx}",
+        ).execute()
+        rows = res.get("values", [])
+        if not rows:
+            return
+        current = self._row_to_dict(rows[0])
+        pool_key = current.pop("pool_key")
+        current.update(fields)
+        if any(k in self._CONTENT_FIELDS for k in fields):
+            current["version"] = current.get("version", 1) + 1
+        self._values().update(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{QUESTIONS_TAB}!A{row_idx}:R{row_idx}",
+            valueInputOption="RAW",
+            body={"values": [self._dict_to_row(pool_key, current)]},
+        ).execute()
+
+    @_fallback_on_error(LocalQuestionRepository)
+    def count_by_status(self, status: str) -> int:
+        return len(self.list_by_status(status))

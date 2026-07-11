@@ -11,6 +11,7 @@ import requests
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 _MAX_REJECTED_EXAMPLES = 5
+_MAX_OVERUSED_EXAMPLES = 5
 _MAX_MATERIAL_CHARS = 4000  # 약 1000 토큰 — 무료 티어 토큰 절약
 
 
@@ -25,7 +26,10 @@ def _truncate_material(text: str) -> str:
     return truncated + "\n[이하 생략 — 토큰 절약을 위해 요약 처리됨]"
 
 
-def _build_prompt(material_text: str, category: str, count: int, difficulty_hint: str, rejected_examples: list) -> str:
+def _build_prompt(
+    material_text: str, category: str, count: int, difficulty_hint: str,
+    rejected_examples: list, overused_questions: list = None,
+) -> str:
     rejection_block = ""
     if rejected_examples:
         lines = "\n".join(
@@ -34,9 +38,15 @@ def _build_prompt(material_text: str, category: str, count: int, difficulty_hint
         )
         rejection_block = f"\n[반드시 피해야 할 문제 유형 (과거 반려 사례)]\n{lines}\n위 사례와 유사한 문제는 절대 생성하지 마세요.\n"
 
+    overused_block = ""
+    if overused_questions:
+        # 전체 문제은행이 아닌 자주 출제된 문항 몇 개만 전달해 토큰을 아끼면서 중복 출제를 회피
+        lines = "\n".join(f'  - "{q}"' for q in overused_questions[:_MAX_OVERUSED_EXAMPLES])
+        overused_block = f"\n[이미 자주 출제되어 새로운 문제가 필요한 항목 (과다 출제됨)]\n{lines}\n위 문제들과 동일하거나 매우 유사한 문제는 생성하지 마세요.\n"
+
     return f"""다음 OJT 교육자료를 바탕으로 {category} 분야 객관식 문제 {count}개를 생성하세요.
 난이도는 '{difficulty_hint}'을 기준으로 합니다.
-{rejection_block}
+{rejection_block}{overused_block}
 [교육자료]
 {material_text}
 
@@ -68,8 +78,13 @@ def _call_api(prompt: str, api_key: str) -> str:
 
 
 def _parse_response(raw: str) -> list:
-    raw = re.sub(r"^```(?:json)?\s*", "", raw)
-    raw = re.sub(r"\s*```$", "", raw)
+    raw = re.sub(r"^```(?:json)?\s*", "", raw.strip())
+    raw = re.sub(r"\s*```$", "", raw).strip()
+    # 모델이 지시를 무시하고 JSON 앞뒤에 설명 텍스트를 덧붙이는 경우를 대비해
+    # 첫 '['부터 마지막 ']'까지만 잘라서 파싱한다
+    start, end = raw.find('['), raw.rfind(']')
+    if start != -1 and end != -1 and end > start:
+        raw = raw[start:end + 1]
     try:
         return json.loads(raw)
     except json.JSONDecodeError as e:
@@ -82,12 +97,16 @@ def generate_questions_from_material(
     count: int = 10,
     difficulty_hint: str = "중",
     rejected_examples: list[dict] = None,
+    overused_questions: list[str] = None,
 ) -> list[dict]:
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
         raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
 
-    prompt = _build_prompt(_truncate_material(material_text), category, count, difficulty_hint, rejected_examples or [])
+    prompt = _build_prompt(
+        _truncate_material(material_text), category, count, difficulty_hint,
+        rejected_examples or [], overused_questions or [],
+    )
     raw = _call_api(prompt, api_key)
     questions_raw = _parse_response(raw)
 

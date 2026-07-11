@@ -14,17 +14,25 @@ from repositories.base import (
 
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
 
-TEAM_KEY_MAP = {"T1": "team1", "T2": "team2", "T3": "team3"}
-
 
 class LocalQuestionRepository(QuestionRepository):
+    _FILE = MOCK_DIR / "questions.json"
+    _TMP_FILE = Path("/tmp/questions.json")
+
     def _load(self) -> dict:
-        with open(MOCK_DIR / "questions.json", encoding="utf-8") as f:
+        # Vercel read-only FS: prefer /tmp copy if it exists (contains runtime mutations)
+        target = self._TMP_FILE if self._TMP_FILE.exists() else self._FILE
+        with open(target, encoding="utf-8") as f:
             return json.load(f)
 
     def _save(self, data: dict) -> None:
-        with open(MOCK_DIR / "questions.json", "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        try:
+            with open(self._FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except OSError:
+            # Vercel: filesystem is read-only, fall back to /tmp
+            with open(self._TMP_FILE, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
 
     def _all_flat(self, data: dict) -> list:
         result = []
@@ -64,11 +72,7 @@ class LocalQuestionRepository(QuestionRepository):
         if pool_key not in data:
             data[pool_key] = []
         data[pool_key].append(question)
-        try:
-            self._save(data)
-        except OSError:
-            # Vercel read-only filesystem — 로컬 저장 불가, 호출부에서 처리
-            raise RuntimeError("questions.json 쓰기 실패: 읽기 전용 파일시스템입니다. DriveQuestionRepository가 필요합니다.")
+        self._save(data)
 
     _CONTENT_FIELDS = {"question", "option_a", "option_b", "option_c", "option_d", "answer", "explanation"}
 
@@ -99,15 +103,11 @@ class LocalResultRepository(ResultRepository):
     RESULTS_DIR = MOCK_DIR / "results"
     _TMP_RESULTS_DIR = Path("/tmp/results")
 
-    def _result_path(self, exam_set_id: str, employee_id: str) -> Path:
-        try:
-            set_dir = self.RESULTS_DIR / exam_set_id
-            os.makedirs(set_dir, exist_ok=True)
-            return set_dir / f"{employee_id}.json"
-        except OSError:
-            set_dir = self._TMP_RESULTS_DIR / exam_set_id
-            os.makedirs(set_dir, exist_ok=True)
-            return set_dir / f"{employee_id}.json"
+    def _result_path(self, exam_set_id: str, employee_id: str, base: Path = None) -> Path:
+        base = base or self.RESULTS_DIR
+        set_dir = base / exam_set_id
+        os.makedirs(set_dir, exist_ok=True)
+        return set_dir / f"{employee_id}.json"
 
     def _iter_result_files(self):
         # RESULTS_DIR 먼저, _TMP_RESULTS_DIR 나중에 — get_all_results에서 dict 덮어쓰기 시 /tmp(런타임 변경) 우선
@@ -127,9 +127,15 @@ class LocalResultRepository(ResultRepository):
         result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
         exam_set_id = result.get("exam_set_id") or "legacy"
         employee_id = result.get("employee_id") or result.get("exam_id")
-        path = self._result_path(exam_set_id, employee_id)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(result, f, ensure_ascii=False, indent=2)
+        try:
+            path = self._result_path(exam_set_id, employee_id)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
+        except OSError:
+            # Vercel: filesystem is read-only, fall back to /tmp
+            path = self._result_path(exam_set_id, employee_id, base=self._TMP_RESULTS_DIR)
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(result, f, ensure_ascii=False, indent=2)
 
     # base.py ResultRepository 시그니처 유지 (append_result -> save_result 위임)
     def append_result(self, result: dict) -> None:
