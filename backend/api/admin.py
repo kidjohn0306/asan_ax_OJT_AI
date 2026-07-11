@@ -80,6 +80,12 @@ def delete_user(employee_id: str, _: dict = Depends(require_admin)):
     return delete_user(employee_id)
 
 
+@router.post("/users/{employee_id}/reset-password")
+def reset_password(employee_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import reset_user_password
+    return reset_user_password(employee_id)
+
+
 @router.get("/user-count")
 def get_user_count(_: dict = Depends(require_admin)):
     from services.admin_service import fetch_user_count

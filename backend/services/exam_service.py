@@ -73,6 +73,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
         snapshot = {
             q["question_id"]: {
                 "question":   q["question"],
+                "category":   q.get("category", ""),
                 "answer":     q["answer"],
                 "difficulty": q.get("admin_override") or q.get("difficulty_ai") or q.get("difficulty_init"),
                 "option_a":   q["option_a"],
@@ -148,6 +149,14 @@ def score_and_save(exam_id: str, answers: dict, response_times: dict, employee_i
             difficulty_summary[difficulty][key] += 1
         results.append({
             "q_id": qid,
+            "question": q_snap.get("question", ""),
+            "category": q_snap.get("category", ""),
+            "options": {
+                "A": q_snap.get("option_a", ""),
+                "B": q_snap.get("option_b", ""),
+                "C": q_snap.get("option_c", ""),
+                "D": q_snap.get("option_d", ""),
+            },
             "correct": correct,
             "answer": q_snap["answer"],
             "user_answer": user_ans,
