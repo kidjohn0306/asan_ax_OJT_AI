@@ -80,6 +80,12 @@ def delete_user(employee_id: str, _: dict = Depends(require_admin)):
     return delete_user(employee_id)
 
 
+@router.post("/users/{employee_id}/reset-password")
+def reset_password(employee_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import reset_user_password
+    return reset_user_password(employee_id)
+
+
 @router.get("/user-count")
 def get_user_count(_: dict = Depends(require_admin)):
     from services.admin_service import fetch_user_count
@@ -310,7 +316,6 @@ def scan_materials(body: MaterialScanRequest, _: dict = Depends(require_admin)):
 def debug_storage(_: dict = Depends(require_admin)):
     import os
     from repositories import exam_set_repo
-    all_keys = [k for k in os.environ.keys() if not k.startswith("PATH") and not k.startswith("PYTHON")]
 
     sheets_error = None
     if type(exam_set_repo).__name__ != "SheetsExamSetRepository":
@@ -320,11 +325,19 @@ def debug_storage(_: dict = Depends(require_admin)):
         except Exception as e:
             sheets_error = str(e)
 
+    def _set(key: str) -> bool:
+        return bool(os.getenv(key))
+
     return {
+        # 값 자체가 동작 모드 판단에 필요한 비민감 설정 — 값 그대로 표시
+        "STORAGE_BACKEND": os.getenv("STORAGE_BACKEND", "(not set)"),
+        "AI_PROVIDER": os.getenv("AI_PROVIDER", "(not set)"),
         "EXAM_SET_STORAGE": os.getenv("EXAM_SET_STORAGE", "(not set)"),
-        "GOOGLE_EXAM_SETS_SHEET_ID": os.getenv("GOOGLE_EXAM_SETS_SHEET_ID", "(not set)"),
-        "GOOGLE_SERVICE_ACCOUNT_JSON_SET": bool(os.getenv("GOOGLE_SERVICE_ACCOUNT_JSON")),
+        # ID·크리덴셜류는 설정 여부만 노출 (값·다른 인프라 환경변수 이름은 노출하지 않음)
+        "GOOGLE_SHEETS_ID_SET": _set("GOOGLE_SHEETS_ID"),
+        "GOOGLE_EXAM_SETS_SHEET_ID_SET": _set("GOOGLE_EXAM_SETS_SHEET_ID"),
+        "GOOGLE_SERVICE_ACCOUNT_JSON_SET": _set("GOOGLE_SERVICE_ACCOUNT_JSON"),
+        "DRIVE_RESULTS_FOLDER_ID_SET": _set("DRIVE_RESULTS_FOLDER_ID"),
         "exam_set_repo_class": type(exam_set_repo).__name__,
         "sheets_init_error": sheets_error,
-        "all_env_keys": sorted(all_keys),
     }
