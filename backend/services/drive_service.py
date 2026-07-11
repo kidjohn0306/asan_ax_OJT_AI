@@ -52,12 +52,34 @@ class DriveService:
 
     def list_files(self, folder_id: str, page_size: int = 20) -> List[Dict[str, Any]]:
         query = f"'{folder_id}' in parents and trashed = false"
-        result = self.service.files().list(
-            q=query,
-            pageSize=page_size,
-            fields="files(id, name, mimeType, modifiedTime, size)"
-        ).execute()
-        return result.get("files", [])
+        files: List[Dict[str, Any]] = []
+        page_token = None
+        while True:
+            result = self.service.files().list(
+                q=query,
+                pageSize=page_size,
+                fields="nextPageToken, files(id, name, mimeType, modifiedTime, size)",
+                pageToken=page_token,
+            ).execute()
+            files.extend(result.get("files", []))
+            page_token = result.get("nextPageToken")
+            if not page_token:
+                break
+        return files
+
+    def find_child_folder(self, parent_folder_id: str, name: str) -> str | None:
+        # Drive query 리터럴 이스케이프 (백슬래시·작은따옴표) — 호출부에서 이미 검증하더라도 방어적으로 처리
+        safe_name = name.replace("\\", "\\\\").replace("'", "\\'")
+        query = (
+            f"'{parent_folder_id}' in parents and trashed = false "
+            f"and mimeType = 'application/vnd.google-apps.folder' and name = '{safe_name}'"
+        )
+        result = self.service.files().list(q=query, pageSize=1, fields="files(id, name)").execute()
+        files = result.get("files", [])
+        return files[0]["id"] if files else None
+
+    def download_bytes(self, file_id: str) -> bytes:
+        return self.service.files().get_media(fileId=file_id).execute()
 
     def download_file(self, file_id: str, local_filename: str) -> Dict[str, Any]:
         MOCK_DATA_DIR.mkdir(parents=True, exist_ok=True)
