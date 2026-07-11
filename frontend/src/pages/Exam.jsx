@@ -512,7 +512,7 @@ export default function Exam() {
       const res = await fetch('/api/exam/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-        body: JSON.stringify({ team_code: teamCode }),
+        body: JSON.stringify({ team_code: teamCode, employee_id: empInfo.empno }),
       })
       if (res.ok) {
         const data = await res.json()
