@@ -275,6 +275,16 @@ class LocalExamSetRepository(ExamSetRepository):
                 return True
         return False
 
+    def delete_exam_set(self, exam_set_id: str) -> bool:
+        stored = self._load()
+        sets = stored.get("sets", [])
+        before = len(sets)
+        stored["sets"] = [s for s in sets if s.get("exam_set_id") != exam_set_id]
+        if len(stored["sets"]) == before:
+            return False
+        self._save(stored)
+        return True
+
 
 _DEFAULT_TEAMS = [
     {"team_id": "default-t1", "team_name": "1팀", "team_code": "T1", "created_at": "", "updated_at": ""},

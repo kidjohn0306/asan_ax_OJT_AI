@@ -114,6 +114,7 @@ class SheetsExamSetRepository(ExamSetRepository):
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
         self._tab_ready = False
+        self._sheet_id = None
 
     @property
     def _svc(self):
@@ -132,13 +133,16 @@ class SheetsExamSetRepository(ExamSetRepository):
     def _ensure_tab(self):
         """exam_sets 탭이 없으면 생성하고 헤더를 추가한다."""
         meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
-        existing = [s["properties"]["title"] for s in meta.get("sheets", [])]
+        existing = {s["properties"]["title"]: s["properties"]["sheetId"] for s in meta.get("sheets", [])}
 
         if SHEET_TAB not in existing:
-            self._svc.spreadsheets().batchUpdate(
+            resp = self._svc.spreadsheets().batchUpdate(
                 spreadsheetId=self._spreadsheet_id,
                 body={"requests": [{"addSheet": {"properties": {"title": SHEET_TAB}}}]},
             ).execute()
+            self._sheet_id = resp["replies"][0]["addSheet"]["properties"]["sheetId"]
+        else:
+            self._sheet_id = existing[SHEET_TAB]
 
         # 헤더 확인 — 없으면 새로 쓰고, 이전 스키마(컬럼 수 부족)면 최신 컬럼까지 확장해 갱신한다.
         # (question_ids/status/created_by가 나중에 추가된 컬럼이라, 먼저 만들어진 시트는 헤더가 5개뿐일 수 있음)
@@ -291,6 +295,23 @@ class SheetsExamSetRepository(ExamSetRepository):
         if employee_id in assigned:
             assigned.remove(employee_id)
             self._update_assigned_users(row_idx, assigned)
+        return True
+
+    @_fallback_on_error(LocalExamSetRepository)
+    def delete_exam_set(self, exam_set_id: str) -> bool:
+        self._maybe_ensure_tab()
+        row_idx = self._find_sheet_row(exam_set_id)
+        if row_idx == -1:
+            return False
+        self._svc.spreadsheets().batchUpdate(
+            spreadsheetId=self._spreadsheet_id,
+            body={"requests": [{"deleteDimension": {"range": {
+                "sheetId": self._sheet_id,
+                "dimension": "ROWS",
+                "startIndex": row_idx - 1,
+                "endIndex": row_idx,
+            }}}]},
+        ).execute()
         return True
 
 
