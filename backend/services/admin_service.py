@@ -370,14 +370,79 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
     }
 
 
-def approve_question(question_id: str) -> dict:
+_GATE_REQUIRED_PASS_KEYS = ("V01", "V02", "V03", "V07")
+_GATE_WARNING_ELIGIBLE_KEYS = ("V04", "V05", "V06")
+_MIN_OVERRIDE_REASON_LENGTH = 10
+
+
+def _gate_error(code: str, message: str) -> HTTPException:
+    return HTTPException(status_code=409, detail={"code": code, "message": message})
+
+
+def approve_question(question_id: str, actor: dict = None, override_reason: str = "") -> dict:
+    """strict 모드에서는 Gate Snapshot·fingerprint·필수 Gate PASS·관리자 난이도 확정을 모두 확인한 뒤에만
+    승인한다. legacy 모드는 기존 상태 검증을 유지하되, security_hold(V07 미통과)는 모드와 무관하게 차단한다."""
+    from services.generation.gates import VALID_DIFFICULTIES, question_fingerprint
+    from services.generation.gate_service import GATE_VERSION
+
     q_repo, _, _ = _get_repos()
     q = q_repo.get_question(question_id)
     if not q:
         raise HTTPException(status_code=404, detail="문제를 찾을 수 없습니다.")
-    if q.get("status") not in ("reviewing", "draft"):
-        raise HTTPException(status_code=400, detail=f"승인 불가 상태: {q.get('status')}")
-    q_repo.update_question(question_id, {"status": "approved"})
+
+    if (q.get("flags") or {}).get("security_hold"):
+        raise _gate_error("GATE_SECURITY_HOLD", "보안 검토가 필요한 문제는 승인할 수 없습니다.")
+
+    gate_mode = _get_gate_mode()
+    snapshot = (q.get("flags") or {}).get("gate_snapshot")
+
+    if gate_mode == "strict":
+        if q.get("status") != "reviewing":
+            raise _gate_error("GATE_STATUS_INVALID", f"승인 불가 상태: {q.get('status')}")
+        if not snapshot:
+            raise _gate_error("GATE_SNAPSHOT_MISSING", "Gate 검증 결과가 없습니다.")
+        if snapshot.get("gate_version") != GATE_VERSION:
+            raise _gate_error("GATE_VERSION_UNSUPPORTED",
+                               f"지원하지 않는 Gate 버전입니다: {snapshot.get('gate_version')!r}")
+
+        current_fingerprint = question_fingerprint(q)
+        if current_fingerprint != snapshot.get("question_fingerprint"):
+            raise _gate_error("GATE_RESULT_STALE", "Gate 검증 이후 문제 내용이 변경되었습니다.")
+
+        overall = snapshot.get("overall_status")
+        if overall == "HARD_FAIL":
+            raise _gate_error("GATE_HARD_FAIL", "Hard Fail 상태의 문제는 승인할 수 없습니다.")
+        if overall == "REVIEW_REQUIRED":
+            raise _gate_error("GATE_REVIEW_REQUIRED", "검토가 필요한 문제는 승인할 수 없습니다.")
+
+        gates = snapshot.get("gates", {})
+        for key in _GATE_REQUIRED_PASS_KEYS:
+            if gates.get(key, {}).get("status") != "PASS":
+                raise _gate_error("GATE_REQUIRED_PASS_MISSING", f"{key} Gate가 PASS 상태가 아닙니다.")
+
+        if (q.get("admin_override") or "").strip() not in VALID_DIFFICULTIES:
+            raise _gate_error("GATE_ADMIN_DIFFICULTY_REQUIRED", "관리자 난이도 확정이 필요합니다.")
+
+        has_warning = any(gates.get(key, {}).get("status") == "WARNING" for key in _GATE_WARNING_ELIGIBLE_KEYS)
+        if has_warning and len(override_reason.strip()) < _MIN_OVERRIDE_REASON_LENGTH:
+            raise _gate_error("GATE_WARNING_OVERRIDE_REQUIRED",
+                               f"WARNING Gate 승인에는 {_MIN_OVERRIDE_REASON_LENGTH}자 이상의 사유가 필요합니다.")
+    else:
+        if q.get("status") not in ("reviewing", "draft"):
+            raise HTTPException(status_code=400, detail=f"승인 불가 상태: {q.get('status')}")
+
+    updated_fields = {"status": "approved"}
+    if snapshot:
+        updated_flags = dict(q.get("flags") or {})
+        updated_flags["gate_approval"] = {
+            "approved_by": (actor or {}).get("sub", ""),
+            "override_reason": override_reason.strip(),
+            "gate_version": snapshot.get("gate_version", ""),
+            "question_fingerprint": snapshot.get("question_fingerprint", ""),
+        }
+        updated_fields["flags"] = updated_flags
+
+    q_repo.update_question(question_id, updated_fields)
     return {"approved": True, "question_id": question_id}
 
 

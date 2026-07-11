@@ -44,6 +44,10 @@ class RejectQuestionRequest(BaseModel):
     reason: str
 
 
+class ApproveQuestionRequest(BaseModel):
+    override_reason: str = ""
+
+
 class CreateExamSetRequest(BaseModel):
     name: str
     team_code: TeamCode
@@ -145,9 +149,13 @@ def update_difficulty(body: DifficultyPatchRequest, _: dict = Depends(require_ad
 
 
 @router.post("/questions/{question_id}/approve")
-def approve_question(question_id: str, _: dict = Depends(require_admin)):
+def approve_question(
+    question_id: str,
+    body: Optional[ApproveQuestionRequest] = None,
+    actor: dict = Depends(require_admin),
+):
     from services.admin_service import approve_question
-    return approve_question(question_id)
+    return approve_question(question_id, actor=actor, override_reason=body.override_reason if body else "")
 
 
 @router.post("/questions/{question_id}/reject")

@@ -5,6 +5,8 @@ import unittest
 from contextlib import contextmanager
 from unittest.mock import patch
 
+from fastapi import HTTPException
+
 import services.material_service  # noqa: F401 — 아래 patch()가 속성으로 참조하기 전에 서브모듈을 로드해둔다.
 from services import admin_service
 
@@ -243,6 +245,120 @@ class GenerateAIQuestionsIntegrationTests(unittest.TestCase):
         statuses = [q["status"] for _, q in self.fake_repo._questions.values()]
         self.assertIn("reviewing", statuses)
         self.assertIn("draft", statuses)  # 두 번째는 첫 번째와 완전 중복이라 V06 HARD_FAIL
+
+
+class ApproveQuestionGuardTests(unittest.TestCase):
+    """approve_question()의 strict 승인 Guard와 legacy security_hold 공통 차단을 검증한다."""
+
+    def setUp(self):
+        self.fake_repo = FakeQuestionRepository()
+        self.fake_stats = FakeQuestionStatsRepo()
+        patchers = [
+            patch("repositories.question_repo", self.fake_repo),
+            patch("repositories.question_stats_repo", self.fake_stats),
+            patch("services.material_service.get_material_text_for_team",
+                  return_value="Baffle 분리 작업은 2인이 수행하며 최소 인원은 2명이다."),
+        ]
+        for p in patchers:
+            p.start()
+            self.addCleanup(p.stop)
+        self.admin_actor = {"sub": "admin001", "role": "admin"}
+
+    def _seed_strict_question(self, **overrides) -> str:
+        verifier = FakeSemanticVerifier(_semantic_response())
+        with _gate_mode("strict"):
+            with patch("ai_engine.router.generate_questions_from_material",
+                       return_value=[_generated_question(**overrides)]):
+                with patch("ai_engine.router.get_semantic_gate_verifier", return_value=verifier):
+                    admin_service.generate_ai_questions("T2", "", 1, "하")
+        return list(self.fake_repo._questions.keys())[0]
+
+    def test_missing_question_is_404(self):
+        with _gate_mode("strict"):
+            with self.assertRaises(HTTPException) as raised:
+                admin_service.approve_question("no-such-id", actor=self.admin_actor)
+        self.assertEqual(raised.exception.status_code, 404)
+
+    def test_strict_draft_status_is_409(self):
+        qid = self._seed_strict_question(answer="E")  # V01 HARD_FAIL → draft
+        with _gate_mode("strict"):
+            with self.assertRaises(HTTPException) as raised:
+                admin_service.approve_question(qid, actor=self.admin_actor)
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["code"], "GATE_STATUS_INVALID")
+
+    def test_strict_missing_admin_override_is_409(self):
+        qid = self._seed_strict_question(admin_override="")  # V05 WARNING, 나머지 PASS → reviewing
+        with _gate_mode("strict"):
+            with self.assertRaises(HTTPException) as raised:
+                admin_service.approve_question(qid, actor=self.admin_actor)
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["code"], "GATE_ADMIN_DIFFICULTY_REQUIRED")
+
+    def test_strict_warning_without_reason_is_409(self):
+        # 정답 보기만 지나치게 길면 V04가 WARNING(V04_ANSWER_LENGTH_OUTLIER)이 된다 — V07과
+        # 무관한 WARNING-eligible Gate라 관리자 사유만 있으면 승인 가능해야 한다.
+        qid = self._seed_strict_question(
+            admin_override="하", option_b="2명이 함께 2인 1조로 상호 확인하며 작업해야 안전하다",
+        )
+        with _gate_mode("strict"):
+            with self.assertRaises(HTTPException) as raised:
+                admin_service.approve_question(qid, actor=self.admin_actor)
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["code"], "GATE_WARNING_OVERRIDE_REQUIRED")
+
+    def test_strict_warning_with_reason_succeeds(self):
+        qid = self._seed_strict_question(
+            admin_override="하", option_b="2명이 함께 2인 1조로 상호 확인하며 작업해야 안전하다",
+        )
+        with _gate_mode("strict"):
+            result = admin_service.approve_question(
+                qid, actor=self.admin_actor, override_reason="현장 확인 후 승인함",
+            )
+        self.assertTrue(result["approved"])
+        _, stored = list(self.fake_repo._questions.values())[0]
+        self.assertEqual(stored["status"], "approved")
+
+    def test_strict_all_pass_succeeds_without_reason(self):
+        qid = self._seed_strict_question(admin_override="하")
+        with _gate_mode("strict"):
+            result = admin_service.approve_question(qid, actor=self.admin_actor)
+        self.assertTrue(result["approved"])
+
+    def test_strict_stale_fingerprint_is_409(self):
+        qid = self._seed_strict_question(admin_override="하")
+        _, stored = list(self.fake_repo._questions.values())[0]
+        stored["question"] = "Gate 이후 수정된 문제"
+        with _gate_mode("strict"):
+            with self.assertRaises(HTTPException) as raised:
+                admin_service.approve_question(qid, actor=self.admin_actor)
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["code"], "GATE_RESULT_STALE")
+
+    def test_strict_security_hold_blocks_approval(self):
+        qid = self._seed_strict_question(admin_override="하", explanation="문의 010-1234-5678")
+        with _gate_mode("strict"):
+            with self.assertRaises(HTTPException) as raised:
+                admin_service.approve_question(qid, actor=self.admin_actor)
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["code"], "GATE_SECURITY_HOLD")
+
+    def test_legacy_security_hold_blocks_approval(self):
+        # legacy 모드는 V07을 pass 판정에 반영하지 않아 그대로 통과·저장되지만,
+        # 승인 시점에는 security_hold를 legacy에서도 공통으로 차단해야 한다.
+        with _gate_mode("legacy"):
+            result = self._generate([_generated_question(explanation="관리자계정 비밀번호 문의")])
+        self.assertEqual(result["count"], 1)
+        qid = list(self.fake_repo._questions.keys())[0]
+        with _gate_mode("legacy"):
+            with self.assertRaises(HTTPException) as raised:
+                admin_service.approve_question(qid, actor=self.admin_actor)
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail["code"], "GATE_SECURITY_HOLD")
+
+    def _generate(self, questions):
+        with patch("ai_engine.router.generate_questions_from_material", return_value=questions):
+            return admin_service.generate_ai_questions("T2", "", 1, "하")
 
 
 if __name__ == "__main__":
