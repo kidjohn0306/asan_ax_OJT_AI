@@ -1,5 +1,7 @@
 node_modules/
 .omc/
+.agents/
+.codex/
 __pycache__/
 *.pyc
 .env
@@ -9,3 +11,6 @@ backend/credentials/oauth_client.json
 backend/credentials/oauth_token.json
 token.json
 backend/drive_test_result.json
+
+# AI 에이전트 도구(Codex 등)가 생성한 작업용 플랜 사본 — docs/history가 팀 공유용 영구 기록이다.
+docs/superpowers/

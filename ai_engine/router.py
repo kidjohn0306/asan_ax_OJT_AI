@@ -29,3 +29,15 @@ def generate_questions_from_material(
     # mock (기본값)
     from ai_engine.question_generator import _mock_generate
     return _mock_generate(category, count, difficulty_hint)
+
+
+def get_semantic_gate_verifier():
+    """현재 AI_PROVIDER에 맞는 Gate 의미 검증기를 반환한다.
+    services.generation.gate_service는 이 함수나 ai_engine을 직접 import하지 않는다 —
+    admin_service가 이 Factory로 얻은 객체를 evaluate_candidate()에 주입한다."""
+    from ai_engine.gate_verifier import ProviderSemanticGateVerifier
+
+    provider = os.getenv("AI_PROVIDER", "mock").strip().lower()
+    if provider not in {"mock", "gemini", "claude"}:
+        raise ValueError(f"지원하지 않는 AI_PROVIDER: {provider}")
+    return ProviderSemanticGateVerifier(provider)
