@@ -1,7 +1,7 @@
 import re
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Literal, Optional
 
 from api.deps import require_admin
@@ -55,8 +55,21 @@ class CreateExamSetRequest(BaseModel):
     question_ids: list[str]
 
 
+class FromPaperRequest(BaseModel):
+    exam_set_id: str
+    name: Optional[str] = None
+
+
 class AssignUserRequest(BaseModel):
     employee_id: str
+
+
+class ScheduleExamRequest(BaseModel):
+    exam_datetime: str
+
+
+class PassScoreRequest(BaseModel):
+    pass_score: int = Field(ge=0, le=100)
 
 
 class CreateTeamRequest(BaseModel):
@@ -126,12 +139,6 @@ def get_logs(
     return fetch_logs(team, date_from, date_to)
 
 
-@router.get("/results-summary")
-def get_results_summary(_: dict = Depends(require_admin)):
-    from services.admin_service import fetch_results_summary
-    return fetch_results_summary()
-
-
 @router.get("/questions")
 def get_questions(
     team: Optional[str] = None,
@@ -199,40 +206,76 @@ def create_exam_set(body: CreateExamSetRequest, _: dict = Depends(require_admin)
     return _create(body.name, body.team_code, body.question_ids)
 
 
-@router.post("/exam-sets/{exam_set_id}/assign")
-def assign_user(exam_set_id: str, body: AssignUserRequest, _: dict = Depends(require_admin)):
+@router.get("/exam-sets/papers")
+def list_question_papers(_: dict = Depends(require_admin)):
+    from services.admin_service import list_question_papers as _list
+    return {"papers": _list()}
+
+
+@router.post("/exam-sets/from-paper")
+def create_exam_round_from_paper(body: FromPaperRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import create_exam_round_from_paper as _create
+    return _create(body.exam_set_id, body.name)
+
+
+@router.post("/exam-sets/{exam_id}/assign")
+def assign_user(exam_id: str, body: AssignUserRequest, _: dict = Depends(require_admin)):
     from services.admin_service import assign_user_to_exam_set
-    return assign_user_to_exam_set(body.employee_id, exam_set_id)
+    return assign_user_to_exam_set(body.employee_id, exam_id)
 
 
-@router.get("/exam-sets/{exam_set_id}/assignees")
-def get_exam_set_assignees(exam_set_id: str, _: dict = Depends(require_admin)):
+@router.get("/exam-sets/{exam_id}/assignees")
+def get_exam_set_assignees(exam_id: str, _: dict = Depends(require_admin)):
     from services.admin_service import get_exam_set_assignees as _get
-    return {"assignees": _get(exam_set_id)}
+    return {"assignees": _get(exam_id)}
 
 
-@router.delete("/exam-sets/{exam_set_id}/assign/{employee_id}")
-def unassign_user(exam_set_id: str, employee_id: str, _: dict = Depends(require_admin)):
+@router.delete("/exam-sets/{exam_id}/assign/{employee_id}")
+def unassign_user(exam_id: str, employee_id: str, _: dict = Depends(require_admin)):
     from services.admin_service import unassign_user_from_exam_set
-    return unassign_user_from_exam_set(employee_id, exam_set_id)
+    return unassign_user_from_exam_set(employee_id, exam_id)
 
 
-@router.delete("/exam-sets/{exam_set_id}")
-def delete_exam_set(exam_set_id: str, _: dict = Depends(require_admin)):
+@router.patch("/exam-sets/{exam_id}/schedule")
+def schedule_exam(exam_id: str, body: ScheduleExamRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import set_exam_datetime
+    return set_exam_datetime(exam_id, body.exam_datetime)
+
+
+@router.patch("/exam-sets/{exam_id}/pass-score")
+def set_pass_score(exam_id: str, body: PassScoreRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import set_pass_score as _set
+    return _set(exam_id, body.pass_score)
+
+
+@router.delete("/exam-sets/{exam_id}")
+def delete_exam_set(exam_id: str, _: dict = Depends(require_admin)):
     from services.admin_service import delete_exam_set as _delete
-    return _delete(exam_set_id)
+    return _delete(exam_id)
 
 
-@router.get("/exam-sets/{exam_set_id}/results")
-def get_exam_set_results(exam_set_id: str, _: dict = Depends(require_admin)):
+@router.get("/exam-sets/{exam_id}/results")
+def get_exam_set_results(exam_id: str, _: dict = Depends(require_admin)):
     from repositories import result_repo
-    return {"results": result_repo.list_results_by_set(exam_set_id)}
+    return {"results": result_repo.list_results_by_exam(exam_id)}
+
+
+@router.get("/exam-sets/{exam_id}/questions")
+def get_exam_set_questions(exam_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import get_exam_set_questions as _get
+    return _get(exam_id)
 
 
 @router.post("/seed-mock-data")
 def seed_mock_data(_: dict = Depends(require_admin)):
     from services.admin_service import seed_mock_data as _seed
     return _seed()
+
+
+@router.get("/results-analysis")
+def get_results_analysis(_: dict = Depends(require_admin)):
+    from services.admin_service import fetch_results_analysis
+    return fetch_results_analysis()
 
 
 @router.get("/stats")
@@ -337,7 +380,7 @@ def scan_materials(body: MaterialScanRequest, _: dict = Depends(require_admin)):
 @router.get("/debug/storage")
 def debug_storage(_: dict = Depends(require_admin)):
     import os
-    from repositories import exam_set_repo
+    from repositories import exam_set_repo, result_repo, snapshot_repo
 
     sheets_error = None
     if type(exam_set_repo).__name__ != "SheetsExamSetRepository":
@@ -346,6 +389,14 @@ def debug_storage(_: dict = Depends(require_admin)):
             SheetsExamSetRepository()
         except Exception as e:
             sheets_error = str(e)
+
+    results_sheets_error = None
+    if type(result_repo).__name__ != "SheetsResultRepository":
+        try:
+            from repositories.sheets_repo import SheetsResultRepository
+            SheetsResultRepository()
+        except Exception as e:
+            results_sheets_error = str(e)
 
     def _set(key: str) -> bool:
         return bool(os.getenv(key))
@@ -361,5 +412,8 @@ def debug_storage(_: dict = Depends(require_admin)):
         "GOOGLE_SERVICE_ACCOUNT_JSON_SET": _set("GOOGLE_SERVICE_ACCOUNT_JSON"),
         "DRIVE_RESULTS_FOLDER_ID_SET": _set("DRIVE_RESULTS_FOLDER_ID"),
         "exam_set_repo_class": type(exam_set_repo).__name__,
+        "result_repo_class": type(result_repo).__name__,
+        "snapshot_repo_class": type(snapshot_repo).__name__,
         "sheets_init_error": sheets_error,
+        "results_sheets_init_error": results_sheets_error,
     }

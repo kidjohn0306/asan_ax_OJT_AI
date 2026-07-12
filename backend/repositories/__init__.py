@@ -35,13 +35,15 @@ else:
     exam_set_repo = LocalExamSetRepository()
 
 if _backend == "sheets":
+    # 문제은행은 로컬 유지 — results·snapshots만 Sheets로
+    question_repo = LocalQuestionRepository()
     try:
         from repositories.sheets_repo import SheetsResultRepository, SheetsSnapshotRepository
         result_repo = SheetsResultRepository()
         snapshot_repo = SheetsSnapshotRepository()
-    except Exception as _sheets_err:
+    except Exception as _sheets_rs_err:
         import logging
-        logging.warning(f"SheetsResultRepository 초기화 실패, local로 폴백: {_sheets_err}")
+        logging.warning(f"Sheets Result/Snapshot 초기화 실패, Local로 폴백: {_sheets_rs_err}")
         result_repo = LocalResultRepository()
         snapshot_repo = LocalSnapshotRepository()
     feedback_repo = LocalFeedbackRepository()

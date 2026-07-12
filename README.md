@@ -87,23 +87,6 @@ npm run dev   # http://localhost:5173
 ```
 
 백엔드 서버(`localhost:8000`)도 함께 실행해야 API 호출 가능.
-
-### 접속 URL
-
-| 경로 | 설명 |
-|---|---|
-| `http://localhost:8000/` | 로그인 페이지 (React SPA) |
-| `http://localhost:5173/` | 프론트 개발 서버 (HMR) |
-| `http://localhost:8000/docs` | FastAPI Swagger UI |
-
-**Mock 모드 테스트 계정**
-
-| 사원번호 | 역할 | 비밀번호 |
-|---|---|---|
-| `admin001` | 관리자 | 아무 값 |
-| `2024001` | 응시자 (T1) | 아무 값 |
-| `2024002` | 응시자 (T2) | 아무 값 |
-
 ---
 
 ## 구현 현황
