@@ -10,7 +10,6 @@ router = APIRouter()
 
 DifficultyLevel = Literal["상", "중", "하"]
 TeamCode = str
-StatusType = Literal["draft", "reviewing", "approved", "rejected"]
 
 
 class DifficultyPatchRequest(BaseModel):

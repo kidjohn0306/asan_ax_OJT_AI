@@ -2,6 +2,72 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { apiFetch, apiUpload, logout as apiLogout } from '../api'
 
+/* ── Shared constants / helpers ─────────────────────────────── */
+const DEFAULT_TEAMS = [
+  { team_code:'T1', team_name:'1팀' },
+  { team_code:'T2', team_name:'2팀' },
+  { team_code:'T3', team_name:'3팀' },
+]
+
+// systemStatus(/api/admin/system-status)에서 대시보드·설정 화면이 공통으로 쓰는
+// 파생 값(AI provider 라벨, Claude 키 설정 여부)을 한 곳에서 계산한다.
+function deriveSystemInfo(systemStatus) {
+  const aiProvider = systemStatus?.ai_provider ?? '확인 중'
+  const aiProviderLabel = { mock:'Mock 모드', gemini:'Gemini 연동', claude:'Claude 연동' }[aiProvider] || aiProvider
+  const claudeConfigured = systemStatus?.claude_key_configured ?? false
+  return { aiProvider, aiProviderLabel, claudeConfigured }
+}
+
+// 시험지 미리보기 문항 목록을 인쇄용 A4 HTML로 렌더링해 새 창에서 인쇄한다.
+// (문제 생성·시험 생성 화면이 동일한 레이아웃을 공유)
+function openExamPdf({ docTitle, heading, teamLabel, questions, toast }) {
+  const rows = questions.map((q, i) => {
+    const opts = q.options || {}
+    return `
+        <div class="question">
+          <p class="q-text"><span class="q-num">${i + 1}.</span> ${q.question}</p>
+          <ol class="opts">
+            ${['A','B','C','D'].map(k => opts[k] ? `<li><span class="opt-label">${k}.</span>${opts[k]}</li>` : '').join('')}
+          </ol>
+        </div>`
+  }).join('')
+
+  const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<title>${docTitle}</title>
+<style>
+  @page { size: A4; margin: 20mm 18mm; }
+  body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size: 10.5pt; color: #1a1a1a; }
+  h1 { font-size: 16pt; font-weight: 800; text-align: center; margin-bottom: 4px; }
+  .meta { text-align: center; font-size: 10pt; color: #555; margin-bottom: 24px; }
+  hr { border: none; border-top: 1px solid #e2e8f0; margin: 0 0 20px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+  .question { page-break-inside: avoid; margin-bottom: 14px; }
+  .q-text { font-size: 10.5pt; font-weight: 600; line-height: 1.55; margin: 0 0 6px 0; }
+  .q-num { font-weight: 800; color: #1e3a5f; }
+  .opts { list-style: none; padding: 0; margin: 0 0 0 14px; }
+  .opts li { display: flex; align-items: flex-start; gap: 6px; font-size: 10pt; padding: 2px 0; line-height: 1.45; }
+  .opt-label { font-weight: 700; min-width: 16px; color: #555; }
+</style>
+</head>
+<body>
+  <h1>${heading}</h1>
+  <p class="meta">${teamLabel} · ${questions.length}문항 · 응시일: ___년 ___월 ___일 &nbsp;&nbsp; 성명: ________________ &nbsp;&nbsp; 사원번호: ________________</p>
+  <hr/>
+  <div class="grid">${rows}</div>
+</body>
+</html>`
+
+  const win = window.open('', '_blank')
+  if (!win) { toast('팝업이 차단되어 PDF를 열 수 없습니다. 브라우저의 팝업 차단을 해제해주세요.', 'error'); return }
+  win.document.write(html)
+  win.document.close()
+  win.focus()
+  setTimeout(() => { win.print() }, 300)
+}
+
 /* ── SVG Icon ──────────────────────────────────────────────── */
 function Icon({ name, size = 16, style }) {
   const paths = {
@@ -204,12 +270,10 @@ function Dashboard({ onNavigate }) {
     ['clock', '응시 이력',   'history'],
   ]
 
-  const aiProvider = systemStatus?.ai_provider ?? '확인 중'
-  const aiProviderLabel = { mock:'Mock 모드', gemini:'Gemini 연동', claude:'Claude 연동' }[aiProvider] || aiProvider
+  const { aiProvider, aiProviderLabel, claudeConfigured } = deriveSystemInfo(systemStatus)
   const aiProviderLive = aiProvider === 'claude' ? systemStatus?.claude_key_configured
     : aiProvider === 'gemini' ? systemStatus?.gemini_key_configured
     : false
-  const claudeConfigured = systemStatus?.claude_key_configured ?? false
 
   const systemRows = [
     ['운영 모드',    systemStatus ? aiProviderLabel : '확인 중...', `AI_PROVIDER=${aiProvider}`, aiProvider === 'mock' ? 'mock' : (aiProviderLive ? 'live' : 'offline')],
@@ -292,15 +356,12 @@ function Dashboard({ onNavigate }) {
 }
 
 /* ── 문제 생성 (AI API 호출) ─────────────────────────────────── */
-function QuestionGenerate({ toast, onNavigate }) {
-  const [mode, setMode] = useState('preset')
+function QuestionGenerate({ toast }) {
   const [team, setTeam] = useState('T1')
   const [teams, setTeams] = useState([])
   const [diff, setDiff] = useState('중급')
   const [count, setCount] = useState('25문항')
   const [material, setMaterial] = useState('')
-  const [bulkCount, setBulkCount] = useState(50)
-  const [bulkCats, setBulkCats] = useState(['공통','팀별','환경안전','일반상식'])
   const [preview, setPreview] = useState(null)
   const [provider, setProvider] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -374,69 +435,19 @@ function QuestionGenerate({ toast, onNavigate }) {
   function handlePdf() {
     if (!preview || preview.length === 0) { toast('먼저 문제를 생성해주세요.', 'error'); return }
     const teamLabel = teamOpts.find(([val]) => val === team)?.[1] || team
-    const rows = preview.map((q, i) => {
-      const opts = q.options || {}
-      return `
-        <div class="question">
-          <p class="q-text"><span class="q-num">${i + 1}.</span> ${q.question}</p>
-          <ol class="opts">
-            ${['A','B','C','D'].map(k => opts[k] ? `<li><span class="opt-label">${k}.</span>${opts[k]}</li>` : '').join('')}
-          </ol>
-        </div>`
-    }).join('')
-
-    const html = `<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8"/>
-<title>OJT 시험지 — (주)엑스티</title>
-<style>
-  @page { size: A4; margin: 20mm 18mm; }
-  body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size: 10.5pt; color: #1a1a1a; }
-  h1 { font-size: 16pt; font-weight: 800; text-align: center; margin-bottom: 4px; }
-  .meta { text-align: center; font-size: 10pt; color: #555; margin-bottom: 24px; }
-  hr { border: none; border-top: 1px solid #e2e8f0; margin: 0 0 20px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
-  .question { page-break-inside: avoid; margin-bottom: 14px; }
-  .q-text { font-size: 10.5pt; font-weight: 600; line-height: 1.55; margin: 0 0 6px 0; }
-  .q-num { font-weight: 800; color: #1e3a5f; }
-  .opts { list-style: none; padding: 0; margin: 0 0 0 14px; }
-  .opts li { display: flex; align-items: flex-start; gap: 6px; font-size: 10pt; padding: 2px 0; line-height: 1.45; }
-  .opt-label { font-weight: 700; min-width: 16px; color: #555; }
-</style>
-</head>
-<body>
-  <h1>(주)엑스티 OJT 기초고사</h1>
-  <p class="meta">${teamLabel} · ${preview.length}문항 · 응시일: ___년 ___월 ___일 &nbsp;&nbsp; 성명: ________________ &nbsp;&nbsp; 사원번호: ________________</p>
-  <hr/>
-  <div class="grid">${rows}</div>
-</body>
-</html>`
-
-    const win = window.open('', '_blank')
-    if (!win) { toast('팝업이 차단되어 PDF를 열 수 없습니다. 브라우저의 팝업 차단을 해제해주세요.', 'error'); return }
-    win.document.write(html)
-    win.document.close()
-    win.focus()
-    setTimeout(() => { win.print() }, 300)
+    openExamPdf({
+      docTitle: 'OJT 시험지 — (주)엑스티',
+      heading: '(주)엑스티 OJT 기초고사',
+      teamLabel,
+      questions: preview,
+      toast,
+    })
   }
 
-  function toggleCat(cat) {
-    setBulkCats(prev => prev.includes(cat) ? prev.filter(c => c !== cat) : [...prev, cat])
-  }
-
-  const teamOpts = (teams.length > 0 ? teams : [{ team_code:'T1', team_name:'1팀' }, { team_code:'T2', team_name:'2팀' }, { team_code:'T3', team_name:'3팀' }])
+  const teamOpts = (teams.length > 0 ? teams : DEFAULT_TEAMS)
     .map(t => [t.team_code, t.team_name])
   const diffOpts = ['초급','중급','고급']
   const countOpts = ['10문항','20문항','25문항']
-  const catOpts = ['공통','팀별','환경안전','일반상식']
-
-  const modeTabStyle = (m) => ({
-    flex:1, border:'none', padding:'9px 4px', cursor:'pointer',
-    fontFamily:'var(--font)', fontSize:13, fontWeight: mode===m ? 700 : 400,
-    background: mode===m ? 'var(--accent)' : 'white',
-    color: mode===m ? 'white' : 'var(--text-muted)',
-  })
 
   return (
     <div style={{ display:'grid', gridTemplateColumns:'2fr 3fr', gap:14 }}>
@@ -464,8 +475,7 @@ function QuestionGenerate({ toast, onNavigate }) {
           </div>
         )}
 
-        {mode === 'preset' && (<>
-          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>2. 난이도</div>
+        <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>2. 난이도</div>
           <div style={{ display:'flex', border:'1.5px solid var(--border)', borderRadius:7, overflow:'hidden', marginBottom:14 }}>
             {diffOpts.map(d => (
               <button key={d} onClick={() => setDiff(d)} style={{ flex:1, border:'none', borderRight:'1px solid var(--border)', padding:'9px 4px', cursor:'pointer', fontFamily:'var(--font)', fontSize:13, background: diff===d ? 'var(--accent)' : 'white', color: diff===d ? 'white' : 'var(--text-muted)', fontWeight: diff===d ? 700 : 400 }}>{d}</button>
@@ -484,35 +494,10 @@ function QuestionGenerate({ toast, onNavigate }) {
             placeholder="Google Drive에 스캔해둔 교육자료가 자동으로 포함됩니다. 이번 출제에만 추가로 반영할 내용이 있다면 붙여넣으세요."
             style={{ width:'100%', minHeight:88, border:'1.5px solid var(--border)', borderRadius:7, padding:'9px 10px', fontFamily:'var(--font)', fontSize:12, color:'var(--text)', resize:'vertical', boxSizing:'border-box', marginBottom:14, outline:'none' }}
           />
-        </>)}
-
-        {mode === 'bulk' && (<>
-          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>2. 카테고리 선택 <span style={{ fontSize:11, fontWeight:400, color:'var(--text-muted)' }}>(복수 선택 가능)</span></div>
-          <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14 }}>
-            {catOpts.map(cat => {
-              const on = bulkCats.includes(cat)
-              return (
-                <button key={cat} onClick={() => toggleCat(cat)} style={{ padding:'7px 14px', borderRadius:20, border:`1.5px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent-light)' : 'white', color: on ? 'var(--accent-dark)' : 'var(--text-muted)', fontFamily:'var(--font)', fontSize:12, fontWeight: on ? 700 : 400, cursor:'pointer' }}>
-                  {on ? '✓ ' : ''}{cat}
-                </button>
-              )
-            })}
-          </div>
-          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>3. 생성 문항 수</div>
-          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:6 }}>
-            <input type="range" min={10} max={200} step={10} value={bulkCount}
-              onChange={e => setBulkCount(Number(e.target.value))}
-              style={{ flex:1, accentColor:'var(--accent)' }} />
-            <span style={{ fontSize:18, fontWeight:800, color:'var(--accent)', minWidth:52, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{bulkCount}문</span>
-          </div>
-          <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:14 }}>
-            선택 카테고리 {bulkCats.length}개 · 카테고리당 약 {bulkCats.length ? Math.round(bulkCount / bulkCats.length) : 0}문항
-          </div>
-        </>)}
 
         <BtnPrimary onClick={generate} style={{ width:'100%', justifyContent:'center', marginBottom:10 }}>
           <Icon name="ai" size={14} style={{ color:'white' }} />
-          {loading ? '생성 중...' : mode === 'bulk' ? `${bulkCount}문항 일괄 생성` : 'AI 문제 생성'}
+          {loading ? '생성 중...' : 'AI 문제 생성'}
         </BtnPrimary>
         <div style={{ fontSize:11, color:'var(--warning)', background:'var(--warning-light)', border:'1px solid #FDE68A', borderRadius:6, padding:'7px 10px' }}>
           생성된 문제는 <strong>검토·검증</strong> 탭에서 승인 후 문제은행에 등록됩니다.{provider && ` (${provider.toUpperCase()} 모드)`}
@@ -885,7 +870,7 @@ function ExamSheet({ toast, onNavigate }) {
     apiFetch('GET', '/api/admin/teams').then(d => setTeams(d.teams || [])).catch(() => {})
   }, [])
 
-  const teamOpts = (teams.length > 0 ? teams : [{ team_code:'T1', team_name:'1팀' }, { team_code:'T2', team_name:'2팀' }, { team_code:'T3', team_name:'3팀' }])
+  const teamOpts = (teams.length > 0 ? teams : DEFAULT_TEAMS)
     .map(t => [t.team_code, t.team_name])
 
   async function assign() {
@@ -985,51 +970,7 @@ function ExamSheet({ toast, onNavigate }) {
     if (!questions || questions.length === 0) { toast('먼저 문제를 배분해주세요.', 'error'); return }
     const teamLabel = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }[team] || team
     const title = examName.trim() || '(주)엑스티 OJT 기초고사'
-    const rows = questions.map((q, i) => {
-      const opts = q.options || {}
-      return `
-        <div class="question">
-          <p class="q-text"><span class="q-num">${i + 1}.</span> ${q.question}</p>
-          <ol class="opts">
-            ${['A','B','C','D'].map(k => opts[k] ? `<li><span class="opt-label">${k}.</span>${opts[k]}</li>` : '').join('')}
-          </ol>
-        </div>`
-    }).join('')
-
-    const html = `<!DOCTYPE html>
-<html lang="ko">
-<head>
-<meta charset="UTF-8"/>
-<title>${title}</title>
-<style>
-  @page { size: A4; margin: 20mm 18mm; }
-  body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; font-size: 10.5pt; color: #1a1a1a; }
-  h1 { font-size: 16pt; font-weight: 800; text-align: center; margin-bottom: 4px; }
-  .meta { text-align: center; font-size: 10pt; color: #555; margin-bottom: 24px; }
-  hr { border: none; border-top: 1px solid #e2e8f0; margin: 0 0 20px; }
-  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
-  .question { page-break-inside: avoid; margin-bottom: 14px; }
-  .q-text { font-size: 10.5pt; font-weight: 600; line-height: 1.55; margin: 0 0 6px 0; }
-  .q-num { font-weight: 800; color: #1e3a5f; }
-  .opts { list-style: none; padding: 0; margin: 0 0 0 14px; }
-  .opts li { display: flex; align-items: flex-start; gap: 6px; font-size: 10pt; padding: 2px 0; line-height: 1.45; }
-  .opt-label { font-weight: 700; min-width: 16px; color: #555; }
-</style>
-</head>
-<body>
-  <h1>${title}</h1>
-  <p class="meta">${teamLabel} · ${questions.length}문항 · 응시일: ___년 ___월 ___일 &nbsp;&nbsp; 성명: ________________ &nbsp;&nbsp; 사원번호: ________________</p>
-  <hr/>
-  <div class="grid">${rows}</div>
-</body>
-</html>`
-
-    const win = window.open('', '_blank')
-    if (!win) { toast('팝업이 차단되어 PDF를 열 수 없습니다. 브라우저의 팝업 차단을 해제해주세요.', 'error'); return }
-    win.document.write(html)
-    win.document.close()
-    win.focus()
-    setTimeout(() => { win.print() }, 300)
+    openExamPdf({ docTitle: title, heading: title, teamLabel, questions, toast })
   }
 
   const diffColor = { 상:'var(--danger)', 중:'var(--warning)', 하:'var(--success)' }
@@ -1361,7 +1302,7 @@ function Users({ toast }) {
     }
   }
 
-  const teamOpts = teams.length > 0 ? teams : [{ team_code:'T1', team_name:'1팀' }, { team_code:'T2', team_name:'2팀' }, { team_code:'T3', team_name:'3팀' }]
+  const teamOpts = teams.length > 0 ? teams : DEFAULT_TEAMS
 
   return (
     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
@@ -1515,9 +1456,7 @@ function Settings() {
       .catch(() => setSystemStatus(null))
   }, [])
 
-  const aiProvider = systemStatus?.ai_provider ?? '확인 중'
-  const aiProviderLabel = { mock:'Mock 모드', gemini:'Gemini 연동', claude:'Claude 연동' }[aiProvider] || aiProvider
-  const claudeConfigured = systemStatus?.claude_key_configured ?? false
+  const { aiProvider, aiProviderLabel, claudeConfigured } = deriveSystemInfo(systemStatus)
 
   const groups = [
     { label:'운영 모드', rows:[
@@ -1531,19 +1470,7 @@ function Settings() {
     ]},
   ]
 
-  const todos = [
-    { text: 'Google Drive Service Account 연동', done: true },
-    { text: '문제 상태 머신 (draft→reviewing→approved→rejected)', done: true },
-    { text: '규칙 게이트 7개 (V-01~V-07)', done: true },
-    { text: '시험지 스냅샷 저장 (보기 순서맵)', done: true },
-    { text: '결과 JSONL 영속화 (results.jsonl)', done: true },
-    { text: 'Admin UI 문제 생성 / 문제은행 / 시험지 생성 분리', done: true },
-    { text: 'Claude API 문제 생성 JSON 파싱', done: false },
-    { text: 'Drive 문제은행 Excel 파싱', done: false },
-    { text: '난이도 AI 자동 확정 피드백 루프', done: false },
-    { text: '결과 리포트 PDF 내보내기', done: false },
-    { text: 'Google Drive 결과 저장 연동', done: false },
-  ]
+  const todos = []
 
   return (
     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
@@ -1566,7 +1493,10 @@ function Settings() {
           </div>
         ))}
       </Card>
-      <Card title="구현 현황 (TODO)" noPad>
+      <Card title="남은 구현 항목 (TODO)" noPad>
+        {todos.length === 0 && (
+          <div style={{ padding:'20px', fontSize:13, color:'var(--text-muted)', textAlign:'center' }}>현재 파악된 미구현 항목이 없습니다.</div>
+        )}
         {todos.map((t, i) => (
           <div key={i} style={{ display:'flex', alignItems:'center', gap:10, padding:'11px 20px', borderBottom: i < todos.length-1 ? '1px solid var(--border)' : 'none' }}>
             {t.done ? (
@@ -2078,7 +2008,7 @@ export default function Admin() {
           </div>
           <div style={{ flex:1, overflowY:'auto', padding:24 }}>
             {view === 'dashboard'   && <Dashboard onNavigate={goView} />}
-            {view === 'q-generate'  && <QuestionGenerate toast={toast} onNavigate={goView} />}
+            {view === 'q-generate'  && <QuestionGenerate toast={toast} />}
             {view === 'q-review'    && <ExamReview toast={toast} />}
             {view === 'q-bank'      && <QuestionBank toast={toast} onNavigate={goView} />}
             {view === 'exam-sheet'  && <ExamSheet toast={toast} onNavigate={goView} />}
