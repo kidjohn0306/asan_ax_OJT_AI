@@ -5,6 +5,8 @@ node_modules/
 __pycache__/
 *.pyc
 .env
+.env.local
+.vercel/
 .DS_Store
 backend/credentials/service_account.json
 backend/credentials/oauth_client.json
