@@ -464,7 +464,8 @@ export default function Exam() {
 
   useEffect(() => {
     if (!empInfo.empno) return
-    fetch(`/api/exam/assigned-name?employee_id=${encodeURIComponent(empInfo.empno)}`)
+    const token = sessionStorage.getItem('token')
+    fetch('/api/exam/assigned-name', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then(res => res.ok ? res.json() : null)
       .then(data => { if (data?.name) setExamName(data.name) })
       .catch(() => {})
