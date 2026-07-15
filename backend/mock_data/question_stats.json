@@ -1,0 +1,104 @@
+{
+  "G-001": {
+    "question_id": "G-001",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "팀-CLAUDE-005": {
+    "question_id": "팀-CLAUDE-005",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "T-CLAUDE-012": {
+    "question_id": "T-CLAUDE-012",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "팀-CLAUDE-009": {
+    "question_id": "팀-CLAUDE-009",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "T-CLAUDE-021": {
+    "question_id": "T-CLAUDE-021",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "팀-CLAUDE-004": {
+    "question_id": "팀-CLAUDE-004",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "팀-CLAUDE-001": {
+    "question_id": "팀-CLAUDE-001",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "T-CLAUDE-005": {
+    "question_id": "T-CLAUDE-005",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "G-003": {
+    "question_id": "G-003",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "팀-CLAUDE-003": {
+    "question_id": "팀-CLAUDE-003",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "S-003": {
+    "question_id": "S-003",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "T-CLAUDE-009": {
+    "question_id": "T-CLAUDE-009",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "G-004": {
+    "question_id": "G-004",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "T-CLAUDE-018": {
+    "question_id": "T-CLAUDE-018",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "팀-CLAUDE-002": {
+    "question_id": "팀-CLAUDE-002",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "S-005": {
+    "question_id": "S-005",
+    "exam_count": 1,
+    "last_used_at": "2026-07-11T07:16:27.736756+00:00",
+    "flagged_frequent": false
+  },
+  "q1": {
+    "question_id": "q1",
+    "exam_count": 4,
+    "last_used_at": "2026-07-11T07:51:30.111051+00:00",
+    "flagged_frequent": false
+  }
+}

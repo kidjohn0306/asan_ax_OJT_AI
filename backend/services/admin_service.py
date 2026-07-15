@@ -590,6 +590,16 @@ def create_exam_set(name: str, team_code: str, question_ids: list, created_by: s
     valid_ids = [qid for qid in question_ids if qid in all_ids]
     invalid_ids = [qid for qid in question_ids if qid not in all_ids]
 
+    # 같은 이름 또는 같은 문제 구성(순서 무관)의 시험지가 이미 있으면 실수로 중복 생성하는 것을
+    # 막는다 — 팀과 무관하게 전체 시험지를 대상으로 확인한다.
+    existing = exam_set_repo.list_exam_sets()
+    name_key = name.strip()
+    question_set = set(valid_ids)
+    if any(s.get("name", "").strip() == name_key for s in existing):
+        raise HTTPException(status_code=409, detail="이미 동일한 이름의 시험지가 있습니다.")
+    if any(set(s.get("question_ids", [])) == question_set for s in existing):
+        raise HTTPException(status_code=409, detail="이미 동일한 문제 구성의 시험지가 있습니다.")
+
     data = {
         "exam_set_id": f"set-{str(uuid.uuid4())[:8]}",
         "exam_id": f"exam-{str(uuid.uuid4())[:8]}",
@@ -621,9 +631,17 @@ def list_question_papers() -> list:
     return sorted(papers.values(), key=lambda p: p.get("created_at") or "", reverse=True)
 
 
-def create_exam_round_from_paper(exam_set_id: str, name: str = None, created_by: str = "") -> dict:
+def create_exam_round_from_paper(
+    exam_set_id: str,
+    name: str = None,
+    created_by: str = "",
+    exam_datetime: str = None,
+    pass_score: int = None,
+    duration_min: int = None,
+) -> dict:
     """기존 시험지(exam_set_id)의 문제 구성을 재사용해 새 시험 회차를 만든다.
-    배정 대상·일시·커트라인은 새로 시작(빈 배정, 미정 일시, 기본 커트라인 70점)."""
+    배정 대상은 새로 시작(빈 배정). 일시·커트라인·시험 시간은 주어지면 생성 시점에 바로 반영하고,
+    없으면 기존처럼 미정 일시·기본 커트라인 70점·기본 시험 시간 60분으로 시작한다."""
     import uuid
     from repositories import exam_set_repo
     source = next((s for s in exam_set_repo.list_exam_sets() if s.get("exam_set_id") == exam_set_id), None)
@@ -638,19 +656,38 @@ def create_exam_round_from_paper(exam_set_id: str, name: str = None, created_by:
         "created_by": created_by,
         "status": "active",
     }
-    return exam_set_repo.create_exam_set(data)
+    created = exam_set_repo.create_exam_set(data)
+    update_fields = {}
+    if exam_datetime is not None:
+        update_fields["exam_datetime"] = exam_datetime
+    if pass_score is not None:
+        update_fields["pass_score"] = pass_score
+    if duration_min is not None:
+        update_fields["duration_min"] = duration_min
+    if update_fields:
+        exam_set_repo.update_exam_set(created["exam_id"], update_fields)
+        created.update(update_fields)
+    return created
 
 
 def assign_user_to_exam_set(employee_id: str, exam_id: str) -> dict:
-    from repositories import exam_set_repo
+    from repositories import exam_set_repo, user_repo
 
-    # 한 응시자는 동시에 하나의 시험(회차)에만 배정되어야 한다. 그렇지 않으면 이전에
-    # 배정된 회차가 그대로 남아있어, 새 회차로 재배정해도 실제 출제 시 어느 회차를 써야
-    # 할지 모호해지고 이전 문제가 그대로 나오는 버그로 이어진다.
+    exam_set = exam_set_repo.get_exam(exam_id)
+    if not exam_set:
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+
+    user = next((u for u in user_repo.list_users() if u.get("employee_id") == employee_id), None)
+    if user and exam_set.get("team_code") and user.get("team") != exam_set.get("team_code"):
+        raise HTTPException(status_code=400, detail="시험지 대상 팀과 응시자 소속 팀이 다릅니다.")
+
+    # 한 응시자는 동시에 하나의 시험(회차)에만 배정될 수 있다. 이미 다른 회차에
+    # 배정돼 있으면 자동으로 옮기지 않고 등록을 거부한다 (관리자가 먼저 기존 회차에서
+    # 제외해야 새 회차에 배정 가능).
     for s in exam_set_repo.list_exam_sets():
         other_id = s.get("exam_id")
         if other_id and other_id != exam_id and employee_id in s.get("assigned_users", []):
-            exam_set_repo.unassign_user(other_id, employee_id)
+            raise HTTPException(status_code=409, detail="이미 등록된 인원입니다.")
 
     if not exam_set_repo.assign_user(exam_id, employee_id):
         raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
@@ -682,30 +719,19 @@ def set_pass_score(exam_id: str, pass_score: int) -> dict:
     return {"success": True, "exam_id": exam_id, "pass_score": pass_score}
 
 
+def set_exam_duration(exam_id: str, duration_min: int) -> dict:
+    from repositories import exam_set_repo
+    success = exam_set_repo.update_exam_set(exam_id, {"duration_min": duration_min})
+    if not success:
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    return {"success": True, "exam_id": exam_id, "duration_min": duration_min}
+
+
 def delete_exam_set(exam_id: str) -> dict:
     from repositories import exam_set_repo
     if not exam_set_repo.delete_exam_set(exam_id):
         raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
     return {"deleted": True, "exam_id": exam_id}
-
-
-def seed_mock_data() -> dict:
-    from repositories import user_repo
-    from repositories.local_json import load_local_admins
-
-    existing_ids = {u["employee_id"] for u in user_repo.list_users()} | {a["employee_id"] for a in load_local_admins()}
-    seed_users = [
-        {"employee_id": "2024001", "password_hash": "mock_hash", "name": "김테스트", "team": "T1", "role": "examinee", "exam_date": "2026-07-10", "approved": True},
-        {"employee_id": "2024002", "password_hash": "mock_hash", "name": "이테스트", "team": "T2", "role": "examinee", "exam_date": "2026-07-10", "approved": True},
-        {"employee_id": "2024003", "password_hash": "mock_hash", "name": "박테스트", "team": "T3", "role": "examinee", "exam_date": "2026-07-11", "approved": True},
-    ]
-    added = 0
-    for u in seed_users:
-        if u["employee_id"] not in existing_ids:
-            user_repo.add_user(u)
-            existing_ids.add(u["employee_id"])
-            added += 1
-    return {"seeded_users": added, "message": f"더미 사용자 {added}명 추가 완료 (기존 계정 skip)"}
 
 
 def list_teams() -> list:
@@ -831,9 +857,14 @@ def get_exam_set_questions(exam_id: str) -> dict:
         from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
 
+    # question_id 하나마다 개별 get_question() 호출을 하면 문항 수만큼 Sheets 왕복이 발생해
+    # 분당 요청 한도(quota)를 쉽게 넘긴다. exam_service.generate_exam_questions와 동일하게
+    # 전체를 한 번에 불러와 id로 조회한다.
+    all_by_id = {q["question_id"]: q for pool in question_repo.get_all_questions().values() for q in pool}
+
     questions = []
     for qid in exam_set.get("question_ids", []):
-        q = question_repo.get_question(qid)
+        q = all_by_id.get(qid)
         if not q:
             continue
         questions.append({

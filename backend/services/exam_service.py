@@ -7,6 +7,7 @@ from fastapi import HTTPException
 TEAM_KEY_MAP = {"T1": "team1", "T2": "team2", "T3": "team3"}
 
 PASS_SCORE = 70
+DEFAULT_DURATION_MIN = 60
 SCORE_PER_QUESTION = 4
 _UPPER_RATIO = 0.28
 _MID_RATIO = 0.40
@@ -119,6 +120,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
         random.shuffle(questions)
 
     result_id = str(uuid.uuid4())
+    duration_min = assigned_set.get("duration_min", DEFAULT_DURATION_MIN) if assigned_set else DEFAULT_DURATION_MIN
 
     if not preview:
         # 스냅샷 저장 (approved 문제 정보 + 정답 고정)
@@ -142,6 +144,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
             "exam_id": round_exam_id,
             "name": exam_name,
             "pass_score": assigned_set.get("pass_score", PASS_SCORE) if assigned_set else PASS_SCORE,
+            "duration_min": duration_min,
             "created_at": datetime.now(timezone.utc).isoformat(),
         }
         s_repo.save_snapshot(result_id, snapshot)
@@ -158,6 +161,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
         "team_code": team_code,
         "name": exam_name,
         "preview": preview,
+        "duration_min": duration_min,
         "questions": [
             {
                 "id": q["question_id"],
@@ -169,8 +173,11 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
                     "C": q["option_c"],
                     "D": q["option_d"],
                 },
-                # admin preview에서는 난이도 포함, 응시자 화면에서는 제외 (설계 §9.4)
-                **({ "difficulty": q.get("admin_override") or q.get("difficulty_ai") or q.get("difficulty_init", "중") } if preview else {}),
+                # admin preview에서는 난이도·정답 포함, 응시자 화면에서는 제외 (설계 §9.4)
+                **({
+                    "difficulty": q.get("admin_override") or q.get("difficulty_ai") or q.get("difficulty_init", "중"),
+                    "answer": q.get("answer"),
+                } if preview else {}),
             }
             for q in questions
         ],
