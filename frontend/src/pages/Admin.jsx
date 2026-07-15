@@ -312,7 +312,7 @@ function Dashboard({ onNavigate }) {
   const quickActions = [
     ['ai',    '문제 생성',      'q-generate'],
     ['check', '검토·검증',      'q-review'],
-    ['file',  '시험지 생성',    'exam-sheet'],
+    ['file',  '시험지 생성·관리', 'exam-sheet'],
     ['users', '시험 생성·관리', 'exam-assign'],
     ['user',  '사용자 승인',    'users'],
     ['clock', '응시 현황',      'exam-status'],
@@ -1031,6 +1031,7 @@ function QuestionBank({ toast, onNavigate }) {
 function ExamSheet({ toast, onNavigate }) {
   const [examName, setExamName] = useState('')
   const [team, setTeam] = useState('T1')
+  const [teamDropdownOpen, setTeamDropdownOpen] = useState(false)
   const [teams, setTeams] = useState([])
   const [totalCount, setTotalCount] = useState(25)
   const [excludeFrequent, setExcludeFrequent] = useState(false)
@@ -1230,8 +1231,8 @@ function ExamSheet({ toast, onNavigate }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20, height:'100%', minHeight:0 }}>
-      <Card title="시험지 설정" style={{ flexShrink:0 }}>
-        <div style={{ display:'grid', gridTemplateColumns:'1.3fr 1.3fr 1.4fr 1.3fr auto', gap:12, alignItems:'end' }}>
+      <Card title="시험지 설정" style={{ flexShrink:0, overflow:'visible' }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1.3fr 1.3fr 1.3fr auto', gap:12, alignItems:'end' }}>
           <div>
             <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험지 이름</label>
             <input
@@ -1245,42 +1246,35 @@ function ExamSheet({ toast, onNavigate }) {
 
           <div>
             <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>대상 팀</label>
-            <div style={{ display:'flex', height:44, border:'1px solid var(--border)', borderRadius:8, overflow:'hidden' }}>
-              {teamOpts.map(([val, label], idx) => (
-                <button key={val} onClick={() => setTeam(val)}
-                  style={{ flex:1, border:'none', borderLeft: idx > 0 ? '1px solid var(--border)' : 'none', background: team === val ? 'var(--accent)' : 'white', color: team === val ? 'white' : 'var(--text-muted)', fontFamily:'var(--font)', fontSize:13, fontWeight: team === val ? 700 : 500, cursor:'pointer', transition:'background .15s, color .15s' }}>
-                  {label}
-                </button>
-              ))}
+            <div style={{ position:'relative' }}>
+              <button
+                type="button"
+                onClick={() => setTeamDropdownOpen(o => !o)}
+                onBlur={() => setTimeout(() => setTeamDropdownOpen(false), 150)}
+                style={{ width:'100%', height:44, display:'flex', alignItems:'center', justifyContent:'space-between', border:`1px solid ${teamDropdownOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, padding:'0 12px', background:'white', fontFamily:'var(--font)', fontSize:14, color:'var(--text)', cursor:'pointer', boxSizing:'border-box' }}
+              >
+                <span>{teamOpts.find(([val]) => val === team)?.[1] || team}</span>
+                <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-muted)', transform: teamDropdownOpen ? 'rotate(180deg)' : 'none', transition:'transform .15s', flexShrink:0 }}><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {teamDropdownOpen && (
+                <div style={{ position:'absolute', top:'100%', left:0, right:0, marginTop:4, background:'white', border:'1px solid var(--border)', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.1)', zIndex:50, overflow:'hidden' }}>
+                  {teamOpts.map(([val, label]) => (
+                    <div key={val}
+                      onMouseDown={() => { setTeam(val); setTeamDropdownOpen(false) }}
+                      style={{ padding:'10px 14px', cursor:'pointer', fontSize:13, fontWeight: team === val ? 700 : 400, color: team === val ? 'var(--accent-dark)' : 'var(--text)', background: team === val ? 'var(--accent-light)' : 'white' }}
+                    >{label}</div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 
           <div>
             <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>총 문항 수</label>
-            <div style={{ display:'flex', alignItems:'center', gap:10, height:44 }}>
-              <input type="range" min={10} max={50} step={5} value={totalCount}
-                onChange={e => setTotalCount(Number(e.target.value))}
-                style={{ flex:1, accentColor:'var(--accent)' }} />
-              <span style={{ fontSize:16, fontWeight:800, color:'var(--accent)', minWidth:30, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{totalCount}</span>
-            </div>
-          </div>
-
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>출제 횟수 제한</label>
-            <div style={{ display:'flex', alignItems:'center', gap:8, height:44 }}>
-              <button
-                onClick={() => setExcludeFrequent(v => !v)}
-                style={{ border:`1.5px solid ${excludeFrequent ? 'var(--accent)' : 'var(--border)'}`, background: excludeFrequent ? 'var(--accent-light)' : 'white', color: excludeFrequent ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'5px 12px', fontFamily:'var(--font)', fontSize:12, fontWeight: excludeFrequent ? 700 : 400, cursor:'pointer', flexShrink:0 }}
-              >{excludeFrequent ? 'ON' : 'OFF'}</button>
-              {excludeFrequent && (
-                <>
-                  <input type="range" min={1} max={20} step={1} value={maxExamCount}
-                    onChange={e => setMaxExamCount(Number(e.target.value))}
-                    style={{ flex:1, accentColor:'var(--accent)' }} />
-                  <span style={{ fontSize:16, fontWeight:800, color:'var(--accent)', minWidth:24, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{maxExamCount}</span>
-                </>
-              )}
-            </div>
+            <input type="number" min={1} max={200} value={totalCount}
+              onChange={e => setTotalCount(Math.max(1, Number(e.target.value) || 0))}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontFamily:'var(--font)', fontSize:14, color:'var(--text)', outline:'none', boxSizing:'border-box' }}
+            />
           </div>
 
           <BtnPrimary onClick={assign} style={{ height:44 }} disabled={loading}>
@@ -1288,42 +1282,6 @@ function ExamSheet({ toast, onNavigate }) {
             {loading ? '배분 중...' : (manualMode ? '수동 배분' : '자동 배분')}
           </BtnPrimary>
         </div>
-
-        <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:14 }}>
-          <span style={{ fontSize:12, fontWeight:600, color:'var(--text-muted)' }}>수동 배분</span>
-          <button
-            onClick={() => setManualMode(m => !m)}
-            style={{ border:`1.5px solid ${manualMode ? 'var(--accent)' : 'var(--border)'}`, background: manualMode ? 'var(--accent-light)' : 'white', color: manualMode ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'3px 10px', fontFamily:'var(--font)', fontSize:11, fontWeight: manualMode ? 700 : 400, cursor:'pointer' }}
-          >{manualMode ? 'ON' : 'OFF'}</button>
-          {!manualMode && (
-            <span style={{ fontSize:11, color:'var(--text-muted)' }}>
-              자동 배분: 상 {Math.round(totalCount*0.28)}·중 {Math.round(totalCount*0.40)}·하 {Math.round(totalCount*0.32)}문항 (예상)
-            </span>
-          )}
-        </div>
-
-        {manualMode && (
-          <div style={{ marginTop:12, display:'flex', alignItems:'center', gap:16, flexWrap:'wrap' }}>
-            {[
-              ['상', manualUpper, setManualUpper, '#b91c1c', '#fee2e2'],
-              ['중', manualMid,   setManualMid,   '#b45309', '#fef3c7'],
-              ['하', manualLow,   setManualLow,   '#065f46', '#d1fae5'],
-            ].map(([label, val, setter, color, bg]) => (
-              <div key={label} style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, background:bg, color, minWidth:24, textAlign:'center' }}>{label}</span>
-                <input type="number" min={0} max={totalCount} value={val}
-                  onChange={e => setter(Math.max(0, Math.min(totalCount, Number(e.target.value))))}
-                  style={{ width:56, border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:13, textAlign:'center', outline:'none' }}
-                />
-                <span style={{ fontSize:11, color:'var(--text-muted)' }}>문항</span>
-              </div>
-            ))}
-            <span style={{ fontSize:11, color: (manualUpper+manualMid+manualLow) === totalCount ? 'var(--success)' : 'var(--danger)', fontWeight:600 }}>
-              합계: {manualUpper+manualMid+manualLow} / {totalCount}문항
-              {(manualUpper+manualMid+manualLow) !== totalCount && ' ← 총 문항수와 맞춰주세요'}
-            </span>
-          </div>
-        )}
 
         {questions && (
           <div style={{ marginTop:14, fontSize:11, color:'var(--text-muted)', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, padding:'8px 10px' }}>
@@ -1337,6 +1295,67 @@ function ExamSheet({ toast, onNavigate }) {
             )}
           </div>
         )}
+      </Card>
+
+      <Card title="출제 옵션 관리" style={{ flexShrink:0 }}>
+        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)' }}>출제 횟수 제한</span>
+              <button
+                onClick={() => setExcludeFrequent(v => !v)}
+                style={{ border:`1.5px solid ${excludeFrequent ? 'var(--accent)' : 'var(--border)'}`, background: excludeFrequent ? 'var(--accent-light)' : 'white', color: excludeFrequent ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'3px 10px', fontFamily:'var(--font)', fontSize:11, fontWeight: excludeFrequent ? 700 : 400, cursor:'pointer' }}
+              >{excludeFrequent ? 'ON' : 'OFF'}</button>
+            </div>
+            {excludeFrequent && (
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10 }}>
+                <input type="number" min={1} max={999} value={maxExamCount}
+                  onChange={e => setMaxExamCount(Math.max(1, Number(e.target.value) || 0))}
+                  style={{ width:80, height:36, border:'1.5px solid var(--border)', borderRadius:6, padding:'0 10px', fontFamily:'var(--font)', fontSize:13, textAlign:'center', outline:'none' }}
+                />
+                <span style={{ fontSize:11, color:'var(--text-muted)' }}>회 이상 출제된 문제는 제외</span>
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)' }}>수동 배분</span>
+              <button
+                onClick={() => setManualMode(m => !m)}
+                style={{ border:`1.5px solid ${manualMode ? 'var(--accent)' : 'var(--border)'}`, background: manualMode ? 'var(--accent-light)' : 'white', color: manualMode ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'3px 10px', fontFamily:'var(--font)', fontSize:11, fontWeight: manualMode ? 700 : 400, cursor:'pointer' }}
+              >{manualMode ? 'ON' : 'OFF'}</button>
+              {!manualMode && (
+                <span style={{ fontSize:11, color:'var(--text-muted)' }}>
+                  자동 배분: 상 {Math.round(totalCount*0.28)}·중 {Math.round(totalCount*0.40)}·하 {Math.round(totalCount*0.32)}문항 (예상)
+                </span>
+              )}
+            </div>
+
+            {manualMode && (
+              <div style={{ marginTop:10, display:'flex', alignItems:'center', gap:16, flexWrap:'wrap' }}>
+                {[
+                  ['상', manualUpper, setManualUpper, '#b91c1c', '#fee2e2'],
+                  ['중', manualMid,   setManualMid,   '#b45309', '#fef3c7'],
+                  ['하', manualLow,   setManualLow,   '#065f46', '#d1fae5'],
+                ].map(([label, val, setter, color, bg]) => (
+                  <div key={label} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, background:bg, color, minWidth:24, textAlign:'center' }}>{label}</span>
+                    <input type="number" min={0} max={totalCount} value={val}
+                      onChange={e => setter(Math.max(0, Math.min(totalCount, Number(e.target.value))))}
+                      style={{ width:56, border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:13, textAlign:'center', outline:'none' }}
+                    />
+                    <span style={{ fontSize:11, color:'var(--text-muted)' }}>문항</span>
+                  </div>
+                ))}
+                <span style={{ fontSize:11, color: (manualUpper+manualMid+manualLow) === totalCount ? 'var(--success)' : 'var(--danger)', fontWeight:600 }}>
+                  합계: {manualUpper+manualMid+manualLow} / {totalCount}문항
+                  {(manualUpper+manualMid+manualLow) !== totalCount && ' ← 총 문항수와 맞춰주세요'}
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
       </Card>
 
       {questions && (
@@ -2546,7 +2565,7 @@ const NAV_META = {
   'q-generate':   { bc:['홈','문제 관리','문제 생성'],             title:'문제 생성' },
   'q-review':     { bc:['홈','문제 관리','검토·검증'],             title:'검토 · 검증' },
   'q-bank':       { bc:['홈','문제 관리','문제은행'],              title:'문제은행' },
-  'exam-sheet':   { bc:['홈','시험 관리','시험지 생성'],           title:'시험지 생성' },
+  'exam-sheet':   { bc:['홈','시험 관리','시험지 생성·관리'],      title:'시험지 생성·관리' },
   'exam-assign':  { bc:['홈','시험 관리','시험 생성·관리'],         title:'시험 생성·관리' },
   'exam-status':  { bc:['홈','시험 관리','응시 현황'],             title:'응시 현황' },
   history:        { bc:['홈','응시 이력'],                         title:'응시 이력' },
@@ -2592,7 +2611,7 @@ export default function Admin() {
       { id:'q-bank',     icon:'book',  label:'문제은행' },
     ]},
     { id:'exam-manage', icon:'file',  label:'시험 관리', sub:[
-      { id:'exam-sheet',  icon:'file',  label:'시험지 생성' },
+      { id:'exam-sheet',  icon:'file',  label:'시험지 생성·관리' },
       { id:'exam-assign', icon:'users', label:'시험 생성·관리' },
       { id:'exam-status', icon:'chart', label:'응시 현황' },
     ]},
