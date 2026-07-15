@@ -1047,6 +1047,14 @@ function ExamSheet({ toast, onNavigate }) {
   const [selectedIdx, setSelectedIdx] = useState(0)
 
   useEffect(() => {
+    const upper = Math.round(totalCount * 0.28)
+    const mid = Math.round(totalCount * 0.40)
+    setManualUpper(upper)
+    setManualMid(mid)
+    setManualLow(Math.max(0, totalCount - upper - mid))
+  }, [totalCount])
+
+  useEffect(() => {
     apiFetch('GET', '/api/admin/teams').then(d => setTeams(d.teams || [])).catch(() => {})
   }, [])
 
@@ -1232,8 +1240,8 @@ function ExamSheet({ toast, onNavigate }) {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:20, height:'100%', minHeight:0 }}>
       <Card title="시험지 설정" style={{ flexShrink:0, overflow:'visible' }}>
-        <div style={{ display:'grid', gridTemplateColumns:'1.3fr 1.3fr 1.3fr auto', gap:12, alignItems:'end' }}>
-          <div>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'flex-start' }}>
+          <div style={{ flex:'2 1 200px' }}>
             <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험지 이름</label>
             <input
               type="text"
@@ -1244,14 +1252,14 @@ function ExamSheet({ toast, onNavigate }) {
             />
           </div>
 
-          <div>
+          <div style={{ flex:'0 0 100px' }}>
             <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>대상 팀</label>
             <div style={{ position:'relative' }}>
               <button
                 type="button"
                 onClick={() => setTeamDropdownOpen(o => !o)}
                 onBlur={() => setTimeout(() => setTeamDropdownOpen(false), 150)}
-                style={{ width:'100%', height:44, display:'flex', alignItems:'center', justifyContent:'space-between', border:`1px solid ${teamDropdownOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, padding:'0 12px', background:'white', fontFamily:'var(--font)', fontSize:14, color:'var(--text)', cursor:'pointer', boxSizing:'border-box' }}
+                style={{ width:'100%', height:44, display:'flex', alignItems:'center', justifyContent:'space-between', border:`1px solid ${teamDropdownOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, padding:'0 10px', background:'white', fontFamily:'var(--font)', fontSize:14, color:'var(--text)', cursor:'pointer', boxSizing:'border-box' }}
               >
                 <span>{teamOpts.find(([val]) => val === team)?.[1] || team}</span>
                 <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-muted)', transform: teamDropdownOpen ? 'rotate(180deg)' : 'none', transition:'transform .15s', flexShrink:0 }}><polyline points="6 9 12 15 18 9"/></svg>
@@ -1269,18 +1277,74 @@ function ExamSheet({ toast, onNavigate }) {
             </div>
           </div>
 
-          <div>
+          <div style={{ flex:'0 0 80px' }}>
             <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>총 문항 수</label>
             <input type="number" min={1} max={200} value={totalCount}
               onChange={e => setTotalCount(Math.max(1, Number(e.target.value) || 0))}
-              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontFamily:'var(--font)', fontSize:14, color:'var(--text)', outline:'none', boxSizing:'border-box' }}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 10px', fontFamily:'var(--font)', fontSize:14, color:'var(--text)', outline:'none', boxSizing:'border-box' }}
             />
           </div>
 
-          <BtnPrimary onClick={assign} style={{ height:44 }} disabled={loading}>
-            <Icon name="refresh" size={14} style={{ color:'white' }} />
-            {loading ? '배분 중...' : (manualMode ? '수동 배분' : '자동 배분')}
-          </BtnPrimary>
+          <div style={{ flex:'0 0 190px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)' }}>출제 횟수 제한</label>
+              <button
+                onClick={() => setExcludeFrequent(v => !v)}
+                style={{ border:`1.5px solid ${excludeFrequent ? 'var(--accent)' : 'var(--border)'}`, background: excludeFrequent ? 'var(--accent-light)' : 'white', color: excludeFrequent ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'2px 9px', fontFamily:'var(--font)', fontSize:11, fontWeight: excludeFrequent ? 700 : 400, cursor:'pointer', flexShrink:0 }}
+              >{excludeFrequent ? 'ON' : 'OFF'}</button>
+            </div>
+            <input type="number" min={1} max={999} value={maxExamCount}
+              readOnly={!excludeFrequent}
+              onChange={e => setMaxExamCount(Math.max(1, Number(e.target.value) || 0))}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 10px', fontFamily:'var(--font)', fontSize:14, color: excludeFrequent ? 'var(--text)' : 'var(--text-light)', outline:'none', boxSizing:'border-box', background: excludeFrequent ? 'white' : 'var(--bg)', cursor: excludeFrequent ? 'text' : 'default' }}
+            />
+            <p style={{ fontSize:10, color:'var(--text-muted)', margin:'4px 0 0' }}>회 이상 출제된 문제는 제외</p>
+          </div>
+
+          <div style={{ flex:'1 1 240px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)' }}>수동 배분</label>
+              <button
+                onClick={() => setManualMode(m => !m)}
+                style={{ border:`1.5px solid ${manualMode ? 'var(--accent)' : 'var(--border)'}`, background: manualMode ? 'var(--accent-light)' : 'white', color: manualMode ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'2px 9px', fontFamily:'var(--font)', fontSize:11, fontWeight: manualMode ? 700 : 400, cursor:'pointer', flexShrink:0 }}
+              >{manualMode ? 'ON' : 'OFF'}</button>
+            </div>
+
+            <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+              {[
+                ['상', manualUpper, setManualUpper, '#b91c1c', '#fee2e2'],
+                ['중', manualMid,   setManualMid,   '#b45309', '#fef3c7'],
+                ['하', manualLow,   setManualLow,   '#065f46', '#d1fae5'],
+              ].map(([label, val, setter, color, bg]) => (
+                <div key={label} style={{ display:'flex', alignItems:'center', gap:8 }}>
+                  <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, background:bg, color, minWidth:24, textAlign:'center' }}>{label}</span>
+                  <input type="number" min={0} max={totalCount} value={val}
+                    readOnly={!manualMode}
+                    onChange={e => setter(Math.max(0, Math.min(totalCount, Number(e.target.value))))}
+                    style={{ width:56, height:36, border:'1.5px solid var(--border)', borderRadius:6, padding:'0 8px', fontFamily:'var(--font)', fontSize:13, textAlign:'center', outline:'none', background: manualMode ? 'white' : 'var(--bg)', color: manualMode ? 'var(--text)' : 'var(--text-light)', cursor: manualMode ? 'text' : 'default' }}
+                  />
+                  <span style={{ fontSize:11, color:'var(--text-muted)' }}>문항</span>
+                </div>
+              ))}
+              <span style={{ fontSize:11, color: (manualUpper+manualMid+manualLow) === totalCount ? 'var(--success)' : 'var(--danger)', fontWeight:600 }}>
+                합계: {manualUpper+manualMid+manualLow} / {totalCount}문항
+                {manualMode && (manualUpper+manualMid+manualLow) !== totalCount && ' ← 총 문항수와 맞춰주세요'}
+              </span>
+            </div>
+            {!manualMode && (
+              <p style={{ fontSize:10, color:'var(--text-muted)', margin:'4px 0 0' }}>
+                OFF 상태에서는 위 비율대로 자동 배분됩니다. 총 문항 수를 바꾸면 비율에 맞춰 자동으로 갱신됩니다.
+              </p>
+            )}
+          </div>
+
+          <div style={{ flex:'0 0 auto' }}>
+            <label style={{ fontSize:13, fontWeight:600, display:'block', marginBottom:6, visibility:'hidden' }}>배분</label>
+            <BtnPrimary onClick={assign} style={{ height:44 }} disabled={loading}>
+              <Icon name="refresh" size={14} style={{ color:'white' }} />
+              {loading ? '배분 중...' : (manualMode ? '수동 배분' : '자동 배분')}
+            </BtnPrimary>
+          </div>
         </div>
 
         {questions && (
@@ -1296,86 +1360,6 @@ function ExamSheet({ toast, onNavigate }) {
           </div>
         )}
       </Card>
-
-      <Card title="출제 옵션 관리" style={{ flexShrink:0 }}>
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          <div>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <span style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)' }}>출제 횟수 제한</span>
-              <button
-                onClick={() => setExcludeFrequent(v => !v)}
-                style={{ border:`1.5px solid ${excludeFrequent ? 'var(--accent)' : 'var(--border)'}`, background: excludeFrequent ? 'var(--accent-light)' : 'white', color: excludeFrequent ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'3px 10px', fontFamily:'var(--font)', fontSize:11, fontWeight: excludeFrequent ? 700 : 400, cursor:'pointer' }}
-              >{excludeFrequent ? 'ON' : 'OFF'}</button>
-            </div>
-            {excludeFrequent && (
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:10 }}>
-                <input type="number" min={1} max={999} value={maxExamCount}
-                  onChange={e => setMaxExamCount(Math.max(1, Number(e.target.value) || 0))}
-                  style={{ width:80, height:36, border:'1.5px solid var(--border)', borderRadius:6, padding:'0 10px', fontFamily:'var(--font)', fontSize:13, textAlign:'center', outline:'none' }}
-                />
-                <span style={{ fontSize:11, color:'var(--text-muted)' }}>회 이상 출제된 문제는 제외</span>
-              </div>
-            )}
-          </div>
-
-          <div>
-            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <span style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)' }}>수동 배분</span>
-              <button
-                onClick={() => setManualMode(m => !m)}
-                style={{ border:`1.5px solid ${manualMode ? 'var(--accent)' : 'var(--border)'}`, background: manualMode ? 'var(--accent-light)' : 'white', color: manualMode ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'3px 10px', fontFamily:'var(--font)', fontSize:11, fontWeight: manualMode ? 700 : 400, cursor:'pointer' }}
-              >{manualMode ? 'ON' : 'OFF'}</button>
-              {!manualMode && (
-                <span style={{ fontSize:11, color:'var(--text-muted)' }}>
-                  자동 배분: 상 {Math.round(totalCount*0.28)}·중 {Math.round(totalCount*0.40)}·하 {Math.round(totalCount*0.32)}문항 (예상)
-                </span>
-              )}
-            </div>
-
-            {manualMode && (
-              <div style={{ marginTop:10, display:'flex', alignItems:'center', gap:16, flexWrap:'wrap' }}>
-                {[
-                  ['상', manualUpper, setManualUpper, '#b91c1c', '#fee2e2'],
-                  ['중', manualMid,   setManualMid,   '#b45309', '#fef3c7'],
-                  ['하', manualLow,   setManualLow,   '#065f46', '#d1fae5'],
-                ].map(([label, val, setter, color, bg]) => (
-                  <div key={label} style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, background:bg, color, minWidth:24, textAlign:'center' }}>{label}</span>
-                    <input type="number" min={0} max={totalCount} value={val}
-                      onChange={e => setter(Math.max(0, Math.min(totalCount, Number(e.target.value))))}
-                      style={{ width:56, border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:13, textAlign:'center', outline:'none' }}
-                    />
-                    <span style={{ fontSize:11, color:'var(--text-muted)' }}>문항</span>
-                  </div>
-                ))}
-                <span style={{ fontSize:11, color: (manualUpper+manualMid+manualLow) === totalCount ? 'var(--success)' : 'var(--danger)', fontWeight:600 }}>
-                  합계: {manualUpper+manualMid+manualLow} / {totalCount}문항
-                  {(manualUpper+manualMid+manualLow) !== totalCount && ' ← 총 문항수와 맞춰주세요'}
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      </Card>
-
-      {questions && (
-        <Card title="시험지 저장" style={{ flexShrink:0 }}>
-          <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-            <button onClick={handleSave} style={{ background:'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'10px 18px', fontFamily:'var(--font)', fontSize:13, fontWeight:700, cursor:'pointer' }}>
-              시험지 저장
-            </button>
-            <button onClick={handlePdf} style={{ border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 18px', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>
-              PDF 저장
-            </button>
-            <button onClick={handleHtmlSave} style={{ border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 18px', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>
-              HTML 저장
-            </button>
-            <button onClick={() => onNavigate('q-bank')} style={{ border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:7, padding:'9px 18px', fontFamily:'var(--font)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-              문제은행으로 이동
-            </button>
-          </div>
-        </Card>
-      )}
 
       {!questions ? (
         <Card style={{ flex:1, minHeight:0 }}>
@@ -1464,37 +1448,56 @@ function ExamSheet({ toast, onNavigate }) {
             </div>
           </Card>
 
-          <Card
-            title="문제 미리보기"
-            style={{ height:'100%', display:'flex', flexDirection:'column', marginBottom:0 }}
-            bodyStyle={{ flex:1, minHeight:0, overflowY:'auto' }}
-          >
-            {!selected ? (
-              <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>왼쪽에서 문제를 선택하세요.</p>
-            ) : (
-              <div>
-                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
-                  <span style={{ fontSize:12, color:'var(--text-muted)' }}>{selected.id || selected.question_id} · {selected.category}</span>
-                  <Badge type={selected.difficulty === '상' ? 'danger' : selected.difficulty === '하' ? 'success' : 'warning'}>{selected.difficulty || '중'}</Badge>
-                </div>
-                <div style={{ fontSize:16, fontWeight:700, color:'var(--text)', lineHeight:1.6, marginBottom:20 }}>{selected.question}</div>
-                <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-                  {['A','B','C','D'].map(k => {
-                    const optText = selected.options?.[k]
-                    if (!optText) return null
-                    const isAnswer = selected.answer === k
-                    return (
-                      <div key={k} style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 14px', borderRadius:8, border:`1.5px solid ${isAnswer ? 'var(--success)' : 'var(--border)'}`, background: isAnswer ? 'var(--success-light)' : 'white' }}>
-                        <span style={{ width:24, height:24, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, flexShrink:0, background: isAnswer ? 'var(--success)' : '#F1F5F9', color: isAnswer ? 'white' : 'var(--text-muted)' }}>{k}</span>
-                        <span style={{ fontSize:14, color:'var(--text)', flex:1 }}>{optText}</span>
-                        {isAnswer && <Icon name="check" size={16} style={{ color:'var(--success)', flexShrink:0 }} />}
-                      </div>
-                    )
-                  })}
-                </div>
+          <div style={{ display:'flex', flexDirection:'column', gap:16, height:'100%', minHeight:0 }}>
+            <Card title="시험지 저장" style={{ flexShrink:0, marginBottom:0 }}>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <button onClick={handleSave} style={{ background:'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'9px 14px', fontFamily:'var(--font)', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                  시험지 저장
+                </button>
+                <button onClick={handlePdf} style={{ border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'8px 14px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer' }}>
+                  PDF 저장
+                </button>
+                <button onClick={handleHtmlSave} style={{ border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'8px 14px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer' }}>
+                  HTML 저장
+                </button>
+                <button onClick={() => onNavigate('q-bank')} style={{ border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:7, padding:'8px 14px', fontFamily:'var(--font)', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+                  문제은행으로 이동
+                </button>
               </div>
-            )}
-          </Card>
+            </Card>
+
+            <Card
+              title="문제 미리보기"
+              style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', marginBottom:0 }}
+              bodyStyle={{ flex:1, minHeight:0, overflowY:'auto' }}
+            >
+              {!selected ? (
+                <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>왼쪽에서 문제를 선택하세요.</p>
+              ) : (
+                <div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
+                    <span style={{ fontSize:12, color:'var(--text-muted)' }}>{selected.id || selected.question_id} · {selected.category}</span>
+                    <Badge type={selected.difficulty === '상' ? 'danger' : selected.difficulty === '하' ? 'success' : 'warning'}>{selected.difficulty || '중'}</Badge>
+                  </div>
+                  <div style={{ fontSize:16, fontWeight:700, color:'var(--text)', lineHeight:1.6, marginBottom:20 }}>{selected.question}</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                    {['A','B','C','D'].map(k => {
+                      const optText = selected.options?.[k]
+                      if (!optText) return null
+                      const isAnswer = selected.answer === k
+                      return (
+                        <div key={k} style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 14px', borderRadius:8, border:`1.5px solid ${isAnswer ? 'var(--success)' : 'var(--border)'}`, background: isAnswer ? 'var(--success-light)' : 'white' }}>
+                          <span style={{ width:24, height:24, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, flexShrink:0, background: isAnswer ? 'var(--success)' : '#F1F5F9', color: isAnswer ? 'white' : 'var(--text-muted)' }}>{k}</span>
+                          <span style={{ fontSize:14, color:'var(--text)', flex:1 }}>{optText}</span>
+                          {isAnswer && <Icon name="check" size={16} style={{ color:'var(--success)', flexShrink:0 }} />}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
         </div>
       )}
     </div>
