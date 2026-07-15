@@ -248,13 +248,17 @@ def override_difficulty(question_id: str, new_difficulty: str, reason_code: str 
         raise HTTPException(status_code=404, detail="문제를 찾을 수 없습니다.")
 
     ai_difficulty = q.get("difficulty_ai") or q.get("difficulty_init", "중")
-    log = []
+    # 직전 판정 이력 2건을 실제로 불러와 이번 건과 합쳐 3연속 스트릭을 이어간다.
+    # (예전에는 매번 빈 리스트를 새로 넘겨 auto_confirmed가 절대 True가 될 수 없었음)
+    recent_feedback = fb_repo.list_recent_feedback(limit=2)  # newest-first
+    log = [r["ai_difficulty"] != r["admin_difficulty"] for r in reversed(recent_feedback)]
     result = update_difficulty_from_feedback(question_id, ai_difficulty, new_difficulty, log)
 
     q_repo.update_question(question_id, {"admin_override": new_difficulty})
 
     fb_repo.append_feedback({
         "question_id": question_id,
+        "question_text": q.get("question", ""),
         "ai_difficulty": ai_difficulty,
         "admin_difficulty": new_difficulty,
         "reason_code": reason_code,
@@ -279,7 +283,7 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
 
     category = TEAM_KEY_MAP.get(team_code, team_code)  # pool_key — 문제 저장 위치(add_question)에 사용
     category_label = _category_label_for_pool(category)  # 공통/팀별/환경안전/일반상식 — 문제의 category 필드·게이트 검증·프론트 필터에 사용
-    q_repo, _, _ = _get_repos()
+    q_repo, _, fb_repo = _get_repos()
 
     # Drive에서 스캔해둔 교육자료(공통+팀별)를 기본 자료로 사용하고,
     # 관리자가 직접 붙여넣은 텍스트는 이번 출제에 한해 보충하는 내용으로 뒤에 덧붙인다.
@@ -307,9 +311,27 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
     except Exception:
         pass  # 통계 조회 실패는 문제 생성 자체를 막지 않음
 
+    # 관리자가 AI 난이도 판정을 재조정한 최근 이력을 프롬프트에 보정 예시로 전달해
+    # 다음 생성부터 난이도 판정 정확도가 점차 개선되도록 한다.
+    difficulty_corrections = []
+    try:
+        recent_feedback = fb_repo.list_recent_feedback(limit=10)
+        difficulty_corrections = [
+            {
+                "question_text": r["question_text"],
+                "ai_difficulty": r["ai_difficulty"],
+                "admin_difficulty": r["admin_difficulty"],
+            }
+            for r in recent_feedback
+            if r.get("question_text") and r.get("ai_difficulty") != r.get("admin_difficulty")
+        ]
+    except Exception:
+        pass  # 피드백 조회 실패는 문제 생성 자체를 막지 않음
+
     try:
         questions = generate_questions_from_material(
-            material_text, category_label, count, difficulty_hint, rejected_examples, overused_questions
+            material_text, category_label, count, difficulty_hint,
+            rejected_examples, overused_questions, difficulty_corrections,
         )
     except Exception as e:
         provider = os.getenv("AI_PROVIDER", "mock")

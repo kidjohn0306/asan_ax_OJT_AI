@@ -77,7 +77,7 @@ Vercel 배포용 키는 Vercel 대시보드 Environment Variables에서 설정 (
 ### 저장소 백엔드 선택 (`STORAGE_BACKEND`)
 - `local` (기본값) — `mock_data/*.json` 파일에 저장. Vercel 재배포 시 초기화됨
 - `sheets` — Google Sheets에 저장. `GOOGLE_SHEETS_ID` 필요 ✅ **권장 (Drive 할당량 이슈 해결)**
-  - `results` + `snapshots` + `exam_sets` + `teams` + `question_stats` + `question_bank` 탭 자동 생성
+  - `results` + `snapshots` + `exam_sets` + `teams` + `question_stats` + `question_bank` + `difficulty_feedback` 탭 자동 생성
   - `question_bank`: 문제은행 데이터(공통/팀별/환경안전/일반상식 문제 전체). 기존 `mock_data/questions.json` 데이터는
     `backend/scripts/migrate_questions_to_sheets.py`로 1회 이관 가능
   - 서비스 계정에 스프레드시트 편집자 권한 필요
