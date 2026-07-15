@@ -58,6 +58,9 @@ class CreateExamSetRequest(BaseModel):
 class FromPaperRequest(BaseModel):
     exam_set_id: str
     name: Optional[str] = None
+    exam_datetime: Optional[str] = None
+    pass_score: Optional[int] = Field(None, ge=0, le=100)
+    duration_min: Optional[int] = Field(None, ge=1, le=600)
 
 
 class AssignUserRequest(BaseModel):
@@ -70,6 +73,10 @@ class ScheduleExamRequest(BaseModel):
 
 class PassScoreRequest(BaseModel):
     pass_score: int = Field(ge=0, le=100)
+
+
+class DurationRequest(BaseModel):
+    duration_min: int = Field(ge=1, le=600)
 
 
 class CreateTeamRequest(BaseModel):
@@ -215,7 +222,10 @@ def list_question_papers(_: dict = Depends(require_admin)):
 @router.post("/exam-sets/from-paper")
 def create_exam_round_from_paper(body: FromPaperRequest, _: dict = Depends(require_admin)):
     from services.admin_service import create_exam_round_from_paper as _create
-    return _create(body.exam_set_id, body.name)
+    return _create(
+        body.exam_set_id, body.name,
+        exam_datetime=body.exam_datetime, pass_score=body.pass_score, duration_min=body.duration_min,
+    )
 
 
 @router.post("/exam-sets/{exam_id}/assign")
@@ -248,6 +258,12 @@ def set_pass_score(exam_id: str, body: PassScoreRequest, _: dict = Depends(requi
     return _set(exam_id, body.pass_score)
 
 
+@router.patch("/exam-sets/{exam_id}/duration")
+def set_exam_duration(exam_id: str, body: DurationRequest, _: dict = Depends(require_admin)):
+    from services.admin_service import set_exam_duration as _set
+    return _set(exam_id, body.duration_min)
+
+
 @router.delete("/exam-sets/{exam_id}")
 def delete_exam_set(exam_id: str, _: dict = Depends(require_admin)):
     from services.admin_service import delete_exam_set as _delete
@@ -264,12 +280,6 @@ def get_exam_set_results(exam_id: str, _: dict = Depends(require_admin)):
 def get_exam_set_questions(exam_id: str, _: dict = Depends(require_admin)):
     from services.admin_service import get_exam_set_questions as _get
     return _get(exam_id)
-
-
-@router.post("/seed-mock-data")
-def seed_mock_data(_: dict = Depends(require_admin)):
-    from services.admin_service import seed_mock_data as _seed
-    return _seed()
 
 
 @router.get("/results-analysis")
