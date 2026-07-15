@@ -33,6 +33,7 @@ def generate_questions_from_material(
     difficulty_hint: str = "중",
     rejected_examples: list[dict] = None,
     overused_questions: list[str] = None,
+    difficulty_corrections: list[dict] = None,
 ) -> list[dict]:
     api_key = os.getenv("CLAUDE_API_KEY")
     if not api_key:
@@ -40,7 +41,7 @@ def generate_questions_from_material(
 
     prompt = build_prompt(
         truncate_material(material_text), category, count, difficulty_hint,
-        rejected_examples or [], overused_questions or [],
+        rejected_examples or [], overused_questions or [], difficulty_corrections or [],
     )
     raw = _call_api(prompt, api_key)
     questions_raw = parse_response(raw, "Claude")

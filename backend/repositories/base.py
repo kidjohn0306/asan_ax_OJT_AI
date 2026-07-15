@@ -53,6 +53,9 @@ class FeedbackRepository(ABC):
     @abstractmethod
     def append_feedback(self, record: dict) -> None: ...
 
+    @abstractmethod
+    def list_recent_feedback(self, limit: int = 20) -> list: ...
+
 
 class ExamSetRepository(ABC):
     @abstractmethod

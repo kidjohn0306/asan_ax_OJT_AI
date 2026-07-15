@@ -204,6 +204,9 @@ class LocalFeedbackRepository(FeedbackRepository):
     _file = MOCK_DIR / "difficulty_feedback.jsonl"
     _tmp_file = Path("/tmp/difficulty_feedback.jsonl")
 
+    def _active_file(self) -> Path:
+        return self._tmp_file if self._tmp_file.exists() else self._file
+
     def append_feedback(self, record: dict) -> None:
         record.setdefault("recorded_at", datetime.now(timezone.utc).isoformat())
         try:
@@ -212,6 +215,14 @@ class LocalFeedbackRepository(FeedbackRepository):
         except OSError:
             with open(self._tmp_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def list_recent_feedback(self, limit: int = 20) -> list:
+        target = self._active_file()
+        if not target.exists():
+            return []
+        with open(target, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        return list(reversed(records[-limit:]))
 
 
 class LocalExamSetRepository(ExamSetRepository):
