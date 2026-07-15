@@ -250,6 +250,7 @@ class LocalExamSetRepository(ExamSetRepository):
         data.setdefault("assigned_users", [])
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
         data.setdefault("pass_score", 70)
+        data.setdefault("duration_min", 60)
         stored.setdefault("sets", []).append(data)
         self._save(stored)
         return data

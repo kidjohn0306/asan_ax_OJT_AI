@@ -35,7 +35,7 @@ def _fallback_on_error(local_cls):
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_TAB = "exam_sets"
-HEADERS = ["exam_set_id", "name", "team_code", "question_ids", "assigned_users", "created_at", "exam_datetime", "pass_score", "status", "created_by", "exam_id"]
+HEADERS = ["exam_set_id", "name", "team_code", "question_ids", "assigned_users", "created_at", "exam_datetime", "pass_score", "status", "created_by", "exam_id", "duration_min"]
 # 컬럼 문자 매핑 — 헤더 순서와 반드시 일치해야 한다.
 _COLUMNS = {h: chr(ord("A") + i) for i, h in enumerate(HEADERS)}
 
@@ -221,7 +221,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         """헤더를 제외한 데이터 행 반환 (raw list)."""
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A:K",
+            range=f"{SHEET_TAB}!A:L",
         ).execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -233,6 +233,10 @@ class SheetsExamSetRepository(ExamSetRepository):
             pass_score = int(_get(7)) if _get(7) else 70
         except ValueError:
             pass_score = 70
+        try:
+            duration_min = int(_get(11)) if _get(11) else 60
+        except ValueError:
+            duration_min = 60
         return {
             "exam_set_id": _get(0),
             "name": _get(1),
@@ -247,6 +251,7 @@ class SheetsExamSetRepository(ExamSetRepository):
             "status": _get(8) or "active",
             "created_by": _get(9),
             "exam_id": _get(10),
+            "duration_min": duration_min,
         }
 
     @staticmethod
@@ -263,6 +268,7 @@ class SheetsExamSetRepository(ExamSetRepository):
             data.get("status", "active"),
             data.get("created_by", ""),
             data.get("exam_id", ""),
+            str(data.get("duration_min", 60)),
         ]
 
     def _find_sheet_row(self, exam_id: str) -> int:
@@ -307,6 +313,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
         data.setdefault("exam_datetime", "")
         data.setdefault("pass_score", 70)
+        data.setdefault("duration_min", 60)
         data.setdefault("question_ids", [])
         data.setdefault("status", "active")
         data.setdefault("created_by", "")
