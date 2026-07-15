@@ -577,6 +577,7 @@ function QuestionGenerate({ toast, onNavigate }) {
 </html>`
 
     const win = window.open('', '_blank')
+    if (!win) { toast('팝업이 차단되어 PDF를 열 수 없습니다. 브라우저의 팝업 차단을 해제해주세요.', 'error'); return }
     win.document.write(html)
     win.document.close()
     win.focus()
@@ -1197,6 +1198,7 @@ function ExamSheet({ toast, onNavigate }) {
   function handlePdf() {
     if (!questions || questions.length === 0) { toast('먼저 문제를 배분해주세요.', 'error'); return }
     const win = window.open('', '_blank')
+    if (!win) { toast('팝업이 차단되어 PDF를 열 수 없습니다. 브라우저의 팝업 차단을 해제해주세요.', 'error'); return }
     win.document.write(buildExamHtml())
     win.document.close()
     win.focus()
