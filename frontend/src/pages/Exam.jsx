@@ -587,6 +587,7 @@ export default function Exam() {
         const data = await res.json()
         setResultId(data.result_id)
         if (data.name) setExamName(data.name)
+        if (data.duration_min) setTimerSeconds(data.duration_min * 60)
         const qs = data.questions.map(q => ({
           id: q.id, cat: q.category, diff: q.difficulty || '중',
           q: q.question, opts: [q.options.A, q.options.B, q.options.C, q.options.D], ans: -1,
