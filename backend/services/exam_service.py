@@ -256,8 +256,10 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
         # T1/T2/T3는 기존 team1/team2/team3 문제풀에 매핑(하위호환), 그 외 신규 팀은 team_code 자체를 풀 키로 사용
         team_key = TEAM_KEY_MAP.get(team_code, team_code)
 
-        # preview 모드는 approved+reviewing 포함, 실제 시험은 approved만
-        allowed = {"approved", "reviewing"} if preview else {"approved"}
+        # 시험지에 쓰일 문항 풀은 preview 여부와 무관하게 승인된 문제만 포함한다.
+        # (관리자 시험지 설정 화면도 이 preview 경로로 풀을 뽑는데, 승인되지 않은
+        # 문제가 섞이면 실제 저장(POST /api/admin/exam-sets) 시 409로 거부된다.)
+        allowed = {"approved"}
         pool = (
             [q for q in data.get("common",  []) if q.get("status") in allowed]
             + [q for q in data.get(team_key, []) if q.get("status") in allowed]
