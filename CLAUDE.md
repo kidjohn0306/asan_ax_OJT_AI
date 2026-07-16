@@ -2,9 +2,188 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Phase 3 문제 생성·검토 Dual Write 운영 계약
+
+Phase 3는 기존 `question_bank` 동작을 유지하면서 명시적으로 활성화된 경우에만
+`generation_jobs`, `question_candidates`, `gate_results`, `question_reviews`,
+`question_history`에 정규화 레코드를 함께 저장한다.
+
+기본값은 항상 Legacy-only다.
+
+```env
+OJT_SHEETS_SCHEMA_MODE=legacy
+OJT_USE_CANDIDATE_TAB=false
+OJT_USE_GATE_RESULTS_TAB=false
+```
+
+활성화 전 조건:
+
+- 운영본이 아닌 Google Sheets 복사본에 Phase 2 스키마를 적용한다.
+- `migrate_schema_v2.py` Dry-run의 Header blocking issue와 Primary Key issue가 모두 0인지 확인한다.
+- `question_candidates`, `generation_jobs`, `question_reviews`, `question_history`의 실제 Header가 canonical manifest와 일치하는지 확인한다.
+- Gate 기록까지 켜려면 `gate_results` Header도 일치해야 한다.
+
+권장 활성화 순서:
+
+```env
+# 1단계: Candidate/Job/Review/History 이중 기록
+OJT_SHEETS_SCHEMA_MODE=dual
+OJT_USE_CANDIDATE_TAB=true
+OJT_USE_GATE_RESULTS_TAB=false
+
+# 2단계: V01~V07 결과까지 이중 기록
+OJT_USE_GATE_RESULTS_TAB=true
+```
+
+- 생성 요청에는 재시도 중복을 막기 위해 `idempotency_key`를 전달한다.
+- 정규화 저장 실패 전에는 Legacy 문제를 저장하지 않으며 API는 `503`을 반환한다.
+- 정규화 저장 후 Legacy 저장이 실패하면 API는 `503`, 생성 Job은 가능한 경우 `PARTIAL_FAILED`가 된다.
+- 승인·반려는 `question_reviews`와 `question_history`, Candidate 상태를 먼저 기록한 다음 Legacy 상태를 변경한다.
+- `review_id`, `history_id`, `candidate_id`, `gate_result_id`는 재시도 시 같은 행을 가리키도록 안정적으로 생성한다.
+
+롤백은 데이터 삭제나 Sheet 제거 없이 플래그만 내린다.
+
+```env
+OJT_USE_GATE_RESULTS_TAB=false
+OJT_USE_CANDIDATE_TAB=false
+OJT_SHEETS_SCHEMA_MODE=legacy
+```
+
+롤백 후에도 이미 기록된 정규화 행은 보존한다. 운영본에 직접 Migration을 적용하거나
+정규화 행을 자동 삭제하지 않는다. V2 Read/UI 전환은 후속 Canary 단계 전까지 활성화하지 않는다.
+
+## Phase 4 시험·배정 Dual Write 운영 계약
+
+Phase 4는 기존 `exam_sets.question_ids`, `exam_sets.assigned_users`를 계속 사용하면서
+명시적으로 활성화된 경우에만 `exam_versions`, `exam_set_items`, `assignments`에도
+정규화 레코드를 함께 저장한다. 기존 `exam_sets`가 Canary 전까지 조회 원장이다.
+
+기본값은 항상 Legacy-only다.
+
+```env
+OJT_SHEETS_SCHEMA_MODE=legacy
+OJT_USE_FROZEN_EXAM=false
+OJT_USE_ASSIGNMENTS_TAB=false
+```
+
+활성화 전 조건:
+
+- 운영본이 아닌 Google Sheets 복사본에 Phase 2 스키마를 적용한다.
+- `exam_sets`, `exam_versions`, `exam_set_items`, `assignments`의 실제 Header가 canonical manifest와 일치하는지 확인한다.
+- Header, Primary Key, 참조 무결성 검사와 전체 회귀 테스트를 통과한다.
+- 기존 `evaluation_type`이 비어 있는 시험은 안전을 위해 `official`로 취급한다.
+
+활성화는 시험 동결과 배정을 분리해 다음 순서로 진행한다.
+
+```env
+# 1단계: 확정 시험 버전과 문항 Snapshot만 이중 기록
+OJT_SHEETS_SCHEMA_MODE=dual
+OJT_USE_FROZEN_EXAM=true
+OJT_USE_ASSIGNMENTS_TAB=false
+
+# 2단계: 정합성 확인 후 사용자 배정도 이중 기록
+OJT_USE_ASSIGNMENTS_TAB=true
+```
+
+- 현재 시험 생성 API 호출은 즉시 확정으로 처리한다. 별도 초안/확정 UI는 Phase 6에서 도입한다.
+- 시험은 승인된 문제만 사용하며 최대 100문항이다.
+- `question_scores`를 생략하면 총 100점을 양의 정수로 균등 배분하고 나머지는 앞 문항부터 1점씩 더한다.
+- 배점을 지정하면 문항 ID가 정확히 일치하고 모든 점수가 양의 정수이며 합계가 정확히 100이어야 한다.
+- 생성·회차 생성 재시도에는 같은 `idempotency_key`를 사용한다. 같은 키에 다른 불변 입력을 보내면 `409`를 반환한다.
+- `official` 시험은 사용자당 활성 배정 하나만 허용한다. 새 정식 시험 배정은 이전 정식 배정을 `cancelled`로 바꾸되 삭제하지 않는다.
+- `practice` 시험은 사용자당 여러 개를 동시에 배정할 수 있으며 정식 시험 및 다른 연습 시험 배정을 취소하지 않는다.
+- 승인된 사용자만 배정할 수 있고, 정규화 배정이 켜진 경우 확정된 시험 버전이 반드시 존재해야 한다.
+- 정규화 저장을 먼저 수행한다. 정규화 저장 실패 시 Legacy를 변경하지 않고 `503`을 반환한다.
+- 정규화 저장 후 Legacy 저장이 실패해도 성공으로 응답하지 않으며 `503`을 반환한다.
+- 배정·취소 행에는 JWT 관리자의 `sub`를 기록하고 재시도는 동일한 `assignment_id`를 갱신한다.
+
+롤백은 정규화 데이터를 삭제하지 않고 플래그만 역순으로 내린다.
+
+```env
+OJT_USE_ASSIGNMENTS_TAB=false
+OJT_USE_FROZEN_EXAM=false
+OJT_SHEETS_SCHEMA_MODE=legacy
+```
+
+롤백 후에도 `exam_versions`, `exam_set_items`, `assignments`의 기존 행은 보존한다.
+Sheet나 정규화 행을 삭제하지 않으며, 운영본 적용과 V2 Read 전환은 별도 승인된 Canary 단계에서만 수행한다.
+
+## Phase 5 결과 Dual Write 운영 계약
+
+Phase 5는 확정되어 사용자에게 배정된 시험에만 적용한다. 기존 동적 Legacy 시험은 기존 Snapshot 채점과
+`results` 저장 경로를 그대로 사용한다. 확정 시험은 배정된 `exam_version_id`와 `exam_set_items`의
+문항 Snapshot 및 문항별 점수를 기준으로 전체 문항을 채점한다.
+
+기본값은 항상 비활성 상태다.
+
+```env
+OJT_SHEETS_SCHEMA_MODE=legacy
+OJT_USE_FROZEN_EXAM=false
+OJT_USE_ASSIGNMENTS_TAB=false
+OJT_USE_RESULT_ANSWERS=false
+```
+
+운영본이 아닌 Google Sheets 복사본에서 Header, Primary Key, 기존 기능 회귀 테스트를 확인한 후 다음
+순서로 활성화한다.
+
+```env
+# 1단계: 확정 시험과 배정까지만 활성화
+OJT_SHEETS_SCHEMA_MODE=dual
+OJT_USE_FROZEN_EXAM=true
+OJT_USE_ASSIGNMENTS_TAB=true
+OJT_USE_RESULT_ANSWERS=false
+
+# 2단계: 문항별 답안과 최소 응시 상태 이중 기록 활성화
+OJT_USE_RESULT_ANSWERS=true
+```
+
+- 제출 API의 `submission_idempotency_key`는 선택값이며, 비어 있으면 `result_id`를 사용한다.
+- 같은 키와 같은 답안의 재시도는 기존 결과를 반환하고 행을 중복 기록하지 않는다.
+- 같은 키에 다른 답안을 보내거나 완료된 결과에 다른 키를 보내면 `409`를 반환한다.
+- 무응답 문항도 전체 문항 채점에 포함하고 `selected_choice`는 빈 값, 점수는 0점으로 기록한다.
+- 저장 순서는 `result_answers` → `exam_attempts(submitting)` → Legacy `results` →
+  `exam_attempts(submitted)` → `assignments.attempts_used`다.
+- 정규화 답안 저장이 실패하면 Legacy 결과를 저장하지 않는다. 이후 단계가 실패하면 `503`을 반환하며,
+  같은 요청 재시도로 이미 완료된 단계를 중복 기록하지 않고 남은 단계만 마친다.
+- 재시험은 새 배정과 새 응시 ID를 사용하며 완료된 결과를 덮어쓰지 않는다.
+
+문제가 발생하면 데이터나 Sheet를 삭제하지 않고 결과 플래그만 먼저 내린다.
+
+```env
+OJT_USE_RESULT_ANSWERS=false
+```
+
+이 상태에서는 기존 Legacy 결과 조회·저장을 유지한다. 추가 롤백이 필요할 때만 Phase 4 순서에 따라
+`OJT_USE_ASSIGNMENTS_TAB`, `OJT_USE_FROZEN_EXAM`, `OJT_SHEETS_SCHEMA_MODE`를 역순으로 내린다.
+이미 기록된 `result_answers`, `exam_attempts`, 확장 `results` 행은 감사와 복구를 위해 보존한다.
+
+## Phase 6A 관리자 UI 전환 운영 계약
+
+Phase 6A는 기존 관리자 기능을 `/admin/*` 업무 URL로 옮기는 호환 전환이다. 최신 `main`의 대시보드,
+Admin App Shell, 색상, 버튼과 카드 스타일을 기준으로 유지하며 사원용 `/exam` 흐름은 변경하지 않는다.
+
+- 좌측 `시험 관리` 메뉴는 `시험지 생성관리`, `시험 생성관리`, `응시 현황` 3개만 둔다.
+- 시험지 생성관리는 `/admin/exam-papers?tab=setup|list`를 사용한다. 목록 상태는 `q`, `team`, `usage`,
+  `page`, 상세는 `selected`, 수정본 원본은 `source` query로 보존한다.
+- 확정 시험지를 직접 수정하지 않는다. 수정은 원본 문항·순서·배점을 새 작성 폼에 채운 뒤 새 ID로
+  저장하는 Copy-on-Write이며, API 요청에 원본 ID를 새 시험의 식별자로 재사용하지 않는다.
+- 시험지 목록·상세·시험 관리·응시 현황은 실제 API만 사용한다. 실패를 Mock 데이터, 빈 성공 결과,
+  임의 집계로 대체하지 않는다.
+- 시험 생성관리는 `/admin/exams`와 `/admin/exams/:examId`를 선택 상태의 기준으로 삼는다. 정식 시험은
+  사용자당 활성 1개라서 새 배정 시 기존 정식만 자동 해제하고, 연습 시험은 여러 개의 활성 배정을 허용한다.
+- 문자열 `detail`과 객체형 `detail.message` 백엔드 오류를 보존해 표시한다. URL 선택이 바뀐 뒤 도착한
+  이전 시험·응시자 응답은 현재 상태를 덮어쓰지 않아야 한다.
+- 응시 현황은 `/admin/exams/live`, `/admin/exams/:examId/live`에서 10초 폴링한다. 요청을 중첩하지 않고,
+  최초 실패는 오류 화면으로, 후속 실패는 마지막 정상 Snapshot을 유지한 채 갱신 실패로 표시한다.
+- 전체 집계는 고유 배정자, 고유 제출자, 배정자 중 미제출자, 오류 상태의 고유 대상을 서로 구분한다.
+  시험별 상세는 배정자와 사번별 최신 결과를 합치며 결과만 있는 미배정 제출도 숨기지 않는다.
+- 현재 API에 없는 입장·이탈은 `정보 없음`, 잔여시간은 `집계 준비 중`, 해석 불가능한 일정은 `일정 미정`으로
+  표시한다. Phase 6A UI에는 강제 종료와 시간 연장을 구현하지 않는다.
+- 계획 URL에 API나 화면이 없으면 준비 중·사용 불가 상태를 정직하게 표시하고 가짜 기능을 만들지 않는다.
+
 ## 프로젝트 개요
 AI 기반 신입사원 OJT 교육 이해도 평가 시스템. FastAPI 백엔드 + Vite React 프론트엔드.
-현재 단계: **팀 관리·출제횟수 트래킹·CSV 업로드·대시보드 통계 구현 완료**
+현재 단계: **Phase 1~5 호환·Dual Write 기반과 Phase 6A 관리자 UI 호환 전환 구현 완료**
 
 ## 아키텍처
 
@@ -53,11 +232,18 @@ sys.path에 두 경로가 순서대로 추가돼야 정상 동작한다:
 ## 핵심 규칙
 
 ### 프론트엔드 수정 시
-`frontend/src/` 수정 후 반드시 빌드하고 dist도 커밋:
-```bash
-cd frontend && npm run build
-git add frontend/src/ frontend/dist/
+`frontend/src/` 수정 후 자동 테스트를 통과시키고, 모든 병렬 소스 작업이 끝난 최종 상태에서 일반 빌드를
+한 번 실행해 `dist`도 함께 커밋한다. 병렬 작업 중 격리 경로에 만든 검증용 빌드 산출물은 커밋하지 않는다.
+
+```powershell
+cd frontend
+npm test
+npm run build
+git add frontend/src frontend/dist
 ```
+
+해시가 붙은 번들 파일은 이전 파일 삭제, 새 파일 추가, `frontend/dist/index.html` 참조 변경을 한 세트로
+검토한다. 최종 빌드 전의 중간 `dist`를 부분적으로 스테이징하지 않는다.
 
 ### 환경변수
 `.env` 파일은 gitignore됨. 로컬 개발 시 `backend/.env` 생성:
@@ -170,8 +356,10 @@ cd frontend && npm install && npm run dev
 cd frontend && npm run preview
 ```
 
-이 저장소에는 자동화된 테스트 스위트와 린터 설정이 없다 (pytest/eslint 설정 파일 없음).
-변경 검증은 위 로컬 실행 방법으로 실제 플로우(로그인 → 시험 생성/응시 → 채점, 관리자 화면)를 직접 확인하는 방식에 의존한다.
+프론트엔드 단위·컴포넌트 테스트는 `frontend`에서 `npm test`로 실행한다. 백엔드 회귀 테스트는 저장소
+루트에서 `PYTHONPATH`에 `backend`와 루트를 포함한 뒤 `python -m unittest discover -s tests -t . -q`로
+실행한다. 자동 테스트와 빌드 성공 후에도 로그인, 시험지 생성·복사, 시험 배정, 응시 현황, 사원 응시
+흐름을 직접 확인하고 브라우저 콘솔 오류가 없는지 검증한다.
 
 ## 주의사항
 - API 키·시크릿을 코드에 하드코딩하지 말 것
@@ -186,3 +374,47 @@ cd frontend && npm run preview
 - `backend/requirements.txt` — 로컬 개발용
 
 **패키지 추가·변경 시 세 파일 모두 수정할 것.** 루트 `requirements.txt` 누락 시 Vercel에서 ModuleNotFoundError 발생.
+
+### 안전한 Sheets Migration
+
+두 Migration은 기본이 Dry-run이다.
+
+```powershell
+cd backend
+python scripts/migrate_exam_sets_pk.py
+python scripts/migrate_questions_to_sheets.py
+```
+
+출력과 대상 Spreadsheet ID를 확인한 뒤에만 적용한다.
+
+```powershell
+python scripts/migrate_exam_sets_pk.py --apply
+python scripts/migrate_questions_to_sheets.py --apply
+```
+
+### Phase 1 운영 안전 계약
+
+- 검증·운영: `OJT_STRICT_SHEETS_STORAGE=true`; Sheets 오류는 API 실패로 노출한다.
+- 로컬 개발: fallback이 필요할 때만 `OJT_STRICT_SHEETS_STORAGE=false`를 명시한다.
+- Migration은 기본 Dry-run이며 `--apply` 없이는 외부 Write를 수행하지 않는다.
+- 응시자 식별자는 JWT `sub`, `team`, `name`을 사용한다.
+- 시험 세트에는 `approved` 문제만 저장할 수 있다.
+
+### Phase 2 — 55-Sheet Schema 검증
+
+- 실제 기준은 `OJT_최종_Google_Sheets_관리자기능_통합설계.xlsx`의 55개 Sheet 행 1 Header다.
+- `schema_catalog`, `sheet_ranges`, `data_dictionary`가 실제 Header와 다르면 실제 Header를 따른다.
+- 기본 모드는 `OJT_SHEETS_SCHEMA_MODE=legacy`이며 신규 기능 Flag 7개는 모두 `false`다.
+- Schema Migration은 운영본에 적용할 수 없다. 명시적인 복사본 ID와 `--target-kind copy`가 필요하다.
+- Dry-run:
+
+```powershell
+cd backend
+python scripts/migrate_schema_v2.py --spreadsheet-id COPY_SPREADSHEET_ID
+```
+
+- Dry-run 결과의 blocking issue가 0건일 때만 복사본에 Header를 적용한다.
+
+```powershell
+python scripts/migrate_schema_v2.py --spreadsheet-id COPY_SPREADSHEET_ID --apply --target-kind copy
+```

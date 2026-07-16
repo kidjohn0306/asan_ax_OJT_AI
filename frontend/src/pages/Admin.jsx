@@ -1,6 +1,17 @@
-import { useState, useEffect, Fragment } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef, Fragment } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch, apiUpload, logout as apiLogout } from '../api'
+import AdminLayout from '../admin/components/AdminLayout'
+import { ADMIN_ROUTE_META } from '../admin/config/navigation'
+import ExamPaperPage from '../admin/pages/exam-papers/ExamPaperPage'
+import QuestionRoutePage from '../admin/pages/questions/QuestionRoutePage'
+import ResultRoutePage from '../admin/pages/results/ResultRoutePage'
+import SystemRoutePage from '../admin/pages/system/SystemRoutePage'
+import ExamManagementPage from '../admin/pages/exams/ExamManagementPage'
+import ExamLivePage from '../admin/pages/exams/ExamLivePage'
+import ExamLiveDetailPage from '../admin/pages/exams/ExamLiveDetailPage'
+import { PlannedGenerationRuns, PlannedQuestionBank, PlannedQuestionGeneration, PlannedQuestionReview } from '../admin/pages/questions/PlannedQuestionPages'
+import PlannedAuditLog from '../admin/pages/system/PlannedAuditLog'
 
 /* ── SVG Icon ──────────────────────────────────────────────── */
 function Icon({ name, size = 16, style }) {
@@ -21,8 +32,11 @@ function Icon({ name, size = 16, style }) {
     ai:       <><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
     swap:     <><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></>,
     trash:    <><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></>,
+    edit:     <><path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></>,
     up:       <><polyline points="18 15 12 9 6 15"/></>,
     down:     <><polyline points="6 9 12 15 18 9"/></>,
+    chevronLeft:  <><polyline points="15 18 9 12 15 6"/></>,
+    chevronRight: <><polyline points="9 18 15 12 9 6"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -73,32 +87,16 @@ function Badge({ type, children }) {
   )
 }
 
-function Card({ title, action, children, noPad }) {
+function Card({ title, action, children, noPad, style, bodyStyle }) {
   return (
-    <div style={{ background:'var(--card)', borderRadius:'var(--radius)', border:'1px solid var(--border)', marginBottom:16, overflow:'hidden' }}>
+    <div style={{ background:'var(--card)', borderRadius:'var(--radius)', border:'1px solid var(--border)', marginBottom:16, overflow:'hidden', ...style }}>
       {title && (
-        <div style={{ padding:'13px 20px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8 }}>
+        <div style={{ padding:'13px 20px', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8, flexShrink:0 }}>
           <span style={{ fontSize:14, fontWeight:700, color:'var(--text)' }}>{title}</span>
           {action}
         </div>
       )}
-      <div style={noPad ? {} : { padding:'20px' }}>{children}</div>
-    </div>
-  )
-}
-
-function StatCard({ iconName, iconColor, iconBg, label, value, unit }) {
-  return (
-    <div style={{ background:'var(--card)', borderRadius:'var(--radius)', border:'1px solid var(--border)', padding:20, display:'flex', alignItems:'flex-start', gap:14 }}>
-      <div style={{ width:44, height:44, borderRadius:10, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, background:iconBg }}>
-        <Icon name={iconName} size={19} style={{ color:iconColor }} />
-      </div>
-      <div>
-        <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:4, fontWeight:500 }}>{label}</div>
-        <div style={{ fontSize:28, fontWeight:800, color:'var(--text)', lineHeight:1, fontVariantNumeric:'tabular-nums' }}>
-          {value}<span style={{ fontSize:13, fontWeight:500, color:'var(--text-muted)', marginLeft:2 }}>{unit}</span>
-        </div>
-      </div>
+      <div style={{ ...(noPad ? {} : { padding:'20px' }), ...bodyStyle }}>{children}</div>
     </div>
   )
 }
@@ -171,11 +169,73 @@ function Modal({ title, onClose, wide, children }) {
   )
 }
 
+function buildPageList(current, total) {
+  const delta = 1
+  const range = []
+  for (let i = Math.max(2, current - delta); i <= Math.min(total - 1, current + delta); i++) range.push(i)
+  const pages = [1]
+  if (range[0] > 2) pages.push('…')
+  pages.push(...range)
+  if (range[range.length - 1] < total - 1) pages.push('…')
+  if (total > 1) pages.push(total)
+  return pages
+}
+
+function ExamPagination({ page, totalPages, onChange }) {
+  const navBtnStyle = disabled => ({
+    width:30, height:30, display:'flex', alignItems:'center', justifyContent:'center',
+    border:'none', background:'none', borderRadius:8, padding:0,
+    color: disabled ? 'var(--text-light)' : 'var(--text-muted)',
+    cursor: disabled ? 'default' : 'pointer', transition:'background .15s, color .15s',
+  })
+  return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:2, padding:'12px 20px 20px', borderTop:'1px solid var(--border)' }}>
+      <button
+        onClick={() => onChange(Math.max(1, page - 1))}
+        disabled={page === 1}
+        aria-label="이전 페이지"
+        style={navBtnStyle(page === 1)}
+        onMouseOver={e => { if (page !== 1) { e.currentTarget.style.background = '#F1F5F9'; e.currentTarget.style.color = 'var(--text)' } }}
+        onMouseOut={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = page === 1 ? 'var(--text-light)' : 'var(--text-muted)' }}
+      >
+        <Icon name="chevronLeft" size={15} />
+      </button>
+
+      {buildPageList(page, totalPages).map((p, i) => p === '…' ? (
+        <span key={`ellipsis-${i}`} style={{ width:26, textAlign:'center', fontSize:12, color:'var(--text-light)' }}>···</span>
+      ) : (
+        <button key={p} onClick={() => onChange(p)}
+          style={{
+            minWidth:30, height:30, padding:'0 3px', border:'none', background:'none',
+            fontFamily:'var(--font)', fontSize:13, fontVariantNumeric:'tabular-nums',
+            fontWeight: p === page ? 800 : 500,
+            color: p === page ? 'var(--text)' : 'var(--text-muted)',
+            borderBottom: p === page ? '2px solid var(--accent)' : '2px solid transparent',
+            cursor:'pointer', transition:'color .15s, border-color .15s',
+          }}>
+          {p}
+        </button>
+      ))}
+
+      <button
+        onClick={() => onChange(Math.min(totalPages, page + 1))}
+        disabled={page === totalPages}
+        aria-label="다음 페이지"
+        style={navBtnStyle(page === totalPages)}
+        onMouseOver={e => { if (page !== totalPages) { e.currentTarget.style.background = '#F1F5F9'; e.currentTarget.style.color = 'var(--text)' } }}
+        onMouseOut={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = page === totalPages ? 'var(--text-light)' : 'var(--text-muted)' }}
+      >
+        <Icon name="chevronRight" size={15} />
+      </button>
+    </div>
+  )
+}
+
 /* ── Views ──────────────────────────────────────────────────── */
 
 const TEAM_LABELS = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }
 
-const EXAM_DURATION_MS = 60 * 60 * 1000 // 시험 시간 60분
+const DEFAULT_EXAM_DURATION_MIN = 60
 
 const EXAM_STATUS_META = {
   done:      { label:'완료',   dot:'var(--success)', badge:'success' },
@@ -183,46 +243,33 @@ const EXAM_STATUS_META = {
   scheduled: { label:'예정',   dot:'var(--text-light)', badge:'gray' },
 }
 
-function getExamStatus(examDatetime) {
+function getExamStatus(examDatetime, durationMin = DEFAULT_EXAM_DURATION_MIN) {
   if (!examDatetime) return 'scheduled'
   const start = new Date(examDatetime)
   if (isNaN(start.getTime())) return 'scheduled'
   const now = new Date()
   if (now < start) return 'scheduled'
-  if (now > new Date(start.getTime() + EXAM_DURATION_MS)) return 'done'
+  if (now > new Date(start.getTime() + durationMin * 60 * 1000)) return 'done'
   return 'ongoing'
 }
 
+const EXAM_PAGE_SIZE = 4
+const EXAM_LIST_CAP = 12
+const EXAM_MANAGE_PAGE_SIZE = 8
+
 function Dashboard({ onNavigate }) {
-  const [stats, setStats] = useState({ question_count:'-', exam_set_count:'-', assigned_count:'-', user_count:'-' })
-  const [apiStatus, setApiStatus] = useState('확인 중...')
-  const [driveStatus, setDriveStatus] = useState('확인 중...')
   const [examSets, setExamSets] = useState([])
   const [examStatusFilter, setExamStatusFilter] = useState('all')
+  const [examPage, setExamPage] = useState(1)
   const [modal, setModal] = useState(null)
   const [modalData, setModalData] = useState(null)
   const [modalLoading, setModalLoading] = useState(false)
-  const [systemStatus, setSystemStatus] = useState(null)
-
-  const [recent, setRecent] = useState([])
-  const [recentLoading, setRecentLoading] = useState(true)
 
   useEffect(() => {
-    apiFetch('GET', '/api/admin/stats')
-      .then(d => { setStats(d); setApiStatus('정상') })
-      .catch(() => setApiStatus('연결 불가'))
-    apiFetch('GET', '/api/drive/status')
-      .then(() => setDriveStatus('연동'))
-      .catch(() => setDriveStatus('미연동'))
     apiFetch('GET', '/api/admin/exam-sets').then(d => setExamSets(d.sets || [])).catch(() => {})
-    apiFetch('GET', '/api/admin/system-status')
-      .then(setSystemStatus)
-      .catch(() => setSystemStatus(null))
-    apiFetch('GET', '/api/admin/logs')
-      .then(d => setRecent([...(d.logs || [])].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5)))
-      .catch(() => setRecent([]))
-      .finally(() => setRecentLoading(false))
   }, [])
+
+  useEffect(() => { setExamPage(1) }, [examStatusFilter])
 
   const EXAM_STATUS_FILTERS = [
     { key:'all',       label:'전체' },
@@ -231,15 +278,23 @@ function Dashboard({ onNavigate }) {
     { key:'scheduled', label:'예정' },
   ]
 
-  const recentSets = [...examSets]
-    .filter(s => examStatusFilter === 'all' || getExamStatus(s.exam_datetime) === examStatusFilter)
-    .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
-    .slice(0, 6)
+  const filteredAllSets = [...examSets]
+    .filter(s => examStatusFilter === 'all' || getExamStatus(s.exam_datetime, s.duration_min) === examStatusFilter)
+    .sort((a, b) => (b.exam_datetime || '').localeCompare(a.exam_datetime || ''))
+  const hasMoreSets = filteredAllSets.length > EXAM_LIST_CAP
+  const filteredSets = filteredAllSets.slice(0, EXAM_LIST_CAP)
+
+  const examTotalPages = Math.max(1, Math.ceil(filteredSets.length / EXAM_PAGE_SIZE))
+  const examPageClamped = Math.min(examPage, examTotalPages)
+  const pagedSets = filteredSets.slice((examPageClamped - 1) * EXAM_PAGE_SIZE, examPageClamped * EXAM_PAGE_SIZE)
+  const showMoreCard = hasMoreSets && examPageClamped === examTotalPages
+  const visibleSets = showMoreCard ? pagedSets.slice(0, -1) : pagedSets
+  const hiddenSetCount = filteredAllSets.length - EXAM_LIST_CAP
 
   function closeModal() { setModal(null); setModalData(null) }
 
   async function openQuestions(set) {
-    setModal({ type:'questions', set })
+    setModal({ set })
     setModalLoading(true)
     setModalData(null)
     try {
@@ -249,59 +304,36 @@ function Dashboard({ onNavigate }) {
     finally { setModalLoading(false) }
   }
 
-  async function openResults(set) {
-    setModal({ type:'results', set })
-    setModalLoading(true)
-    setModalData(null)
-    try {
-      const d = await apiFetch('GET', `/api/admin/exam-sets/${set.exam_id}/results`)
-      setModalData(d)
-    } catch (e) { setModalData({ error: e.message }) }
-    finally { setModalLoading(false) }
+  const CARD_ACTIONS = {
+    scheduled: [
+      { label:'문제 보기', onClick: s => openQuestions(s) },
+      { label:'시험 관리', onClick: s => onNavigate('exam-assign', { focusExamId: s.exam_id }) },
+    ],
+    ongoing: [
+      { label:'응시 현황', onClick: () => onNavigate('exam-status') },
+      { label:'시험 관리', onClick: s => onNavigate('exam-assign', { focusExamId: s.exam_id }) },
+    ],
+    done: [
+      { label:'결과 보기', onClick: () => onNavigate('results') },
+      { label:'문제 보기', onClick: s => openQuestions(s) },
+    ],
   }
 
-  const [seeding, setSeeding] = useState(false)
-  async function seedMock() {
-    if (!confirm('더미 데이터(테스트 사용자 3명)를 주입하시겠습니까?')) return
-    setSeeding(true)
-    try {
-      const r = await apiFetch('POST', '/api/admin/seed-mock-data')
-      alert(r.message)
-    } catch (e) { alert(`오류: ${e.message}`) }
-    finally { setSeeding(false) }
-  }
-
+  // 업무 흐름 순서대로: 문제 생성 → 검토·검증 → 시험지 생성 → 시험 생성·관리 → 사용자 승인 → 응시 현황 → 결과 분석
   const quickActions = [
-    ['ai',    '문제 생성',   'q-generate'],
-    ['check', '검토·검증',  'q-review'],
-    ['book',  '문제은행',   'q-bank'],
-    ['file',  '시험지 생성', 'exam-sheet'],
-    ['users', '사용자 승인', 'users'],
-    ['clock', '응시 이력',   'history'],
+    ['ai',    '문제 생성',      'q-generate'],
+    ['check', '검토·검증',      'q-review'],
+    ['file',  '시험지 생성·관리', 'exam-sheet'],
+    ['users', '시험 생성·관리', 'exam-assign'],
+    ['user',  '사용자 승인',    'users'],
+    ['clock', '응시 현황',      'exam-status'],
+    ['chart', '결과 분석',      'results'],
   ]
-
-  const aiProvider = systemStatus?.ai_provider ?? '확인 중'
-  const aiProviderLabel = { mock:'Mock 모드', gemini:'Gemini 연동', claude:'Claude 연동' }[aiProvider] || aiProvider
-  const aiProviderLive = aiProvider === 'claude' ? systemStatus?.claude_key_configured
-    : aiProvider === 'gemini' ? systemStatus?.gemini_key_configured
-    : false
-  const claudeConfigured = systemStatus?.claude_key_configured ?? false
-
-  const systemRows = [
-    ['운영 모드',    systemStatus ? aiProviderLabel : '확인 중...', `AI_PROVIDER=${aiProvider}`, aiProvider === 'mock' ? 'mock' : (aiProviderLive ? 'live' : 'offline')],
-    ['백엔드 API',   apiStatus,    'FastAPI — localhost:8000', apiStatus === '정상' ? 'live' : 'offline'],
-    ['Claude API',   systemStatus ? (claudeConfigured ? '연동' : '미연동') : '확인 중...', 'CLAUDE_API_KEY 필요', claudeConfigured ? 'live' : 'offline'],
-    ['Google Drive', driveStatus,  '서비스 계정 인증',          driveStatus === '연동' ? 'live' : 'mock'],
-  ]
-
-  const missingIntegrations = systemStatus && aiProvider === 'mock'
-    ? [!claudeConfigured && 'Claude API', driveStatus !== '연동' && 'Google Drive'].filter(Boolean)
-    : []
 
   return (
     <div>
       <Card
-        title="최근 시험 관리"
+        title="시험 관리"
         noPad
         action={
           <div style={{ display:'flex', alignItems:'center', gap:12 }}>
@@ -321,44 +353,64 @@ function Dashboard({ onNavigate }) {
           </div>
         }
       >
-        {recentSets.length === 0 ? (
+        {filteredSets.length === 0 ? (
           <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>생성된 시험이 없습니다.</p>
         ) : (
-          recentSets.map((s, i) => {
-            const status = getExamStatus(s.exam_datetime)
-            return (
-            <div key={s.exam_id} style={{ display:'flex', alignItems:'center', gap:14, padding:'14px 20px', borderBottom: i < recentSets.length - 1 ? '1px solid var(--border)' : 'none' }}>
-              <div style={{ flex:1, minWidth:0 }}>
-                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                  <span style={{ fontSize:14, fontWeight:700, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{s.name}</span>
-                  <Badge type={EXAM_STATUS_META[status].badge}>{EXAM_STATUS_META[status].label}</Badge>
-                </div>
-                <div style={{ fontSize:12, color:'var(--text-muted)', marginTop:3 }}>
-                  시험일 {s.exam_datetime ? s.exam_datetime.slice(0,16).replace('T',' ') : (s.created_at ? s.created_at.slice(0,10) : '-')} · 대상 팀 {TEAM_LABELS[s.team_code] || s.team_code}
-                </div>
-              </div>
-              <div style={{ display:'flex', gap:8, flexShrink:0 }}>
-                <BtnOutlineSm onClick={() => openQuestions(s)}>문제 보기</BtnOutlineSm>
-                <BtnOutlineSm onClick={() => openResults(s)}>결과 보기</BtnOutlineSm>
-              </div>
+          <>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(320px, 1fr))', gap:16, padding:20 }}>
+              {visibleSets.map(s => {
+                const status = getExamStatus(s.exam_datetime, s.duration_min)
+                return (
+                  <div key={s.exam_id} style={{ border:'1px solid var(--border)', borderRadius:12, padding:'20px 22px', display:'flex', flexDirection:'column', gap:14, background:'white' }}>
+                    <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10 }}>
+                      <span style={{ fontSize:17, fontWeight:800, color:'var(--text)', lineHeight:1.35 }}>{s.name}</span>
+                      <Badge type={EXAM_STATUS_META[status].badge}>{EXAM_STATUS_META[status].label}</Badge>
+                    </div>
+                    <div style={{ display:'flex', flexDirection:'column', gap:7, fontSize:13, color:'var(--text-muted)' }}>
+                      <div>대상 팀 · <span style={{ color:'var(--text)', fontWeight:600 }}>{TEAM_LABELS[s.team_code] || s.team_code}</span></div>
+                      <div>시험 일시 · <span style={{ color:'var(--text)', fontWeight:600 }}>{s.exam_datetime ? s.exam_datetime.slice(0,16).replace('T',' ') : '미정'}</span></div>
+                      <div>응시 인원 · <span style={{ color:'var(--text)', fontWeight:600 }}>{(s.assigned_users || []).length}명</span></div>
+                    </div>
+                    <div style={{ display:'flex', gap:8, marginTop:'auto', paddingTop:6 }}>
+                      {CARD_ACTIONS[status].map(a => (
+                        <BtnOutlineSm key={a.label} onClick={() => a.onClick(s)}>{a.label}</BtnOutlineSm>
+                      ))}
+                    </div>
+                  </div>
+                )
+              })}
+              {showMoreCard && (
+                <button onClick={() => onNavigate('exam-assign')}
+                  style={{
+                    border:'1px solid var(--border)', borderRadius:12, padding:'20px 22px',
+                    display:'flex', flexDirection:'column', justifyContent:'space-between', gap:16,
+                    background:'linear-gradient(155deg, var(--accent-light) 0%, white 60%)',
+                    cursor:'pointer', fontFamily:'var(--font)', textAlign:'left',
+                    transition:'border-color .15s, transform .15s',
+                  }}
+                  onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                  onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'translateY(0)' }}
+                >
+                  <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', gap:10 }}>
+                    <span style={{ fontSize:17, fontWeight:800, color:'var(--text)', lineHeight:1.35 }}>시험 더 보기</span>
+                    <div style={{ width:30, height:30, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--accent)', flexShrink:0 }}>
+                      <Icon name="chevronRight" size={14} style={{ color:'white' }} />
+                    </div>
+                  </div>
+                  <div>
+                    <span style={{ fontSize:32, fontWeight:800, color:'var(--accent-dark)', fontVariantNumeric:'tabular-nums', lineHeight:1 }}>+{hiddenSetCount}</span>
+                    <span style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', marginLeft:6 }}>개 더 있음</span>
+                  </div>
+                  <span style={{ fontSize:12, color:'var(--text-muted)' }}>시험 생성·관리에서 전체 목록 확인</span>
+                </button>
+              )}
             </div>
-          )})
+            {examTotalPages > 1 && (
+              <ExamPagination page={examPageClamped} totalPages={examTotalPages} onChange={setExamPage} />
+            )}
+          </>
         )}
       </Card>
-
-      {missingIntegrations.length > 0 && (
-        <div style={{ background:'var(--warning-light)', border:'1px solid #FDE68A', borderRadius:8, padding:'9px 16px', marginBottom:16, fontSize:12, color:'var(--warning)', display:'flex', alignItems:'center', gap:8 }}>
-          <span style={{ width:6, height:6, borderRadius:'50%', background:'#F59E0B', flexShrink:0, display:'inline-block' }} />
-          Mock 모드 — {missingIntegrations.join(' · ')} 없이 작동 중.
-        </div>
-      )}
-
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:14, marginBottom:16 }}>
-        <StatCard iconName="book"  iconColor="#059669" iconBg="#ECFDF5" label="문제은행 문제수"   value={stats.question_count}  unit="개" />
-        <StatCard iconName="file"  iconColor="#D97706" iconBg="#FFFBEB" label="활성 시험세트"     value={stats.exam_set_count}  unit="개" />
-        <StatCard iconName="clock" iconColor="#2563EB" iconBg="#EFF6FF" label="응시 예정 인원"    value={stats.assigned_count}  unit="명" />
-        <StatCard iconName="users" iconColor="#7C3AED" iconBg="#F5F3FF" label="전체 등록 인원"    value={stats.user_count}      unit="명" />
-      </div>
 
       <Card title="빠른 실행">
         <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
@@ -368,51 +420,12 @@ function Dashboard({ onNavigate }) {
               <Icon name={icon} size={14} style={{ opacity:0.55 }} />{label}
             </button>
           ))}
-          <button onClick={seedMock} disabled={seeding}
-            style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1px solid #FDE68A', borderRadius:8, background:'#FFFBEB', fontFamily:'var(--font)', fontSize:13, fontWeight:600, color:'#D97706', cursor:'pointer', opacity: seeding ? 0.6 : 1 }}>
-            <Icon name="refresh" size={14} style={{ opacity:0.7 }} />
-            {seeding ? '주입 중...' : '더미 데이터 주입'}
-          </button>
         </div>
       </Card>
 
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:14 }}>
-        <Card title="최근 응시 이력" noPad>
-          {recentLoading ? (
-            <div style={{ padding:'20px', textAlign:'center', fontSize:13, color:'var(--text-muted)' }}>불러오는 중...</div>
-          ) : recent.length === 0 ? (
-            <div style={{ padding:'20px', textAlign:'center', fontSize:13, color:'var(--text-muted)' }}>아직 응시 기록이 없습니다.</div>
-          ) : recent.map((r, i) => (
-            <div key={i} style={{ display:'flex', alignItems:'center', gap:12, padding:'11px 20px', borderBottom: i < recent.length-1 ? '1px solid var(--border)' : 'none' }}>
-              <span style={{ width:7, height:7, borderRadius:'50%', flexShrink:0, background: r.pass ? 'var(--success)' : 'var(--danger)' }} />
-              <span style={{ flex:1, fontSize:13, color:'var(--text)', fontWeight:500 }}>{r.name}</span>
-              <span style={{ fontSize:11, color:'var(--text-muted)' }}>{r.team}</span>
-              <span style={{ fontSize:13, fontWeight:700, fontVariantNumeric:'tabular-nums', width:36, textAlign:'right' }}>{r.score}점</span>
-              <Badge type={r.pass ? 'success' : 'danger'}>{r.pass ? '합격' : '재교육'}</Badge>
-              <span style={{ fontSize:11, color:'var(--text-light)', width:72, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{r.date}</span>
-            </div>
-          ))}
-        </Card>
-
-        <Card title="시스템 상태" noPad>
-          {systemRows.map(([label, val, desc, mode]) => (
-            <div key={label} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'11px 20px', borderBottom:'1px solid var(--border)' }}>
-              <div>
-                <div style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{label}</div>
-                <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>{desc}</div>
-              </div>
-              <div style={{ display:'flex', alignItems:'center', gap:6, fontSize:12, fontWeight:700,
-                color: mode === 'live' ? 'var(--success)' : mode === 'mock' ? 'var(--warning)' : 'var(--text-light)' }}>
-                <StatusDot mode={mode} />{val}
-              </div>
-            </div>
-          ))}
-        </Card>
-      </div>
-
       {modal && (
         <Modal
-          title={`${modal.set.name} · ${modal.type === 'questions' ? '문제 목록' : '응시 결과'}`}
+          title={`${modal.set.name} · 문제 목록`}
           onClose={closeModal}
           wide
         >
@@ -420,44 +433,26 @@ function Dashboard({ onNavigate }) {
             <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>불러오는 중...</p>
           ) : modalData?.error ? (
             <p style={{ fontSize:13, color:'var(--danger)', textAlign:'center', padding:'24px 0' }}>오류: {modalData.error}</p>
-          ) : modal.type === 'questions' ? (
-            (modalData?.questions || []).length === 0 ? (
-              <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>문제가 없습니다.</p>
-            ) : (
-              <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                {modalData.questions.map((q, i) => (
-                  <div key={q.question_id} style={{ border:'1px solid var(--border)', borderRadius:8, padding:'10px 14px' }}>
-                    <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:4 }}>
-                      {i + 1}. {q.question_id} · {q.category} · <span style={{ fontWeight:700 }}>{q.difficulty}</span>
-                    </div>
-                    <div style={{ fontSize:13, fontWeight:600, color:'var(--text)', marginBottom:6 }}>{q.question}</div>
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4 }}>
-                      {['A','B','C','D'].map(k => (
-                        <div key={k} style={{ fontSize:12, color: q.answer === k ? 'var(--success)' : 'var(--text-muted)', fontWeight: q.answer === k ? 700 : 400 }}>
-                          {k}. {q.options[k]}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )
+          ) : (modalData?.questions || []).length === 0 ? (
+            <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>문제가 없습니다.</p>
           ) : (
-            (modalData?.results || []).length === 0 ? (
-              <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>응시 결과가 없습니다.</p>
-            ) : (
-              <DataTable headers={['이름','사번','점수','합격 여부','제출일시']}>
-                {modalData.results.map((r, i) => (
-                  <tr key={i}>
-                    <td style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{r.name || '-'}</td>
-                    <td style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{r.employee_id || '-'}</td>
-                    <td style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700 }}>{r.score}점</td>
-                    <td style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)' }}><Badge type={r.pass ? 'success' : 'danger'}>{r.pass ? '합격' : '재교육'}</Badge></td>
-                    <td style={{ padding:'10px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{r.submitted_at ? r.submitted_at.slice(0,16).replace('T',' ') : '-'}</td>
-                  </tr>
-                ))}
-              </DataTable>
-            )
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {modalData.questions.map((q, i) => (
+                <div key={q.question_id} style={{ border:'1px solid var(--border)', borderRadius:8, padding:'10px 14px' }}>
+                  <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:4 }}>
+                    {i + 1}. {q.question_id} · {q.category} · <span style={{ fontWeight:700 }}>{q.difficulty}</span>
+                  </div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'var(--text)', marginBottom:6 }}>{q.question}</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4 }}>
+                    {['A','B','C','D'].map(k => (
+                      <div key={k} style={{ fontSize:12, color: q.answer === k ? 'var(--success)' : 'var(--text-muted)', fontWeight: q.answer === k ? 700 : 400 }}>
+                        {k}. {q.options[k]}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </Modal>
       )}
@@ -878,11 +873,11 @@ function ExamReview({ toast }) {
 }
 
 /* ── 문제은행 (승인된 문제 목록) ─────────────────────────────── */
-function QuestionBank({ toast, onNavigate }) {
+function QuestionBank({ toast, onNavigate, filters, onFiltersChange, questionId }) {
   const [items, setItems] = useState(null)
   const [stats, setStats] = useState({})
-  const [cat, setCat] = useState('')
-  const [statusFilter, setStatusFilter] = useState('approved')
+  const [cat, setCat] = useState(() => filters?.category ?? '')
+  const [statusFilter, setStatusFilter] = useState(() => filters?.status ?? 'approved')
   const [rejectingId, setRejectingId] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
   const [reasonCodes, setReasonCodes] = useState({})
@@ -891,18 +886,21 @@ function QuestionBank({ toast, onNavigate }) {
     apiFetch('GET', '/api/admin/question-stats').then(data => setStats(data.stats || {})).catch(() => {})
   }, [])
 
+  useEffect(() => { setCat(filters?.category ?? '') }, [filters?.category])
+  useEffect(() => { setStatusFilter(filters?.status ?? 'approved') }, [filters?.status])
+
   const STATUS_TABS = [
     { value: 'approved',  label: '승인 (문제은행)' },
     { value: 'reviewing', label: '검토대기' },
     { value: 'rejected',  label: '반려' },
-    { value: '',          label: '전체' },
+    { value: 'all',       label: '전체' },
   ]
 
-  async function load(sf = statusFilter) {
+  async function load(sf = statusFilter, category = cat) {
     try {
       let path = '/api/admin/questions?'
-      if (cat) path += `category=${encodeURIComponent(cat)}&`
-      if (sf)  path += `status=${sf}&`
+      if (category) path += `category=${encodeURIComponent(category)}&`
+      if (sf && sf !== 'all') path += `status=${sf}&`
       const data = await apiFetch('GET', path)
       setItems(data.questions)
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
@@ -938,13 +936,26 @@ function QuestionBank({ toast, onNavigate }) {
 
   function switchTab(v) {
     setStatusFilter(v)
-    load(v)
+    onFiltersChange?.({ status: v })
   }
+
+  function changeCategory(v) {
+    setCat(v)
+    onFiltersChange?.({ category: v })
+  }
+
+  useEffect(() => {
+    load(filters?.status ?? 'approved', filters?.category ?? '')
+  }, [questionId, filters?.status, filters?.category])
+
+  const visibleItems = questionId && items
+    ? items.filter(item => item.question_id === questionId)
+    : items
 
   return (
     <Card title="문제은행" noPad action={
       <div style={{ display:'flex', gap:8 }}>
-        <FilterSelect value={cat} onChange={setCat}>
+        <FilterSelect value={cat} onChange={changeCategory}>
           <option value="">전체 카테고리</option>
           <option value="공통">공통</option>
           <option value="팀별">팀별</option>
@@ -959,7 +970,7 @@ function QuestionBank({ toast, onNavigate }) {
     }>
       <div style={{ display:'flex', borderBottom:'1px solid var(--border)', padding:'0 20px', background:'var(--bg)' }}>
         {STATUS_TABS.map(tab => (
-          <button key={tab.value} onClick={() => switchTab(tab.value)}
+          <button key={tab.value} onClick={() => switchTab(tab.value)} aria-pressed={statusFilter === tab.value}
             style={{ padding:'9px 14px', fontSize:12, cursor:'pointer', border:'none', borderBottom: statusFilter===tab.value ? '2px solid var(--accent)' : '2px solid transparent', background:'none', fontFamily:'var(--font)', fontWeight: statusFilter===tab.value ? 700 : 500, color: statusFilter===tab.value ? 'var(--accent)' : 'var(--text-muted)', marginBottom:-1 }}>
             {tab.label}
           </button>
@@ -971,15 +982,15 @@ function QuestionBank({ toast, onNavigate }) {
           : '난이도 드롭다운 변경은 즉시 반영됩니다. 승인/반려는 검토대기 문제에서 가능합니다.'}
       </div>
       <div style={{ padding:'14px 20px' }}>
-        {!items ? (
+        {!visibleItems ? (
           <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>조회 버튼을 눌러 문제를 불러오세요.</p>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>
             {statusFilter === 'approved' ? '승인된 문제가 없습니다. 검토·검증 탭에서 승인해주세요.' : '문제가 없습니다.'}
           </p>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {items.map(q => {
+            {visibleItems.map(q => {
               const d = q.admin_override || q.difficulty_ai || q.difficulty_init
               const isReviewing = q.status === 'reviewing'
               const isRejecting = rejectingId === q.question_id
@@ -1044,9 +1055,33 @@ function QuestionBank({ toast, onNavigate }) {
 }
 
 /* ── 시험지 생성 (자동 배분 + 피드백 편집) ───────────────────── */
-function ExamSheet({ toast, onNavigate }) {
+function normalizeQuestionScores(questionIds, preferredScores = {}) {
+  if (questionIds.length === 0 || questionIds.length > 100 || new Set(questionIds).size !== questionIds.length) return null
+
+  const preferred = questionIds.map(questionId => Number(preferredScores[questionId]))
+  if (preferred.every(score => Number.isInteger(score) && score > 0)
+      && preferred.reduce((sum, score) => sum + score, 0) === 100) {
+    return Object.fromEntries(questionIds.map((questionId, index) => [questionId, preferred[index]]))
+  }
+
+  const weights = preferred.map(score => Number.isFinite(score) && score > 0 ? score : 0)
+  if (weights.every(weight => weight === 0)) weights.fill(1)
+  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0)
+  const distributable = 100 - questionIds.length
+  const rawShares = weights.map(weight => weight / weightTotal * distributable)
+  const scores = rawShares.map(share => 1 + Math.floor(share))
+  let remainder = 100 - scores.reduce((sum, score) => sum + score, 0)
+  const remainderOrder = rawShares
+    .map((share, index) => ({ index, fraction:share - Math.floor(share) }))
+    .sort((left, right) => right.fraction - left.fraction || left.index - right.index)
+  for (let index = 0; index < remainder; index += 1) scores[remainderOrder[index].index] += 1
+  return Object.fromEntries(questionIds.map((questionId, index) => [questionId, scores[index]]))
+}
+
+export function ExamSheet({ toast, onNavigate, sourceExamId = null, onSaved }) {
   const [examName, setExamName] = useState('')
   const [team, setTeam] = useState('T1')
+  const [teamDropdownOpen, setTeamDropdownOpen] = useState(false)
   const [teams, setTeams] = useState([])
   const [totalCount, setTotalCount] = useState(25)
   const [excludeFrequent, setExcludeFrequent] = useState(false)
@@ -1059,10 +1094,49 @@ function ExamSheet({ toast, onNavigate }) {
   const [loading, setLoading] = useState(false)
   const [swapTargetIdx, setSwapTargetIdx] = useState(null)
   const [swapPool, setSwapPool] = useState([])
+  const [selectedIdx, setSelectedIdx] = useState(0)
+  const [sourceQuestionScores, setSourceQuestionScores] = useState({})
+
+  useEffect(() => {
+    const upper = Math.round(totalCount * 0.28)
+    const mid = Math.round(totalCount * 0.40)
+    setManualUpper(upper)
+    setManualMid(mid)
+    setManualLow(Math.max(0, totalCount - upper - mid))
+  }, [totalCount])
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/teams').then(d => setTeams(d.teams || [])).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!sourceExamId) {
+      setSourceQuestionScores({})
+      return undefined
+    }
+    let active = true
+    apiFetch('GET', `/api/admin/exam-sets/${encodeURIComponent(sourceExamId)}/questions`)
+      .then(data => {
+        if (!active) return
+        const source = data.exam_set || {}
+        const copiedQuestions = (data.questions || []).map((question, index) => ({
+          ...question,
+          id: question.question_id || question.id,
+          _order:index + 1,
+        }))
+        setExamName(`${source.name || '시험지'} 수정본`)
+        setTeam(source.team_code || 'T1')
+        setQuestions(copiedQuestions)
+        setTotalCount(copiedQuestions.length || 1)
+        setSelectedIdx(0)
+        setSwapTargetIdx(null)
+        setSourceQuestionScores(source.question_scores || Object.fromEntries(
+          copiedQuestions.map(question => [question.question_id || question.id, Number(question.score || 0)]),
+        ))
+      })
+      .catch(error => { if (active) toast(`원본 시험지 조회 실패: ${error.message}`, 'error') })
+    return () => { active = false }
+  }, [sourceExamId])
 
   const teamOpts = (teams.length > 0 ? teams : [{ team_code:'T1', team_name:'1팀' }, { team_code:'T2', team_name:'2팀' }, { team_code:'T3', team_name:'3팀' }])
     .map(t => [t.team_code, t.team_name])
@@ -1080,6 +1154,7 @@ function ExamSheet({ toast, onNavigate }) {
       const data = await apiFetch('POST', '/api/admin/preview-exam', body)
       const qs = data.questions
       setQuestions(qs.map((q, i) => ({ ...q, _order: i + 1 })))
+      setSelectedIdx(0)
       toast(`${qs.length}문항 ${manualMode ? '수동' : '자동'} 배분 완료. 순서 변경·문제 교체가 가능합니다.`)
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
     finally { setLoading(false) }
@@ -1105,6 +1180,7 @@ function ExamSheet({ toast, onNavigate }) {
 
   function removeQ(i) {
     setQuestions(prev => prev.filter((_, idx) => idx !== i))
+    setSelectedIdx(prev => Math.max(0, i < prev ? prev - 1 : (i === prev ? 0 : prev)))
     toast('문제가 제거됐습니다.')
   }
 
@@ -1140,6 +1216,15 @@ function ExamSheet({ toast, onNavigate }) {
         D: replacement.option_d,
       },
       difficulty: replacement.difficulty || replacement.admin_override || replacement.difficulty_ai || replacement.difficulty_init || '중',
+      answer: replacement.answer,
+    }
+    if (sourceExamId) {
+      const previousId = questions[idx]?.id || questions[idx]?.question_id
+      const replacementId = normalized.id
+      setSourceQuestionScores(previous => ({
+        ...previous,
+        [replacementId]:Number(previous[previousId] || 0),
+      }))
     }
     setQuestions(prev => {
       const arr = [...prev]
@@ -1155,17 +1240,26 @@ function ExamSheet({ toast, onNavigate }) {
     if (!questions || questions.length === 0) { toast('먼저 문제를 배분해주세요.', 'error'); return }
     try {
       const question_ids = questions.map(q => q.id || q.question_id).filter(Boolean)
-      const res = await apiFetch('POST', '/api/admin/exam-sets', { name: examName.trim(), team_code: team, question_ids })
+      const body = { name: examName.trim(), team_code: team, question_ids }
+      if (sourceExamId) {
+        const normalizedScores = normalizeQuestionScores(question_ids, sourceQuestionScores)
+        if (!normalizedScores) {
+          toast('복사 시험지는 문항별 배점을 양의 정수로 구성해야 하며 최대 100문항까지 저장할 수 있습니다.', 'error')
+          return
+        }
+        body.question_scores = normalizedScores
+      }
+      const res = await apiFetch('POST', '/api/admin/exam-sets', body)
       if (res.invalid_question_ids?.length > 0) {
         toast(`시험지가 저장됐지만, 존재하지 않는 문제 ${res.invalid_question_ids.length}개는 제외됐습니다.`, 'error')
       } else {
         toast('시험지가 저장됐습니다.')
       }
+      onSaved?.(res.exam_id)
     } catch (e) { toast(`저장 실패: ${e.message}`, 'error') }
   }
 
-  function handlePdf() {
-    if (!questions || questions.length === 0) { toast('먼저 문제를 배분해주세요.', 'error'); return }
+  function buildExamHtml() {
     const teamLabel = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }[team] || team
     const title = examName.trim() || '(주)엑스티 OJT 기초고사'
     const rows = questions.map((q, i) => {
@@ -1179,7 +1273,7 @@ function ExamSheet({ toast, onNavigate }) {
         </div>`
     }).join('')
 
-    const html = `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html lang="ko">
 <head>
 <meta charset="UTF-8"/>
@@ -1206,13 +1300,30 @@ function ExamSheet({ toast, onNavigate }) {
   <div class="grid">${rows}</div>
 </body>
 </html>`
+  }
 
+  function handlePdf() {
+    if (!questions || questions.length === 0) { toast('먼저 문제를 배분해주세요.', 'error'); return }
     const win = window.open('', '_blank')
     if (!win) { toast('팝업이 차단되어 PDF를 열 수 없습니다. 브라우저의 팝업 차단을 해제해주세요.', 'error'); return }
-    win.document.write(html)
+    win.document.write(buildExamHtml())
     win.document.close()
     win.focus()
     setTimeout(() => { win.print() }, 300)
+  }
+
+  function handleHtmlSave() {
+    if (!questions || questions.length === 0) { toast('먼저 문제를 배분해주세요.', 'error'); return }
+    const blob = new Blob([buildExamHtml()], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `${examName.trim() || '시험지'}.html`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+    toast('HTML 파일이 저장됐습니다.')
   }
 
   const diffColor = { 상:'var(--danger)', 중:'var(--warning)', 하:'var(--success)' }
@@ -1222,218 +1333,292 @@ function ExamSheet({ toast, onNavigate }) {
         하: questions.filter(q => q.difficulty === '하').length }
     : null
 
+  const selected = questions && questions.length > 0 ? questions[Math.min(selectedIdx, questions.length - 1)] : null
+
   return (
-    <div style={{ display:'grid', gridTemplateColumns:'280px 1fr', gap:14 }}>
-      {/* 좌측: 조건 설정 */}
-      <div>
-        <Card title="시험 조건 설정">
-          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:6 }}>시험 이름</div>
-          <input
-            type="text"
-            value={examName}
-            onChange={e => setExamName(e.target.value)}
-            placeholder="예) 2024년 하반기 OJT 기초고사"
-            style={{ width:'100%', border:'1.5px solid var(--border)', borderRadius:7, padding:'8px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', outline:'none', boxSizing:'border-box', marginBottom:16 }}
-          />
-          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>대상 팀</div>
-          <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:16 }}>
-            {teamOpts.map(([val, label]) => (
-              <button key={val} onClick={() => setTeam(val)} style={{ display:'flex', alignItems:'center', gap:8, background: team===val ? 'var(--accent-light)' : 'white', border:`1.5px solid ${team===val ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, padding:'9px 12px', cursor:'pointer', fontFamily:'var(--font)', fontSize:13, color: team===val ? 'var(--accent-dark)' : 'var(--text-muted)', fontWeight: team===val ? 700 : 400 }}>
-                <Icon name="users" size={13} style={{ opacity:0.6, flexShrink:0 }} />
-                {label}
+    <div style={{ display:'flex', flexDirection:'column', gap:20, height:'100%', minHeight:0 }}>
+      <Card title="시험지 설정" style={{ flexShrink:0, overflow:'visible' }}>
+        <div style={{ display:'flex', flexWrap:'wrap', gap:12, alignItems:'flex-start' }}>
+          <div style={{ flex:'2 1 200px' }}>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험지 이름</label>
+            <input
+              type="text"
+              value={examName}
+              onChange={e => setExamName(e.target.value)}
+              placeholder="예) 2024년 하반기 OJT 기초고사"
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontFamily:'var(--font)', fontSize:14, color:'var(--text)', outline:'none', boxSizing:'border-box' }}
+            />
+          </div>
+
+          <div style={{ flex:'0 0 100px' }}>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>대상 팀</label>
+            <div style={{ position:'relative' }}>
+              <button
+                type="button"
+                onClick={() => setTeamDropdownOpen(o => !o)}
+                onBlur={() => setTimeout(() => setTeamDropdownOpen(false), 150)}
+                style={{ width:'100%', height:44, display:'flex', alignItems:'center', justifyContent:'space-between', border:`1px solid ${teamDropdownOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, padding:'0 10px', background:'white', fontFamily:'var(--font)', fontSize:14, color:'var(--text)', cursor:'pointer', boxSizing:'border-box' }}
+              >
+                <span>{teamOpts.find(([val]) => val === team)?.[1] || team}</span>
+                <svg width={12} height={12} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ color:'var(--text-muted)', transform: teamDropdownOpen ? 'rotate(180deg)' : 'none', transition:'transform .15s', flexShrink:0 }}><polyline points="6 9 12 15 18 9"/></svg>
               </button>
-            ))}
+              {teamDropdownOpen && (
+                <div style={{ position:'absolute', top:'100%', left:0, right:0, marginTop:4, background:'white', border:'1px solid var(--border)', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.1)', zIndex:50, overflow:'hidden' }}>
+                  {teamOpts.map(([val, label]) => (
+                    <div key={val}
+                      onMouseDown={() => { setTeam(val); setTeamDropdownOpen(false) }}
+                      style={{ padding:'10px 14px', cursor:'pointer', fontSize:13, fontWeight: team === val ? 700 : 400, color: team === val ? 'var(--accent-dark)' : 'var(--text)', background: team === val ? 'var(--accent-light)' : 'white' }}
+                    >{label}</div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>총 문항 수</div>
-          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
-            <input type="range" min={10} max={50} step={5} value={totalCount}
-              onChange={e => setTotalCount(Number(e.target.value))}
-              style={{ flex:1, accentColor:'var(--accent)' }} />
-            <span style={{ fontSize:20, fontWeight:800, color:'var(--accent)', minWidth:44, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{totalCount}</span>
+          <div style={{ flex:'0 0 80px' }}>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>총 문항 수</label>
+            <input type="number" min={1} max={200} value={totalCount}
+              onChange={e => setTotalCount(Math.max(1, Number(e.target.value) || 0))}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 10px', fontFamily:'var(--font)', fontSize:14, color:'var(--text)', outline:'none', boxSizing:'border-box' }}
+            />
           </div>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-            <span style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>출제 횟수 제한</span>
-            <button
-              onClick={() => setExcludeFrequent(v => !v)}
-              style={{ border:`1.5px solid ${excludeFrequent ? 'var(--accent)' : 'var(--border)'}`, background: excludeFrequent ? 'var(--accent-light)' : 'white', color: excludeFrequent ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'3px 10px', fontFamily:'var(--font)', fontSize:11, fontWeight: excludeFrequent ? 700 : 400, cursor:'pointer' }}
-            >{excludeFrequent ? 'ON' : 'OFF'}</button>
-          </div>
-          {excludeFrequent && (
-            <div style={{ marginBottom:12 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
-                <input type="range" min={1} max={20} step={1} value={maxExamCount}
-                  onChange={e => setMaxExamCount(Number(e.target.value))}
-                  style={{ flex:1, accentColor:'var(--accent)' }} />
-                <span style={{ fontSize:20, fontWeight:800, color:'var(--accent)', minWidth:44, textAlign:'right', fontVariantNumeric:'tabular-nums' }}>{maxExamCount}</span>
-              </div>
-              <div style={{ fontSize:11, color:'var(--text-muted)' }}>
-                {maxExamCount}회 이상 출제된 문제는 배분에서 제외됩니다.
-              </div>
-            </div>
-          )}
 
-          {!manualMode ? (
-            <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:16 }}>
-              자동 배분: 상 {Math.round(totalCount*0.28)}·중 {Math.round(totalCount*0.40)}·하 {Math.round(totalCount*0.32)}문항 (예상)
+          <div style={{ flex:'0 0 190px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)' }}>출제 횟수 제한</label>
+              <button
+                onClick={() => setExcludeFrequent(v => !v)}
+                style={{ border:`1.5px solid ${excludeFrequent ? 'var(--accent)' : 'var(--border)'}`, background: excludeFrequent ? 'var(--accent-light)' : 'white', color: excludeFrequent ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'2px 9px', fontFamily:'var(--font)', fontSize:11, fontWeight: excludeFrequent ? 700 : 400, cursor:'pointer', flexShrink:0 }}
+              >{excludeFrequent ? 'ON' : 'OFF'}</button>
             </div>
-          ) : (
-            <div style={{ marginBottom:16 }}>
-              <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:8 }}>난이도별 문항 수 직접 설정</div>
+            <input type="number" min={1} max={999} value={maxExamCount}
+              readOnly={!excludeFrequent}
+              onChange={e => setMaxExamCount(Math.max(1, Number(e.target.value) || 0))}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 10px', fontFamily:'var(--font)', fontSize:14, color: excludeFrequent ? 'var(--text)' : 'var(--text-light)', outline:'none', boxSizing:'border-box', background: excludeFrequent ? 'white' : 'var(--bg)', cursor: excludeFrequent ? 'text' : 'default' }}
+            />
+            <p style={{ fontSize:10, color:'var(--text-muted)', margin:'4px 0 0' }}>회 이상 출제된 문제는 제외</p>
+          </div>
+
+          <div style={{ flex:'1 1 240px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)' }}>수동 배분</label>
+              <button
+                onClick={() => setManualMode(m => !m)}
+                style={{ border:`1.5px solid ${manualMode ? 'var(--accent)' : 'var(--border)'}`, background: manualMode ? 'var(--accent-light)' : 'white', color: manualMode ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:20, padding:'2px 9px', fontFamily:'var(--font)', fontSize:11, fontWeight: manualMode ? 700 : 400, cursor:'pointer', flexShrink:0 }}
+              >{manualMode ? 'ON' : 'OFF'}</button>
+            </div>
+
+            <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
               {[
                 ['상', manualUpper, setManualUpper, '#b91c1c', '#fee2e2'],
                 ['중', manualMid,   setManualMid,   '#b45309', '#fef3c7'],
                 ['하', manualLow,   setManualLow,   '#065f46', '#d1fae5'],
               ].map(([label, val, setter, color, bg]) => (
-                <div key={label} style={{ display:'flex', alignItems:'center', gap:8, marginBottom:6 }}>
+                <div key={label} style={{ display:'flex', alignItems:'center', gap:8 }}>
                   <span style={{ fontSize:11, fontWeight:700, padding:'2px 8px', borderRadius:20, background:bg, color, minWidth:24, textAlign:'center' }}>{label}</span>
                   <input type="number" min={0} max={totalCount} value={val}
+                    readOnly={!manualMode}
                     onChange={e => setter(Math.max(0, Math.min(totalCount, Number(e.target.value))))}
-                    style={{ width:56, border:'1.5px solid var(--border)', borderRadius:6, padding:'5px 8px', fontFamily:'var(--font)', fontSize:13, textAlign:'center', outline:'none' }}
+                    style={{ width:56, height:36, border:'1.5px solid var(--border)', borderRadius:6, padding:'0 8px', fontFamily:'var(--font)', fontSize:13, textAlign:'center', outline:'none', background: manualMode ? 'white' : 'var(--bg)', color: manualMode ? 'var(--text)' : 'var(--text-light)', cursor: manualMode ? 'text' : 'default' }}
                   />
                   <span style={{ fontSize:11, color:'var(--text-muted)' }}>문항</span>
                 </div>
               ))}
-              <div style={{ fontSize:11, color: (manualUpper+manualMid+manualLow) === totalCount ? 'var(--success)' : 'var(--danger)', marginTop:4, fontWeight:600 }}>
+              <span style={{ fontSize:11, color: (manualUpper+manualMid+manualLow) === totalCount ? 'var(--success)' : 'var(--danger)', fontWeight:600 }}>
                 합계: {manualUpper+manualMid+manualLow} / {totalCount}문항
-                {(manualUpper+manualMid+manualLow) !== totalCount && ' ← 총 문항수와 맞춰주세요'}
-              </div>
+                {manualMode && (manualUpper+manualMid+manualLow) !== totalCount && ' ← 총 문항수와 맞춰주세요'}
+              </span>
             </div>
-          )}
-
-          <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-            <BtnPrimary onClick={assign} style={{ flex:1, justifyContent:'center' }} disabled={loading}>
-              <Icon name="refresh" size={14} style={{ color:'white' }} />
-              {loading ? '배분 중...' : '자동 배분'}
-            </BtnPrimary>
-            <button
-              onClick={() => setManualMode(m => !m)}
-              style={{ border:`1.5px solid ${manualMode ? 'var(--accent)' : 'var(--border)'}`, background: manualMode ? 'var(--accent-light)' : 'white', color: manualMode ? 'var(--accent-dark)' : 'var(--text-muted)', borderRadius:7, padding:'8px 11px', fontFamily:'var(--font)', fontSize:12, fontWeight: manualMode ? 700 : 400, cursor:'pointer', whiteSpace:'nowrap' }}
-            >수동 배분</button>
+            {!manualMode && (
+              <p style={{ fontSize:10, color:'var(--text-muted)', margin:'4px 0 0' }}>
+                OFF 상태에서는 위 비율대로 자동 배분됩니다. 총 문항 수를 바꾸면 비율에 맞춰 자동으로 갱신됩니다.
+              </p>
+            )}
           </div>
 
-          {questions && (
-            <div style={{ marginTop:10, fontSize:11, color:'var(--text-muted)', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, padding:'8px 10px' }}>
-              현재 시험지: <strong>{questions.length}문항</strong>
-              {diffCount && (
-                <span style={{ marginLeft:6 }}>
-                  · 상 <span style={{ color:'var(--danger)', fontWeight:700 }}>{diffCount.상}</span>
-                  · 중 <span style={{ color:'var(--warning)', fontWeight:700 }}>{diffCount.중}</span>
-                  · 하 <span style={{ color:'var(--success)', fontWeight:700 }}>{diffCount.하}</span>
-                </span>
-              )}
-            </div>
-          )}
-        </Card>
+          <div style={{ flex:'0 0 auto' }}>
+            <label style={{ fontSize:13, fontWeight:600, display:'block', marginBottom:6, visibility:'hidden' }}>배분</label>
+            <BtnPrimary onClick={assign} style={{ height:44 }} disabled={loading}>
+              <Icon name="refresh" size={14} style={{ color:'white' }} />
+              {loading ? '배분 중...' : (manualMode ? '수동 배분' : '자동 배분')}
+            </BtnPrimary>
+          </div>
+        </div>
 
         {questions && (
-          <Card title="시험지 저장">
-            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              <button onClick={handleSave} style={{ width:'100%', background:'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'10px 0', fontFamily:'var(--font)', fontSize:13, fontWeight:700, cursor:'pointer' }}>
-                시험지 저장
-              </button>
-              <button onClick={handlePdf} style={{ width:'100%', border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'9px 0', fontFamily:'var(--font)', fontSize:13, cursor:'pointer' }}>
-                PDF 생성
-              </button>
-              <button onClick={() => onNavigate('q-bank')} style={{ width:'100%', border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:7, padding:'9px 0', fontFamily:'var(--font)', fontSize:13, fontWeight:600, cursor:'pointer' }}>
-                문제은행으로 이동
-              </button>
-            </div>
-          </Card>
-        )}
-      </div>
-
-      {/* 우측: 문제 목록 + 편집 */}
-      <Card title={questions ? `시험지 미리보기 (${questions.length}문항)` : '시험지 미리보기'} action={
-        questions ? <Badge type="success">편집 가능</Badge> : null
-      }>
-        {!questions ? (
-          <div style={{ textAlign:'center', padding:'48px 0', color:'var(--text-muted)' }}>
-            <Icon name="file" size={36} style={{ opacity:0.2, display:'block', margin:'0 auto 12px' }} />
-            <p style={{ fontSize:13 }}>조건을 설정하고 '자동 배분 시작'을 눌러주세요.</p>
-            <p style={{ fontSize:11, marginTop:6 }}>문제은행의 승인된 문제에서 자동으로 배분됩니다.</p>
-          </div>
-        ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {questions.map((q, i) => {
-              const diff = q.difficulty || '중'
-              const isSwapOpen = swapTargetIdx === i
-              return (
-                <div key={`${q.id ?? q.question_id ?? i}-${i}`} style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, overflow:'hidden', transition:'border-color .15s' }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px' }}>
-                    {/* 순서 번호 */}
-                    <span style={{ width:24, height:24, borderRadius:'50%', background:'var(--accent)', color:'white', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{i + 1}</span>
-
-                    {/* 문제 내용 */}
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:2 }}>
-                        {q.id || q.question_id} · {q.category}
-                        <span style={{ marginLeft:6, fontWeight:700, color: diffColor[diff] || 'var(--text-muted)' }}>[{diff}]</span>
-                      </div>
-                      <div style={{ fontSize:13, color:'var(--text)', fontWeight:500, lineHeight:1.4,
-                        overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{q.question}</div>
-                    </div>
-
-                    {/* 편집 버튼들 */}
-                    <div style={{ display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
-                      <button onClick={() => moveUp(i)} disabled={i === 0}
-                        title="위로" style={{ border:'1px solid var(--border)', background:'white', borderRadius:5, padding:'4px 6px', cursor: i === 0 ? 'not-allowed' : 'pointer', opacity: i === 0 ? 0.3 : 1, display:'flex', alignItems:'center' }}>
-                        <Icon name="up" size={12} style={{ color:'var(--text-muted)' }} />
-                      </button>
-                      <button onClick={() => moveDown(i)} disabled={i === questions.length - 1}
-                        title="아래로" style={{ border:'1px solid var(--border)', background:'white', borderRadius:5, padding:'4px 6px', cursor: i === questions.length - 1 ? 'not-allowed' : 'pointer', opacity: i === questions.length - 1 ? 0.3 : 1, display:'flex', alignItems:'center' }}>
-                        <Icon name="down" size={12} style={{ color:'var(--text-muted)' }} />
-                      </button>
-                      <button onClick={() => openSwap(i)}
-                        title="문제 교체" style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : 'var(--border)'}`, background: isSwapOpen ? 'var(--accent-light)' : 'white', borderRadius:5, padding:'4px 7px', cursor:'pointer', display:'flex', alignItems:'center', gap:3, fontSize:11, color: isSwapOpen ? 'var(--accent-dark)' : 'var(--text-muted)', fontWeight: isSwapOpen ? 700 : 400 }}>
-                        <Icon name="swap" size={11} /> 교체
-                      </button>
-                      <button onClick={() => removeQ(i)}
-                        title="제거" style={{ border:'1px solid var(--border)', background:'white', borderRadius:5, padding:'4px 6px', cursor:'pointer', display:'flex', alignItems:'center' }}>
-                        <Icon name="trash" size={12} style={{ color:'var(--danger)' }} />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* 교체 패널 */}
-                  {isSwapOpen && (
-                    <div style={{ borderTop:'1px solid var(--accent)', background:'var(--accent-light)', padding:'10px 12px' }}>
-                      <div style={{ fontSize:11, fontWeight:700, color:'var(--accent-dark)', marginBottom:8 }}>
-                        동일 난이도({diff}) 대체 문제 선택
-                      </div>
-                      {swapPool.length === 0 ? (
-                        <p style={{ fontSize:12, color:'var(--text-muted)' }}>대체 가능한 문제가 없습니다.</p>
-                      ) : (
-                        <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-                          {swapPool.map(alt => (
-                            <button key={alt.question_id} onClick={() => swapQuestion(i, alt)}
-                              style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', border:'1px solid var(--border)', borderRadius:6, background:'white', cursor:'pointer', textAlign:'left', width:'100%', fontFamily:'var(--font)' }}>
-                              <span style={{ fontSize:10, padding:'2px 6px', borderRadius:4, background:'var(--accent-light)', color:'var(--accent-dark)', fontWeight:700, flexShrink:0 }}>{alt.question_id}</span>
-                              <span style={{ fontSize:12, color:'var(--text)', flex:1, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{alt.question}</span>
-                              <span style={{ fontSize:11, color:'var(--text-muted)', flexShrink:0 }}>{alt.category}</span>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )
-            })}
+          <div style={{ marginTop:14, fontSize:11, color:'var(--text-muted)', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:6, padding:'8px 10px' }}>
+            현재 시험지: <strong>{questions.length}문항</strong>
+            {diffCount && (
+              <span style={{ marginLeft:6 }}>
+                · 상 <span style={{ color:'var(--danger)', fontWeight:700 }}>{diffCount.상}</span>
+                · 중 <span style={{ color:'var(--warning)', fontWeight:700 }}>{diffCount.중}</span>
+                · 하 <span style={{ color:'var(--success)', fontWeight:700 }}>{diffCount.하}</span>
+              </span>
+            )}
           </div>
         )}
       </Card>
+
+      {!questions ? (
+        <Card style={{ flex:1, minHeight:0 }}>
+          <div style={{ textAlign:'center', padding:'48px 0', color:'var(--text-muted)' }}>
+            <Icon name="file" size={36} style={{ opacity:0.2, display:'block', margin:'0 auto 12px' }} />
+            <p style={{ fontSize:13 }}>조건을 설정하고 '자동 배분'을 눌러주세요.</p>
+            <p style={{ fontSize:11, marginTop:6 }}>문제은행의 승인된 문제에서 자동으로 배분됩니다.</p>
+          </div>
+        </Card>
+      ) : (
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, flex:1, minHeight:0 }}>
+          <Card
+            title={`문제 목록 (${questions.length}문항)`}
+            noPad
+            style={{ height:'100%', display:'flex', flexDirection:'column', marginBottom:0 }}
+            bodyStyle={{ flex:1, minHeight:0, overflowY:'auto', padding:14 }}
+          >
+            <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              {questions.map((q, i) => {
+                const diff = q.difficulty || '중'
+                const isSwapOpen = swapTargetIdx === i
+                const isSelected = selectedIdx === i
+                return (
+                  <div key={`${q.id ?? q.question_id ?? i}-${i}`}
+                    style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : (isSelected ? 'var(--accent)' : 'var(--border)')}`, borderRadius:8, overflow:'hidden', transition:'border-color .15s', background: isSelected ? 'var(--accent-light)' : 'white' }}>
+                    <div onClick={() => setSelectedIdx(i)} style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', cursor:'pointer' }}>
+                      {/* 순서 번호 */}
+                      <span style={{ width:24, height:24, borderRadius:'50%', background:'var(--accent)', color:'white', fontSize:11, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, fontVariantNumeric:'tabular-nums' }}>{i + 1}</span>
+
+                      {/* 문제 내용 */}
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:2 }}>
+                          {q.id || q.question_id} · {q.category}
+                          <span style={{ marginLeft:6, fontWeight:700, color: diffColor[diff] || 'var(--text-muted)' }}>[{diff}]</span>
+                        </div>
+                        <div style={{ fontSize:13, color:'var(--text)', fontWeight:500, lineHeight:1.4,
+                          overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{q.question}</div>
+                      </div>
+
+                      {/* 편집 버튼들 */}
+                      <div onClick={e => e.stopPropagation()} style={{ display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+                        <button onClick={() => moveUp(i)} disabled={i === 0}
+                          title="위로" style={{ border:'1px solid var(--border)', background:'white', borderRadius:5, padding:'4px 6px', cursor: i === 0 ? 'not-allowed' : 'pointer', opacity: i === 0 ? 0.3 : 1, display:'flex', alignItems:'center' }}>
+                          <Icon name="up" size={12} style={{ color:'var(--text-muted)' }} />
+                        </button>
+                        <button onClick={() => moveDown(i)} disabled={i === questions.length - 1}
+                          title="아래로" style={{ border:'1px solid var(--border)', background:'white', borderRadius:5, padding:'4px 6px', cursor: i === questions.length - 1 ? 'not-allowed' : 'pointer', opacity: i === questions.length - 1 ? 0.3 : 1, display:'flex', alignItems:'center' }}>
+                          <Icon name="down" size={12} style={{ color:'var(--text-muted)' }} />
+                        </button>
+                        <button onClick={() => openSwap(i)}
+                          title="문제 교체" style={{ border:`1px solid ${isSwapOpen ? 'var(--accent)' : 'var(--border)'}`, background: isSwapOpen ? 'var(--accent-light)' : 'white', borderRadius:5, padding:'4px 7px', cursor:'pointer', display:'flex', alignItems:'center', gap:3, fontSize:11, color: isSwapOpen ? 'var(--accent-dark)' : 'var(--text-muted)', fontWeight: isSwapOpen ? 700 : 400 }}>
+                          <Icon name="swap" size={11} /> 교체
+                        </button>
+                        <button onClick={() => removeQ(i)}
+                          title="제거" style={{ border:'1px solid var(--border)', background:'white', borderRadius:5, padding:'4px 6px', cursor:'pointer', display:'flex', alignItems:'center' }}>
+                          <Icon name="trash" size={12} style={{ color:'var(--danger)' }} />
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 교체 패널 */}
+                    {isSwapOpen && (
+                      <div onClick={e => e.stopPropagation()} style={{ borderTop:'1px solid var(--accent)', background:'var(--accent-light)', padding:'10px 12px' }}>
+                        <div style={{ fontSize:11, fontWeight:700, color:'var(--accent-dark)', marginBottom:8 }}>
+                          동일 난이도({diff}) 대체 문제 선택
+                        </div>
+                        {swapPool.length === 0 ? (
+                          <p style={{ fontSize:12, color:'var(--text-muted)' }}>대체 가능한 문제가 없습니다.</p>
+                        ) : (
+                          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                            {swapPool.map(alt => (
+                              <button key={alt.question_id} onClick={() => swapQuestion(i, alt)}
+                                style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 10px', border:'1px solid var(--border)', borderRadius:6, background:'white', cursor:'pointer', textAlign:'left', width:'100%', fontFamily:'var(--font)' }}>
+                                <span style={{ fontSize:10, padding:'2px 6px', borderRadius:4, background:'var(--accent-light)', color:'var(--accent-dark)', fontWeight:700, flexShrink:0 }}>{alt.question_id}</span>
+                                <span style={{ fontSize:12, color:'var(--text)', flex:1, overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis' }}>{alt.question}</span>
+                                <span style={{ fontSize:11, color:'var(--text-muted)', flexShrink:0 }}>{alt.category}</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+
+          <div style={{ display:'flex', flexDirection:'column', gap:16, height:'100%', minHeight:0 }}>
+            <Card title="시험지 저장" style={{ flexShrink:0, marginBottom:0 }}>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <button onClick={handleSave} style={{ background:'var(--accent)', color:'white', border:'none', borderRadius:7, padding:'9px 14px', fontFamily:'var(--font)', fontSize:12, fontWeight:700, cursor:'pointer' }}>
+                  시험지 저장
+                </button>
+                <button onClick={handlePdf} style={{ border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'8px 14px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer' }}>
+                  PDF 저장
+                </button>
+                <button onClick={handleHtmlSave} style={{ border:'1.5px solid var(--border)', background:'white', color:'var(--text-muted)', borderRadius:7, padding:'8px 14px', fontFamily:'var(--font)', fontSize:12, cursor:'pointer' }}>
+                  HTML 저장
+                </button>
+                <button onClick={() => onNavigate('q-bank')} style={{ border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:7, padding:'8px 14px', fontFamily:'var(--font)', fontSize:12, fontWeight:600, cursor:'pointer' }}>
+                  문제은행으로 이동
+                </button>
+              </div>
+            </Card>
+
+            <Card
+              title="문제 미리보기"
+              style={{ flex:1, minHeight:0, display:'flex', flexDirection:'column', marginBottom:0 }}
+              bodyStyle={{ flex:1, minHeight:0, overflowY:'auto' }}
+            >
+              {!selected ? (
+                <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>왼쪽에서 문제를 선택하세요.</p>
+              ) : (
+                <div>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:14 }}>
+                    <span style={{ fontSize:12, color:'var(--text-muted)' }}>{selected.id || selected.question_id} · {selected.category}</span>
+                    <Badge type={selected.difficulty === '상' ? 'danger' : selected.difficulty === '하' ? 'success' : 'warning'}>{selected.difficulty || '중'}</Badge>
+                  </div>
+                  <div style={{ fontSize:16, fontWeight:700, color:'var(--text)', lineHeight:1.6, marginBottom:20 }}>{selected.question}</div>
+                  <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                    {['A','B','C','D'].map(k => {
+                      const optText = selected.options?.[k]
+                      if (!optText) return null
+                      const isAnswer = selected.answer === k
+                      return (
+                        <div key={k} style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 14px', borderRadius:8, border:`1.5px solid ${isAnswer ? 'var(--success)' : 'var(--border)'}`, background: isAnswer ? 'var(--success-light)' : 'white' }}>
+                          <span style={{ width:24, height:24, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:12, fontWeight:700, flexShrink:0, background: isAnswer ? 'var(--success)' : '#F1F5F9', color: isAnswer ? 'white' : 'var(--text-muted)' }}>{k}</span>
+                          <span style={{ fontSize:14, color:'var(--text)', flex:1 }}>{optText}</span>
+                          {isAnswer && <Icon name="check" size={16} style={{ color:'var(--success)', flexShrink:0 }} />}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+            </Card>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
 /* ── 응시 이력 ───────────────────────────────────────────────── */
-function History({ toast }) {
+function History({ toast, filters, onFiltersChange }) {
   const [rows, setRows] = useState(null)
-  const [filterTeam, setFilterTeam] = useState('')
-  const [filterFrom, setFilterFrom] = useState('')
-  const [filterTo, setFilterTo] = useState('')
-  const [search, setSearch] = useState('')
+  const [filterTeam, setFilterTeam] = useState(() => filters?.team ?? '')
+  const [filterFrom, setFilterFrom] = useState(() => filters?.from ?? '')
+  const [filterTo, setFilterTo] = useState(() => filters?.to ?? '')
+  const [search, setSearch] = useState(() => filters?.q ?? '')
+
+  useEffect(() => { setFilterTeam(filters?.team ?? '') }, [filters?.team])
+  useEffect(() => { setFilterFrom(filters?.from ?? '') }, [filters?.from])
+  useEffect(() => { setFilterTo(filters?.to ?? '') }, [filters?.to])
+  useEffect(() => { setSearch(filters?.q ?? '') }, [filters?.q])
+
+  function changeFilter(key, value, setter) {
+    setter(value)
+    onFiltersChange?.({ [key]: value })
+  }
 
   async function load() {
     try {
@@ -1451,15 +1636,15 @@ function History({ toast }) {
   return (
     <Card title="응시 이력" noPad action={
       <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-        <FilterSelect value={filterTeam} onChange={setFilterTeam}><option value="">전체 팀</option><option value="T1">1팀</option><option value="T2">2팀</option><option value="T3">3팀</option></FilterSelect>
-        <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }} />
+        <FilterSelect value={filterTeam} onChange={value => changeFilter('team', value, setFilterTeam)}><option value="">전체 팀</option><option value="T1">1팀</option><option value="T2">2팀</option><option value="T3">3팀</option></FilterSelect>
+        <input type="date" value={filterFrom} onChange={e => changeFilter('from', e.target.value, setFilterFrom)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }} />
         <span style={{ color:'var(--text-muted)', fontSize:13 }}>~</span>
-        <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }} />
+        <input type="date" value={filterTo} onChange={e => changeFilter('to', e.target.value, setFilterTo)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }} />
         <BtnOutlineSm onClick={load}>조회</BtnOutlineSm>
       </div>
     }>
       <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border)' }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="이름 검색" style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', maxWidth:240, width:'100%', outline:'none' }} />
+        <input value={search} onChange={e => changeFilter('q', e.target.value, setSearch)} placeholder="이름 검색" style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', maxWidth:240, width:'100%', outline:'none' }} />
       </div>
       <DataTable headers={['이름','팀','점수','결과','응시일','난이도 분포']}>
         {!filtered ? (
@@ -1605,10 +1790,10 @@ function Users({ toast }) {
 }
 
 /* ── 결과 분석 ───────────────────────────────────────────────── */
-function Results() {
+function Results({ filters, onFiltersChange }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
-  const [teamFilter, setTeamFilter] = useState([])
+  const [teamFilter, setTeamFilter] = useState(() => filters?.teams ?? [])
   const [selectedExamId, setSelectedExamId] = useState(null)
   const [expandedTaker, setExpandedTaker] = useState(null)
 
@@ -1617,6 +1802,8 @@ function Results() {
       .then(setData)
       .catch(e => setError(e.message))
   }, [])
+
+  useEffect(() => { setTeamFilter(filters?.teams ?? []) }, [filters?.teams?.join(',')])
 
   if (error) {
     return <Card><p style={{ fontSize:13, color:'var(--danger)', textAlign:'center', padding:'24px 0' }}>조회 실패: {error}</p></Card>
@@ -1633,7 +1820,11 @@ function Results() {
   const filteredExams = data.exams.filter(e => teamFilter.length === 0 || teamFilter.includes(e.team_code))
 
   function toggleTeamFilter(teamCode) {
-    setTeamFilter(prev => prev.includes(teamCode) ? prev.filter(t => t !== teamCode) : [...prev, teamCode])
+    setTeamFilter(prev => {
+      const next = prev.includes(teamCode) ? prev.filter(t => t !== teamCode) : [...prev, teamCode]
+      onFiltersChange?.({ team: next })
+      return next
+    })
   }
 
   function openExam(examSetId) {
@@ -1747,6 +1938,72 @@ function Results() {
   )
 }
 
+function MaterialsPanel({ toast }) {
+  const [teams, setTeams] = useState([])
+  const [team, setTeam] = useState('T1')
+  const [status, setStatus] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    apiFetch('GET', '/api/admin/teams').then(data => setTeams(data.teams || [])).catch(() => {})
+  }, [])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const data = await apiFetch('GET', `/api/admin/materials/status?team_code=${encodeURIComponent(team)}`)
+      setStatus(data)
+    } catch (error) {
+      toast?.(`자료 상태 조회 실패: ${error.message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [team])
+
+  async function scan() {
+    setLoading(true)
+    try {
+      await apiFetch('POST', '/api/admin/materials/scan', { team_code: team })
+      toast?.('교육자료 스캔이 완료됐습니다.')
+      await load()
+    } catch (error) {
+      toast?.(`스캔 실패: ${error.message}`, 'error')
+      setLoading(false)
+    }
+  }
+
+  const teamOptions = teams.length ? teams : [
+    { team_code:'T1', team_name:'1팀' },
+    { team_code:'T2', team_name:'2팀' },
+    { team_code:'T3', team_name:'3팀' },
+  ]
+  const files = status
+    ? Object.values(status.categories || {}).flatMap(category => category.new_files || [])
+    : []
+
+  return (
+    <Card title="자료 · 연동" action={
+      <div style={{ display:'flex', gap:8 }}>
+        <FilterSelect value={team} onChange={setTeam}>
+          {teamOptions.map(item => <option key={item.team_code} value={item.team_code}>{item.team_name}</option>)}
+        </FilterSelect>
+        <BtnOutlineSm onClick={load} disabled={loading}>새로고침</BtnOutlineSm>
+      </div>
+    }>
+      <div style={{ padding:16, border:'1px solid var(--border)', borderRadius:8, background:'var(--bg)', marginBottom:14 }}>
+        <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', marginBottom:6 }}>교육자료 상태</div>
+        <div style={{ fontSize:12, color:'var(--text-muted)' }}>
+          {loading && !status ? '확인 중...' : status?.has_new_any ? `새 자료 ${files.length}개가 있습니다.` : '새로 반영할 교육자료가 없습니다.'}
+        </div>
+        {files.length > 0 && <div style={{ marginTop:8, fontSize:12, color:'var(--text)' }}>{files.map(file => file.name).join(', ')}</div>}
+      </div>
+      <BtnPrimary onClick={scan} disabled={loading}>{loading ? '처리 중...' : '새 자료 스캔'}</BtnPrimary>
+    </Card>
+  )
+}
+
 /* ── 설정 ────────────────────────────────────────────────────── */
 function Settings() {
   const [driveStatus, setDriveStatus] = useState('확인 중...')
@@ -1835,26 +2092,35 @@ function Settings() {
 }
 
 /* ── Admin Layout ───────────────────────────────────────────── */
-/* ── 시험 배정 ──────────────────────────────────────────────── */
-function ExamAssign({ toast }) {
+/* ── 시험 생성·관리 ──────────────────────────────────────────── */
+function ExamAssign({ toast, selectedExamId, onSelectExam }) {
   const [sets, setSets] = useState([])
   const [users, setUsers] = useState([])
-  const [selectedSet, setSelectedSet] = useState('')
-  const [selectedUser, setSelectedUser] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [viewedSetId, setViewedSetId] = useState('')
+  const [papers, setPapers] = useState([])
+  const viewedSetId = selectedExamId || ''
   const [assignees, setAssignees] = useState([])
   const [userQuery, setUserQuery] = useState('')
+  const [selectedUser, setSelectedUser] = useState('')
   const [dropdownOpen, setDropdownOpen] = useState(false)
   const [focusedIdx, setFocusedIdx] = useState(-1)
-  const [examDatetime, setExamDatetime] = useState('')
-  const [savingSchedule, setSavingSchedule] = useState(false)
-  const [passScore, setPassScore] = useState(70)
-  const [savingPassScore, setSavingPassScore] = useState(false)
-  const [papers, setPapers] = useState([])
-  const [selectedPaperId, setSelectedPaperId] = useState('')
-  const [newRoundName, setNewRoundName] = useState('')
-  const [creatingRound, setCreatingRound] = useState(false)
+  const [assigning, setAssigning] = useState(false)
+  const [assignError, setAssignError] = useState('')
+
+  const [createForm, setCreateForm] = useState({ paperId: '', name: '', datetime: '', durationMin: 60, passScore: 70 })
+  const [creating, setCreating] = useState(false)
+
+  const [editingSet, setEditingSet] = useState(null)
+  const [editDatetime, setEditDatetime] = useState('')
+  const [editDurationMin, setEditDurationMin] = useState(60)
+  const [editPassScore, setEditPassScore] = useState(70)
+  const [savingEdit, setSavingEdit] = useState(false)
+
+  const [listStatusFilter, setListStatusFilter] = useState('all')
+  const [listPage, setListPage] = useState(1)
+  const [questionsModalSet, setQuestionsModalSet] = useState(null)
+  const [questionsModalData, setQuestionsModalData] = useState(null)
+  const [questionsModalLoading, setQuestionsModalLoading] = useState(false)
+  const assigneeRequestSequence = useRef(0)
 
   function loadSets() {
     return apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
@@ -1866,80 +2132,70 @@ function ExamAssign({ toast }) {
     apiFetch('GET', '/api/admin/exam-sets/papers').then(d => setPapers(d.papers || [])).catch(() => {})
   }, [])
 
-  async function handleCreateFromPaper() {
-    if (!selectedPaperId) { toast('시험지를 선택하세요.', 'error'); return }
-    setCreatingRound(true)
+  async function handleCreate() {
+    if (!createForm.paperId) { toast('시험지를 선택하세요.', 'error'); return }
+    setCreating(true)
     try {
       const created = await apiFetch('POST', '/api/admin/exam-sets/from-paper', {
-        exam_set_id: selectedPaperId,
-        ...(newRoundName.trim() ? { name: newRoundName.trim() } : {}),
+        exam_set_id: createForm.paperId,
+        ...(createForm.name.trim() ? { name: createForm.name.trim() } : {}),
+        ...(createForm.datetime ? { exam_datetime: createForm.datetime } : {}),
+        duration_min: createForm.durationMin === '' ? 60 : Number(createForm.durationMin),
+        pass_score: createForm.passScore === '' ? 70 : Number(createForm.passScore),
       })
-      toast('기존 시험지로 새 시험을 만들었습니다.')
-      setNewRoundName('')
+      toast('새 시험을 만들었습니다.')
+      setCreateForm({ paperId: '', name: '', datetime: '', durationMin: 60, passScore: 70 })
       await loadSets()
-      setSelectedSet(created.exam_id)
+      onSelectExam(created.exam_id)
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
-    finally { setCreatingRound(false) }
+    finally { setCreating(false) }
+  }
+
+  async function loadAssignees(setId) {
+    const requestSequence = ++assigneeRequestSequence.current
+    if (!setId) {
+      if (requestSequence === assigneeRequestSequence.current) setAssignees([])
+      return
+    }
+    try {
+      const d = await apiFetch('GET', `/api/admin/exam-sets/${setId}/assignees`)
+      if (requestSequence === assigneeRequestSequence.current) setAssignees(d.assignees || [])
+    } catch {
+      if (requestSequence === assigneeRequestSequence.current) setAssignees([])
+    }
+  }
+
+  useEffect(() => { setListPage(1) }, [listStatusFilter])
+
+  function openSet(setId) {
+    onSelectExam(setId)
   }
 
   useEffect(() => {
-    const s = sets.find(s => s.exam_id === selectedSet)
-    setExamDatetime(s?.exam_datetime ? s.exam_datetime.slice(0, 16) : '')
-    setPassScore(s?.pass_score ?? 70)
-  }, [selectedSet, sets])
-
-  async function handleSaveSchedule() {
-    if (!selectedSet) return
-    setSavingSchedule(true)
-    try {
-      await apiFetch('PATCH', `/api/admin/exam-sets/${selectedSet}/schedule`, { exam_datetime: examDatetime })
-      toast('시험 일시가 저장됐습니다.')
-      const setsData = await apiFetch('GET', '/api/admin/exam-sets')
-      setSets(setsData.sets || [])
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
-    finally { setSavingSchedule(false) }
-  }
-
-  async function handleSavePassScore() {
-    if (!selectedSet) return
-    setSavingPassScore(true)
-    try {
-      await apiFetch('PATCH', `/api/admin/exam-sets/${selectedSet}/pass-score`, { pass_score: passScore })
-      toast('합격 커트라인이 저장됐습니다.')
-      const setsData = await apiFetch('GET', '/api/admin/exam-sets')
-      setSets(setsData.sets || [])
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
-    finally { setSavingPassScore(false) }
-  }
-
-
-
-  async function loadAssignees(setId) {
-    if (!setId) { setAssignees([]); return }
-    try {
-      const d = await apiFetch('GET', `/api/admin/exam-sets/${setId}/assignees`)
-      setAssignees(d.assignees || [])
-    } catch { setAssignees([]) }
-  }
+    setAssignError('')
+    setUserQuery('')
+    setSelectedUser('')
+    if (viewedSetId) loadAssignees(viewedSetId)
+    else setAssignees([])
+    return () => { assigneeRequestSequence.current += 1 }
+  }, [viewedSetId])
 
   async function handleAssign() {
-    if (!selectedSet || !selectedUser) { toast('시험세트와 응시자를 선택하세요.', 'error'); return }
-    const set = sets.find(s => s.exam_id === selectedSet)
-    if (set?.assigned_users?.includes(selectedUser)) { toast('이미 배정된 인원입니다.', 'error'); return }
-    setLoading(true)
+    if (!viewedSetId || !selectedUser) { toast('응시자를 선택하세요.', 'error'); return }
+    setAssignError('')
+    setAssigning(true)
     try {
-      await apiFetch('POST', `/api/admin/exam-sets/${selectedSet}/assign`, { employee_id: selectedUser })
+      await apiFetch('POST', `/api/admin/exam-sets/${viewedSetId}/assign`, { employee_id: selectedUser })
       toast('배정 완료!')
       setSelectedUser('')
       setUserQuery('')
-      setViewedSetId(selectedSet)
       const [setsData] = await Promise.all([
         apiFetch('GET', '/api/admin/exam-sets'),
-        loadAssignees(selectedSet),
+        loadAssignees(viewedSetId),
       ])
       setSets(setsData.sets || [])
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
-    finally { setLoading(false) }
+    } catch (e) { setAssignError(e.message) }
+    finally { setAssigning(false) }
   }
 
   async function handleUnassign(employeeId) {
@@ -1960,13 +2216,50 @@ function ExamAssign({ toast }) {
     try {
       await apiFetch('DELETE', `/api/admin/exam-sets/${setId}`)
       toast('시험세트가 삭제됐습니다.')
-      if (viewedSetId === setId) { setViewedSetId(''); setAssignees([]) }
+      if (viewedSetId === setId) onSelectExam(null)
       const setsData = await apiFetch('GET', '/api/admin/exam-sets')
       setSets(setsData.sets || [])
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
   }
 
-  const selectedUserObj = users.find(u => u.employee_id === selectedUser)
+  function openEdit(s, e) {
+    e.stopPropagation()
+    setEditingSet(s)
+    setEditDatetime(s.exam_datetime ? s.exam_datetime.slice(0, 16) : '')
+    setEditDurationMin(s.duration_min ?? 60)
+    setEditPassScore(s.pass_score ?? 70)
+  }
+
+  async function handleSaveEdit() {
+    if (!editingSet) return
+    setSavingEdit(true)
+    try {
+      await Promise.all([
+        apiFetch('PATCH', `/api/admin/exam-sets/${editingSet.exam_id}/schedule`, { exam_datetime: editDatetime }),
+        apiFetch('PATCH', `/api/admin/exam-sets/${editingSet.exam_id}/duration`, { duration_min: editDurationMin === '' ? 60 : Number(editDurationMin) }),
+        apiFetch('PATCH', `/api/admin/exam-sets/${editingSet.exam_id}/pass-score`, { pass_score: editPassScore === '' ? 70 : Number(editPassScore) }),
+      ])
+      toast('시험 정보가 수정됐습니다.')
+      setEditingSet(null)
+      await loadSets()
+    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+    finally { setSavingEdit(false) }
+  }
+
+  async function openQuestionsModal(set, e) {
+    e.stopPropagation()
+    setQuestionsModalSet(set)
+    setQuestionsModalLoading(true)
+    setQuestionsModalData(null)
+    try {
+      const d = await apiFetch('GET', `/api/admin/exam-sets/${set.exam_id}/questions`)
+      setQuestionsModalData(d)
+    } catch (err) { setQuestionsModalData({ error: err.message }) }
+    finally { setQuestionsModalLoading(false) }
+  }
+
+  function closeQuestionsModal() { setQuestionsModalSet(null); setQuestionsModalData(null) }
+
   const filteredUsers = userQuery.trim()
     ? users.filter(u =>
         u.name.includes(userQuery) ||
@@ -1979,244 +2272,333 @@ function ExamAssign({ toast }) {
     setUserQuery(`${u.name} (${u.employee_id})`)
     setDropdownOpen(false)
     setFocusedIdx(-1)
+    setAssignError('')
+  }
+
+  function canSelectUser(u) {
+    return !!viewedSet && u.team === viewedSet.team_code
   }
 
   function handleUserKeyDown(e) {
     if (!dropdownOpen) return
     if (e.key === 'ArrowDown') { e.preventDefault(); setFocusedIdx(i => Math.min(i + 1, filteredUsers.length - 1)) }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setFocusedIdx(i => Math.max(i - 1, 0)) }
-    else if (e.key === 'Enter') { e.preventDefault(); if (focusedIdx >= 0 && filteredUsers[focusedIdx]) selectUser(filteredUsers[focusedIdx]) }
+    else if (e.key === 'Enter') { e.preventDefault(); if (focusedIdx >= 0 && filteredUsers[focusedIdx] && canSelectUser(filteredUsers[focusedIdx])) selectUser(filteredUsers[focusedIdx]) }
     else if (e.key === 'Escape') { setDropdownOpen(false) }
   }
 
   const viewedSet = sets.find(s => s.exam_id === viewedSetId)
+  const selectedPaper = papers.find(p => p.exam_set_id === createForm.paperId)
+
+  const LIST_STATUS_FILTERS = [
+    { key:'all',       label:'전체' },
+    { key:'done',      label:'완료' },
+    { key:'ongoing',   label:'진행중' },
+    { key:'scheduled', label:'예정' },
+  ]
+
+  const filteredSetList = sets.filter(s => listStatusFilter === 'all' || getExamStatus(s.exam_datetime, s.duration_min) === listStatusFilter)
+  const listTotalPages = Math.max(1, Math.ceil(filteredSetList.length / EXAM_MANAGE_PAGE_SIZE))
+  const listPageClamped = Math.min(listPage, listTotalPages)
+  const pagedSetList = filteredSetList.slice((listPageClamped - 1) * EXAM_MANAGE_PAGE_SIZE, listPageClamped * EXAM_MANAGE_PAGE_SIZE)
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
-      <Card title="기존 시험지로 새 시험 만들기">
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+    <div style={{ display:'flex', flexDirection:'column', gap:20, height:'100%', minHeight:0 }}>
+      <Card title="시험 생성" style={{ flexShrink:0 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'1.3fr 0.5fr 1.3fr 1.1fr 0.7fr 0.7fr auto', gap:12, alignItems:'end' }}>
           <div>
             <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험지 선택</label>
-            <select value={selectedPaperId} onChange={e => setSelectedPaperId(e.target.value)}
+            <select value={createForm.paperId} onChange={e => setCreateForm(p => ({ ...p, paperId: e.target.value }))}
               style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
               <option value="">-- 시험지 선택 --</option>
               {papers.map(p => <option key={p.exam_set_id} value={p.exam_set_id}>{p.name} ({p.team_code} · {p.question_count}문항)</option>)}
             </select>
           </div>
           <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>새 시험명 (비워두면 시험지 이름 그대로)</label>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>대상</label>
+            <div style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 10px', fontSize:13, fontFamily:'var(--font)', background:'#F1F5F9', color:'var(--text-muted)', boxSizing:'border-box', display:'flex', alignItems:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+              {selectedPaper ? (TEAM_LABELS[selectedPaper.team_code] || selectedPaper.team_code) : '-'}
+            </div>
+          </div>
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험명 (비워둘 시 시험지 이름 그대로 저장)</label>
             <input
               type="text"
-              value={newRoundName}
-              onChange={e => setNewRoundName(e.target.value)}
+              value={createForm.name}
+              onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))}
               placeholder="예: 2026년 2차 OJT 평가"
               style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
             />
           </div>
-          <button onClick={handleCreateFromPaper} disabled={creatingRound}
-            style={{ height:48, background:'var(--accent)', color:'white', border:'none', borderRadius:10, fontSize:15, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', opacity: creatingRound ? 0.6 : 1 }}>
-            {creatingRound ? '만드는 중...' : '이 시험지로 새 시험 만들기'}
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험 일시</label>
+            <input
+              type="datetime-local"
+              value={createForm.datetime}
+              onChange={e => setCreateForm(p => ({ ...p, datetime: e.target.value }))}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험 시간(분)</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={1}
+              max={600}
+              value={createForm.durationMin}
+              onChange={e => setCreateForm(p => ({ ...p, durationMin: e.target.value === '' ? '' : Number(e.target.value) }))}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
+            />
+          </div>
+          <div>
+            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>합격 커트라인</label>
+            <input
+              type="number"
+              inputMode="numeric"
+              min={0}
+              max={100}
+              value={createForm.passScore}
+              onChange={e => setCreateForm(p => ({ ...p, passScore: e.target.value === '' ? '' : Number(e.target.value) }))}
+              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
+            />
+          </div>
+          <button onClick={handleCreate} disabled={creating}
+            style={{ height:44, padding:'0 20px', background:'var(--accent)', color:'white', border:'none', borderRadius:8, fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', whiteSpace:'nowrap', opacity: creating ? 0.6 : 1 }}>
+            {creating ? '생성 중...' : '생성'}
           </button>
         </div>
       </Card>
 
-      <Card title="시험 배정">
-        <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험세트 선택</label>
-            <select value={selectedSet} onChange={e => setSelectedSet(e.target.value)}
-              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
-              <option value="">-- 시험세트 선택 --</option>
-              {sets.map(s => <option key={s.exam_id} value={s.exam_id}>{s.name} ({s.team_code})</option>)}
-            </select>
-          </div>
-          {selectedSet && (
-            <div>
-              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험 일시</label>
-              <div style={{ display:'flex', gap:8 }}>
-                <input
-                  type="datetime-local"
-                  value={examDatetime}
-                  onChange={e => setExamDatetime(e.target.value)}
-                  style={{ flex:1, height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
-                />
-                <button onClick={handleSaveSchedule} disabled={savingSchedule}
-                  style={{ height:44, padding:'0 16px', border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', whiteSpace:'nowrap', opacity: savingSchedule ? 0.6 : 1 }}>
-                  {savingSchedule ? '저장 중...' : '일시 저장'}
-                </button>
-              </div>
-            </div>
-          )}
-          {selectedSet && (
-            <div>
-              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>합격 커트라인</label>
-              <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  min={0}
-                  max={100}
-                  value={passScore}
-                  onChange={e => setPassScore(e.target.value === '' ? '' : Number(e.target.value))}
-                  style={{ width:100, height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
-                />
-                <span style={{ fontSize:13, color:'var(--text-muted)' }}>점 이상 합격</span>
-                <button onClick={handleSavePassScore} disabled={savingPassScore}
-                  style={{ height:44, padding:'0 16px', border:'1.5px solid var(--accent)', background:'white', color:'var(--accent)', borderRadius:8, fontSize:13, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', whiteSpace:'nowrap', marginLeft:'auto', opacity: savingPassScore ? 0.6 : 1 }}>
-                  {savingPassScore ? '저장 중...' : '커트라인 저장'}
-                </button>
-              </div>
-            </div>
-          )}
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>응시자 검색</label>
-            <div style={{ position:'relative' }}>
-              <input
-                type="text"
-                value={userQuery}
-                onChange={e => { setUserQuery(e.target.value); setSelectedUser(''); setDropdownOpen(true); setFocusedIdx(-1) }}
-                onFocus={() => setDropdownOpen(true)}
-                onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
-                onKeyDown={handleUserKeyDown}
-                placeholder="이름 또는 사번 입력"
-                style={{ width:'100%', height:44, border:`1.5px solid ${selectedUser ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, padding:'0 36px 0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box', outline:'none' }}
-              />
-              {userQuery && (
-                <button onMouseDown={e => { e.preventDefault(); setUserQuery(''); setSelectedUser(''); setDropdownOpen(false) }}
-                  style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', width:20, height:20, borderRadius:'50%', background:'var(--border)', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', flexShrink:0 }}>
-                  <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                </button>
-              )}
-            {dropdownOpen && filteredUsers.length > 0 && (
-              <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'white', border:'1px solid var(--border)', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.1)', zIndex:50, maxHeight:200, overflowY:'auto', marginTop:2 }}>
-                {filteredUsers.map((u, i) => (
-                  <div key={u.employee_id}
-                    onMouseDown={() => selectUser(u)}
-                    style={{ padding:'10px 14px', cursor:'pointer', background: i === focusedIdx ? 'var(--accent-light)' : 'white', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                    <span style={{ fontSize:13, color: i === focusedIdx ? 'var(--accent-dark)' : 'var(--text)' }}>
-                      <span style={{ fontWeight:600 }}>{u.name}</span>
-                      <span style={{ fontWeight:400, color:'var(--text-muted)', marginLeft:4 }}>({u.employee_id} · {u.team})</span>
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-            </div>
-          </div>
-          <button onClick={handleAssign} disabled={loading}
-            style={{ height:48, background:'var(--accent)', color:'white', border:'none', borderRadius:10, fontSize:15, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', opacity: loading ? 0.6 : 1 }}>
-            {loading ? '배정 중...' : '배정하기'}
-          </button>
-        </div>
-      </Card>
-
-      {sets.length > 0 && (
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16 }}>
-          <Card title="시험세트 목록">
-            <DataTable headers={['이름','팀','문항 수','시험 일시','생성일','']}>
-              {sets.map(s => (
-                <tr key={s.exam_id}
-                  onClick={() => { setViewedSetId(s.exam_id); loadAssignees(s.exam_id) }}
-                  style={{ cursor:'pointer', background: viewedSetId === s.exam_id ? 'var(--accent-light)' : 'white' }}>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600, color: viewedSetId === s.exam_id ? 'var(--accent-dark)' : 'var(--text)' }}>{s.name}</td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.team_code}</td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{(s.question_ids || []).length}문항</td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.exam_datetime ? s.exam_datetime.slice(0,16).replace('T',' ') : '미정'}</td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.created_at ? s.created_at.slice(0,10) : '-'}</td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', textAlign:'right' }}>
-                    <button onClick={(e) => handleDeleteSet(s.exam_id, s.name, e)}
-                      style={{ fontSize:12, color:'var(--danger)', background:'none', border:'1px solid var(--danger)', borderRadius:6, padding:'4px 10px', cursor:'pointer', fontFamily:'var(--font)' }}>
-                      삭제
-                    </button>
-                  </td>
-                </tr>
+      <div style={{ display:'grid', gridTemplateColumns:'7fr 3fr', gap:16, flex:1, minHeight:0 }}>
+        <Card
+          title={`생성된 시험 목록 (${filteredSetList.length})`}
+          noPad
+          style={{ height:'100%', display:'flex', flexDirection:'column', marginBottom:0 }}
+          bodyStyle={{ flex:1, minHeight:0, display:'flex', flexDirection:'column' }}
+          action={
+            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+              {LIST_STATUS_FILTERS.map(f => (
+                <label key={f.key} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, cursor:'pointer', color: listStatusFilter === f.key ? 'var(--text)' : 'var(--text-muted)', fontWeight: listStatusFilter === f.key ? 700 : 400 }}>
+                  <input
+                    type="radio"
+                    name="listStatusFilter"
+                    checked={listStatusFilter === f.key}
+                    onChange={() => setListStatusFilter(f.key)}
+                    style={{ accentColor:'var(--accent)', cursor:'pointer', margin:0 }}
+                  />
+                  {f.key !== 'all' && <span style={{ width:7, height:7, borderRadius:'50%', background:EXAM_STATUS_META[f.key].dot, display:'inline-block' }} />}
+                  {f.label}
+                </label>
               ))}
-            </DataTable>
-          </Card>
-
-          <Card title={viewedSetId ? `응시자 목록 (${assignees.length}명)` : '응시자 목록'} action={viewedSet ? <span style={{ fontSize:11, color:'var(--text-muted)' }}>{viewedSet.name} · {viewedSet.team_code}</span> : null}>
-            {!viewedSetId ? (
-              <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>왼쪽에서 시험세트를 선택하세요.</p>
-            ) : assignees.length === 0 ? (
-              <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>배정된 응시자가 없습니다.</p>
-            ) : (
-              <div style={{ display:'flex', flexDirection:'column' }}>
-                {assignees.map(u => (
-                  <div key={u.employee_id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>
-                    <div>
-                      <span style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{u.name}</span>
-                      <span style={{ fontSize:12, color:'var(--text-muted)', marginLeft:8 }}>{u.employee_id} · {u.team}</span>
-                    </div>
-                    <button onClick={() => handleUnassign(u.employee_id)}
-                      style={{ fontSize:12, color:'var(--danger)', background:'none', border:'1px solid var(--danger)', borderRadius:6, padding:'4px 10px', cursor:'pointer', fontFamily:'var(--font)', flexShrink:0 }}>
-                      삭제
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </Card>
-        </div>
-      )}
-    </div>
-  )
-}
-
-/* ── 응시 현황 ──────────────────────────────────────────────── */
-function ExamStatus({ toast }) {
-  const [sets, setSets] = useState([])
-  const [selectedSet, setSelectedSet] = useState('')
-  const [results, setResults] = useState([])
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
-  }, [])
-
-  async function loadResults(setId) {
-    setSelectedSet(setId)
-    if (!setId) { setResults([]); return }
-    setLoading(true)
-    try {
-      const d = await apiFetch('GET', `/api/admin/exam-sets/${setId}/results`)
-      setResults(d.results || [])
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
-    finally { setLoading(false) }
-  }
-
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
-      <Card title="응시 현황 조회">
-        <select value={selectedSet} onChange={e => loadResults(e.target.value)}
-          style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
-          <option value="">-- 시험세트 선택 --</option>
-          {sets.map(s => <option key={s.exam_id} value={s.exam_id}>{s.name} ({s.team_code})</option>)}
-        </select>
-      </Card>
-
-      {selectedSet && (
-        <Card title={`응시 결과 (${results.length}명)`}>
-          {loading ? (
-            <p style={{ color:'var(--text-muted)', fontSize:14 }}>불러오는 중...</p>
-          ) : results.length === 0 ? (
-            <p style={{ color:'var(--text-muted)', fontSize:14 }}>아직 응시 결과가 없습니다.</p>
+            </div>
+          }
+        >
+          {filteredSetList.length === 0 ? (
+            <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>표시할 시험이 없습니다.</p>
           ) : (
-            <DataTable headers={['응시자 ID','점수','합격 여부','응시일']}>
-              {results.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontFamily:'monospace' }}>{r.employee_id || '-'}</td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700 }}>{r.score}점</td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>
-                    <span style={{ fontSize:12, fontWeight:700, padding:'3px 10px', borderRadius:20, background: r.pass ? 'var(--success-light)' : 'var(--danger-light)', color: r.pass ? 'var(--success)' : 'var(--danger)' }}>
-                      {r.pass ? '합격' : '불합격'}
-                    </span>
-                  </td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{r.submitted_at ? r.submitted_at.slice(0,10) : '-'}</td>
-                </tr>
-              ))}
-            </DataTable>
+            <div style={{ flex:1, minHeight:0, overflowY:'auto', display:'flex', flexDirection:'column' }}>
+              <DataTable headers={['이름','팀','상태','시험 일시','시험 시간','합격 커트라인','']}>
+                {pagedSetList.map(s => {
+                  const status = getExamStatus(s.exam_datetime, s.duration_min)
+                  return (
+                    <tr key={s.exam_id}
+                      onClick={() => openSet(s.exam_id)}
+                      style={{ cursor:'pointer', background: viewedSetId === s.exam_id ? 'var(--accent-light)' : 'white' }}>
+                      <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600, color: viewedSetId === s.exam_id ? 'var(--accent-dark)' : 'var(--text)' }}>{s.name}</td>
+                      <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.team_code}</td>
+                      <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><Badge type={EXAM_STATUS_META[status].badge}>{EXAM_STATUS_META[status].label}</Badge></td>
+                      <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.exam_datetime ? s.exam_datetime.slice(0,16).replace('T',' ') : '미정'}</td>
+                      <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.duration_min ?? 60}분</td>
+                      <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.pass_score ?? 70}점</td>
+                      <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', textAlign:'right', whiteSpace:'nowrap' }}>
+                        <div style={{ display:'inline-flex', gap:6 }}>
+                          <button onClick={(e) => openEdit(s, e)} title="편집"
+                            style={{ width:30, height:30, borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--text-muted)', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center', padding:0, transition:'background .15s, border-color .15s, color .15s' }}
+                            onMouseOver={e => { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.color='var(--accent)'; e.currentTarget.style.background='var(--accent-light)' }}
+                            onMouseOut={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.color='var(--text-muted)'; e.currentTarget.style.background='white' }}>
+                            <Icon name="edit" size={14} />
+                          </button>
+                          <button onClick={(e) => openQuestionsModal(s, e)} title="시험 문제 보기"
+                            style={{ width:30, height:30, borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--text-muted)', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center', padding:0, transition:'background .15s, border-color .15s, color .15s' }}
+                            onMouseOver={e => { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.color='var(--accent)'; e.currentTarget.style.background='var(--accent-light)' }}
+                            onMouseOut={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.color='var(--text-muted)'; e.currentTarget.style.background='white' }}>
+                            <Icon name="file" size={14} />
+                          </button>
+                          <button onClick={(e) => handleDeleteSet(s.exam_id, s.name, e)} title="삭제"
+                            style={{ width:30, height:30, borderRadius:8, border:'1px solid var(--border)', background:'white', color:'var(--text-muted)', cursor:'pointer', display:'inline-flex', alignItems:'center', justifyContent:'center', padding:0, transition:'background .15s, border-color .15s, color .15s' }}
+                            onMouseOver={e => { e.currentTarget.style.borderColor='var(--danger)'; e.currentTarget.style.color='var(--danger)'; e.currentTarget.style.background='var(--danger-light)' }}
+                            onMouseOut={e => { e.currentTarget.style.borderColor='var(--border)'; e.currentTarget.style.color='var(--text-muted)'; e.currentTarget.style.background='white' }}>
+                            <Icon name="trash" size={14} />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </DataTable>
+              {listTotalPages > 1 && (
+                <ExamPagination page={listPageClamped} totalPages={listTotalPages} onChange={setListPage} />
+              )}
+            </div>
           )}
         </Card>
+
+        <Card
+          title={viewedSetId ? `응시자 목록 (${assignees.length}명)` : '응시자 목록'}
+          action={viewedSet ? <span style={{ fontSize:11, color:'var(--text-muted)' }}>{viewedSet.name} · {viewedSet.team_code}</span> : null}
+          style={{ height:'100%', display:'flex', flexDirection:'column', marginBottom:0 }}
+          bodyStyle={{ flex:1, minHeight:0, display:'flex', flexDirection:'column' }}
+        >
+          {!viewedSetId ? (
+            <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>왼쪽에서 시험을 선택하세요.</p>
+          ) : (
+            <div style={{ display:'flex', flexDirection:'column', height:'100%', minHeight:0 }}>
+              <div style={{ position:'relative', marginBottom:12, flexShrink:0 }}>
+                <div style={{ display:'flex', gap:8 }}>
+                  <div style={{ position:'relative', flex:1 }}>
+                    <input
+                      type="text"
+                      value={userQuery}
+                      onChange={e => { setUserQuery(e.target.value); setSelectedUser(''); setDropdownOpen(true); setFocusedIdx(-1); setAssignError('') }}
+                      onFocus={() => setDropdownOpen(true)}
+                      onBlur={() => setTimeout(() => setDropdownOpen(false), 150)}
+                      onKeyDown={handleUserKeyDown}
+                      placeholder="응시자 검색 (이름 또는 사번)"
+                      style={{ width:'100%', height:44, border:`1.5px solid ${selectedUser ? 'var(--accent)' : 'var(--border)'}`, borderRadius:8, padding:'0 36px 0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box', outline:'none' }}
+                    />
+                    {userQuery && (
+                      <button onMouseDown={e => { e.preventDefault(); setUserQuery(''); setSelectedUser(''); setDropdownOpen(false) }}
+                        style={{ position:'absolute', right:10, top:'50%', transform:'translateY(-50%)', width:20, height:20, borderRadius:'50%', background:'var(--border)', border:'none', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', flexShrink:0 }}>
+                        <svg width={10} height={10} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    )}
+                    {dropdownOpen && filteredUsers.length > 0 && (
+                      <div style={{ position:'absolute', top:'100%', left:0, right:0, background:'white', border:'1px solid var(--border)', borderRadius:8, boxShadow:'0 4px 16px rgba(0,0,0,0.1)', zIndex:50, maxHeight:200, overflowY:'auto', marginTop:2 }}>
+                        {filteredUsers.map((u, i) => {
+                          const selectable = canSelectUser(u)
+                          return (
+                            <div key={u.employee_id}
+                              onMouseDown={() => { if (selectable) selectUser(u) }}
+                              style={{ padding:'10px 14px', cursor: selectable ? 'pointer' : 'not-allowed', background: selectable && i === focusedIdx ? 'var(--accent-light)' : 'white', borderBottom:'1px solid var(--border)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                              <span style={{ fontSize:13, color: !selectable ? 'var(--text-light)' : (i === focusedIdx ? 'var(--accent-dark)' : 'var(--text)') }}>
+                                <span style={{ fontWeight:600 }}>{u.name}</span>
+                                <span style={{ fontWeight:400, marginLeft:4, color: !selectable ? 'var(--text-light)' : 'var(--text-muted)' }}>({u.employee_id} · {u.team})</span>
+                              </span>
+                              {!selectable && <span style={{ fontSize:11, color:'var(--text-light)' }}>다른 팀</span>}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={handleAssign} disabled={assigning || !selectedUser}
+                    style={{ height:44, padding:'0 18px', background:'var(--accent)', color:'white', border:'none', borderRadius:8, fontSize:13, fontWeight:700, cursor: (assigning || !selectedUser) ? 'default' : 'pointer', fontFamily:'var(--font)', whiteSpace:'nowrap', opacity: (assigning || !selectedUser) ? 0.6 : 1 }}>
+                    {assigning ? '추가 중...' : '추가'}
+                  </button>
+                </div>
+                {assignError && (
+                  <p style={{ fontSize:12, color:'var(--danger)', marginTop:6, marginBottom:0 }}>{assignError}</p>
+                )}
+              </div>
+
+              <div style={{ flex:1, minHeight:0, overflowY:'auto' }}>
+                {assignees.length === 0 ? (
+                  <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>배정된 응시자가 없습니다.</p>
+                ) : (
+                  <div style={{ display:'flex', flexDirection:'column' }}>
+                    {assignees.map(u => (
+                      <div key={u.employee_id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>
+                        <div>
+                          <span style={{ fontSize:13, fontWeight:600, color:'var(--text)' }}>{u.name}</span>
+                          <span style={{ fontSize:12, color:'var(--text-muted)', marginLeft:8 }}>{u.employee_id} · {u.team}</span>
+                        </div>
+                        <button onClick={() => handleUnassign(u.employee_id)} title="제외"
+                          style={{ width:24, height:24, borderRadius:'50%', background:'none', border:'1px solid var(--border)', cursor:'pointer', padding:0, display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', flexShrink:0 }}>
+                          <svg width={11} height={11} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {editingSet && (
+        <Modal title={`${editingSet.name} 편집`} onClose={() => setEditingSet(null)}>
+          <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
+            <div>
+              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험 일시</label>
+              <input
+                type="datetime-local"
+                value={editDatetime}
+                onChange={e => setEditDatetime(e.target.value)}
+                style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험 시간(분)</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                max={600}
+                value={editDurationMin}
+                onChange={e => setEditDurationMin(e.target.value === '' ? '' : Number(e.target.value))}
+                style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>합격 커트라인</label>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={0}
+                max={100}
+                value={editPassScore}
+                onChange={e => setEditPassScore(e.target.value === '' ? '' : Number(e.target.value))}
+                style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
+              />
+            </div>
+            <button onClick={handleSaveEdit} disabled={savingEdit}
+              style={{ height:44, background:'var(--accent)', color:'white', border:'none', borderRadius:8, fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', opacity: savingEdit ? 0.6 : 1 }}>
+              {savingEdit ? '저장 중...' : '저장'}
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {questionsModalSet && (
+        <Modal title={`${questionsModalSet.name} · 문제 목록`} onClose={closeQuestionsModal} wide>
+          {questionsModalLoading ? (
+            <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>불러오는 중...</p>
+          ) : questionsModalData?.error ? (
+            <p style={{ fontSize:13, color:'var(--danger)', textAlign:'center', padding:'24px 0' }}>오류: {questionsModalData.error}</p>
+          ) : (questionsModalData?.questions || []).length === 0 ? (
+            <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>문제가 없습니다.</p>
+          ) : (
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {questionsModalData.questions.map((q, i) => (
+                <div key={q.question_id} style={{ border:'1px solid var(--border)', borderRadius:8, padding:'10px 14px' }}>
+                  <div style={{ fontSize:11, color:'var(--text-muted)', marginBottom:4 }}>
+                    {i + 1}. {q.question_id} · {q.category} · <span style={{ fontWeight:700 }}>{q.difficulty}</span>
+                  </div>
+                  <div style={{ fontSize:13, fontWeight:600, color:'var(--text)', marginBottom:6 }}>{q.question}</div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4 }}>
+                    {['A','B','C','D'].map(k => (
+                      <div key={k} style={{ fontSize:12, color: q.answer === k ? 'var(--success)' : 'var(--text-muted)', fontWeight: q.answer === k ? 700 : 400 }}>
+                        {k}. {q.options[k]}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Modal>
       )}
     </div>
   )
@@ -2311,8 +2693,8 @@ const NAV_META = {
   'q-generate':   { bc:['홈','문제 관리','문제 생성'],             title:'문제 생성' },
   'q-review':     { bc:['홈','문제 관리','검토·검증'],             title:'검토 · 검증' },
   'q-bank':       { bc:['홈','문제 관리','문제은행'],              title:'문제은행' },
-  'exam-sheet':   { bc:['홈','시험 관리','시험지 생성'],           title:'시험지 생성' },
-  'exam-assign':  { bc:['홈','시험 관리','시험 배정'],             title:'시험 배정' },
+  'exam-sheet':   { bc:['홈','시험 관리','시험지 생성·관리'],      title:'시험지 생성·관리' },
+  'exam-assign':  { bc:['홈','시험 관리','시험 생성·관리'],         title:'시험 생성·관리' },
   'exam-status':  { bc:['홈','시험 관리','응시 현황'],             title:'응시 현황' },
   history:        { bc:['홈','응시 이력'],                         title:'응시 이력' },
   users:          { bc:['홈','사용자 승인'],                       title:'사용자 승인' },
@@ -2321,148 +2703,116 @@ const NAV_META = {
   teams:          { bc:['홈','팀 관리'],                           title:'팀 관리' },
 }
 
-export default function Admin() {
+const ADMIN_VIEW_KEY = 'admin_view'
+const Q_VIEWS    = ['q-generate','q-review','q-bank']
+const EXAM_VIEWS = ['exam-sheet','exam-assign','exam-status']
+const ADMIN_VIEWS = ['dashboard', ...Q_VIEWS, ...EXAM_VIEWS, 'history', 'users', 'results', 'settings', 'teams']
+
+function initialAdminView(initialView) {
+  if (ADMIN_VIEWS.includes(initialView)) return initialView
+  const saved = sessionStorage.getItem(ADMIN_VIEW_KEY)
+  return ADMIN_VIEWS.includes(saved) ? saved : 'dashboard'
+}
+
+function adminMetaForPath(pathname, fallback) {
+  const exact = ADMIN_ROUTE_META[pathname]
+  if (exact) return { title: exact.title, bc: exact.breadcrumbs }
+  if (/^\/admin\/questions\/generate\/runs\/[^/]+$/.test(pathname)) return { title:'생성 결과', bc:['홈','문제 관리','생성 작업','생성 결과'] }
+  if (/^\/admin\/questions\/[^/]+\/history$/.test(pathname)) return { title:'변경 이력', bc:['홈','문제 관리','문제은행','변경 이력'] }
+  if (/^\/admin\/questions\/[^/]+$/.test(pathname)) return { title:'문제 상세', bc:['홈','문제 관리','문제은행','문제 상세'] }
+  if (/^\/admin\/results\/[^/]+$/.test(pathname)) return { title:'결과 상세', bc:['홈','결과 관리','응시 결과','결과 상세'] }
+  if (/^\/admin\/exams\/[^/]+\/live$/.test(pathname)) return { title:'시험별 응시 현황', bc:['홈','시험 관리','응시 현황','시험별 상세'] }
+  return fallback
+}
+
+function liveExamIdFromPathname(pathname) {
+  const match = pathname.match(/^\/admin\/exams\/([^/]+)\/live$/)
+  if (!match) return null
+  try { return decodeURIComponent(match[1]) } catch { return match[1] }
+}
+
+export function examIdFromPathname(pathname) {
+  const match = pathname.match(/^\/admin\/exams\/([^/]+)$/)
+  if (!match) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return match[1]
+  }
+}
+
+export default function Admin({ initialView, onRouteNavigate }) {
   const navigate = useNavigate()
-  const [view, setView] = useState('dashboard')
-  const [qSubOpen, setQSubOpen] = useState(false)
-  const [examSubOpen, setExamSubOpen] = useState(false)
+  const location = useLocation()
+  const [view, setView] = useState(() => initialAdminView(initialView))
+  const [examAssignFocusId, setExamAssignFocusId] = useState(() => examIdFromPathname(location.pathname))
   const { toast, ToastContainer } = useToast()
 
-  const meta = NAV_META[view] || NAV_META.dashboard
+  useEffect(() => {
+    if (!ADMIN_VIEWS.includes(initialView)) return
+    setView(initialView)
+    setExamAssignFocusId(examIdFromPathname(location.pathname))
+  }, [initialView, location.pathname])
 
-  const Q_VIEWS    = ['q-generate','q-review','q-bank']
-  const EXAM_VIEWS = ['exam-sheet','exam-assign','exam-status']
+  const meta = adminMetaForPath(location.pathname, NAV_META[view] || NAV_META.dashboard)
 
-  function goView(v) {
+  function goView(v, opts) {
+    if (onRouteNavigate) {
+      onRouteNavigate(v, opts)
+      return
+    }
     setView(v)
-    if (Q_VIEWS.includes(v))    setQSubOpen(true)
-    if (EXAM_VIEWS.includes(v)) setExamSubOpen(true)
-  }
-
-  const navItems = [
-    { id:'dashboard',   icon:'grid',  label:'대시보드' },
-    { id:'q-manage',    icon:'book',  label:'문제 관리', sub:[
-      { id:'q-generate', icon:'ai',    label:'문제 생성' },
-      { id:'q-review',   icon:'check', label:'검토·검증' },
-      { id:'q-bank',     icon:'book',  label:'문제은행' },
-    ]},
-    { id:'exam-manage', icon:'file',  label:'시험 관리', sub:[
-      { id:'exam-sheet',  icon:'file',  label:'시험지 생성' },
-      { id:'exam-assign', icon:'users', label:'시험 배정' },
-      { id:'exam-status', icon:'chart', label:'응시 현황' },
-    ]},
-    { id:'history',     icon:'clock',    label:'응시 이력' },
-    { id:'users',       icon:'users',    label:'사용자 승인' },
-    { id:'results',     icon:'chart',    label:'결과 분석' },
-    { id:'settings',    icon:'settings', label:'설정' },
-    { id:'teams',       icon:'users',    label:'팀 관리' },
-  ]
-
-  const SIDEBAR_W = 220
-  const HEADER_H  = 56
-
-  const isActive = id => {
-    if (id === 'q-manage')    return Q_VIEWS.includes(view)
-    if (id === 'exam-manage') return EXAM_VIEWS.includes(view)
-    return view === id
+    sessionStorage.setItem(ADMIN_VIEW_KEY, v)
+    if (opts?.focusExamId) setExamAssignFocusId(opts.focusExamId)
   }
 
   return (
-    <div style={{ fontFamily:'var(--font)', fontSize:14, color:'var(--text)', background:'var(--bg)', height:'100vh', overflow:'hidden', display:'flex', flexDirection:'column' }}>
+    <>
       <ToastContainer />
-
-      {/* Header */}
-      <header style={{ position:'fixed', top:0, left:0, right:0, zIndex:100, height:HEADER_H, background:'var(--card)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', padding:'0 24px 0 0' }}>
-        <div style={{ width:SIDEBAR_W, padding:'0 18px', display:'flex', alignItems:'center', gap:10, borderRight:'1px solid var(--border)', height:'100%', flexShrink:0 }}>
-          <div style={{ width:30, height:30, background:'var(--accent)', borderRadius:7, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, color:'white', fontWeight:800, flexShrink:0 }}>X</div>
-          <div>
-            <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', lineHeight:1.2 }}>(주)엑스티</div>
-            <div style={{ fontSize:10, color:'var(--text-muted)', lineHeight:1.2 }}>OJT 평가 시스템</div>
-          </div>
-        </div>
-        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 24px' }}>
-          <span style={{ fontSize:16, fontWeight:700, color:'var(--text)' }}>{meta.title}</span>
-          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-            <div style={{ width:32, height:32, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:13, fontWeight:700 }}>김</div>
-            <div>
-              <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', lineHeight:1.2 }}>김흥길 과장</div>
-              <div style={{ fontSize:11, color:'var(--text-muted)', lineHeight:1.2 }}>인사팀 · 관리자</div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Shell */}
-      <div style={{ display:'flex', marginTop:HEADER_H, height:`calc(100vh - ${HEADER_H}px)`, overflow:'hidden' }}>
-
-        {/* Sidebar */}
-        <nav style={{ width:SIDEBAR_W, background:'var(--primary)', flexShrink:0, display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
-          <div style={{ padding:'10px 0', flex:1 }}>
-            <div style={{ padding:'10px 18px 4px', fontSize:9, fontWeight:700, letterSpacing:'.10em', color:'rgba(255,255,255,.22)', textTransform:'uppercase' }}>메뉴</div>
-            {navItems.map(item => (
-              <div key={item.id}>
-                <div
-                  onClick={() => item.id === 'q-manage' ? setQSubOpen(v => !v) : item.id === 'exam-manage' ? setExamSubOpen(v => !v) : goView(item.id)}
-                  style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 18px', color: isActive(item.id) ? 'white' : 'rgba(255,255,255,.60)', cursor:'pointer', fontSize:13, borderLeft:`2px solid ${isActive(item.id) ? 'var(--accent)' : 'transparent'}`, background: isActive(item.id) ? 'rgba(255,255,255,.10)' : 'transparent', fontWeight: isActive(item.id) ? 600 : 400 }}
-                >
-                  <Icon name={item.icon} size={15} style={{ opacity: isActive(item.id) ? 1 : 0.65 }} />
-                  <span>{item.label}</span>
-                  {item.sub && <span style={{ marginLeft:'auto', fontSize:11, color:'rgba(255,255,255,.30)', display:'inline-block', transform: (item.id === 'q-manage' ? qSubOpen : examSubOpen) ? 'rotate(90deg)' : 'none', transition:'transform .2s' }}>›</span>}
-                </div>
-                {item.sub && (item.id === 'q-manage' ? qSubOpen : examSubOpen) && (
-                  <div style={{ background:'rgba(0,0,0,.15)' }}>
-                    {item.sub.map(s => (
-                      <div key={s.id} onClick={() => goView(s.id)}
-                        style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 18px 8px 40px', color: view === s.id ? 'white' : 'rgba(255,255,255,.55)', cursor:'pointer', fontSize:12.5, borderLeft:`2px solid ${view === s.id ? 'var(--accent)' : 'transparent'}`, background: view === s.id ? 'rgba(255,255,255,.08)' : 'transparent', fontWeight: view === s.id ? 600 : 400 }}>
-                        <Icon name={s.icon} size={13} style={{ opacity: view === s.id ? 1 : 0.55 }} />
-                        {s.label}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <div style={{ borderTop:'1px solid rgba(255,255,255,.07)', padding:'14px 16px' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'8px 4px 14px' }}>
-              <div style={{ width:40, height:40, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:16, fontWeight:700, flexShrink:0 }}>김</div>
-              <div style={{ overflow:'hidden' }}>
-                <div style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,.88)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>김흥길 과장</div>
-                <div style={{ fontSize:11, color:'rgba(255,255,255,.35)', marginTop:2 }}>관리자</div>
-              </div>
-            </div>
-            <button onClick={() => apiLogout(navigate)} style={{ width:'100%', background:'rgba(255,255,255,.07)', border:'1px solid rgba(255,255,255,.10)', borderRadius:7, padding:'9px 10px', fontFamily:'var(--font)', fontSize:13, color:'rgba(255,255,255,.55)', cursor:'pointer', display:'flex', alignItems:'center', gap:7 }}>
-              <Icon name="logout" size={14} style={{ color:'rgba(255,255,255,.5)' }} /> 로그아웃
-            </button>
-          </div>
-        </nav>
-
-        {/* Main */}
-        <main style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
-          <div style={{ padding:'8px 24px', display:'flex', alignItems:'center', gap:6, fontSize:12, color:'var(--text-muted)', borderBottom:'1px solid var(--border)', background:'var(--card)', flexShrink:0 }}>
-            {meta.bc.map((c, i) => (
-              <span key={i} style={{ display:'flex', alignItems:'center', gap:6 }}>
-                {i > 0 && <span style={{ color:'var(--text-light)' }}>›</span>}
-                <span style={{ color: i === meta.bc.length-1 ? 'var(--text)' : 'var(--text-muted)', fontWeight: i === meta.bc.length-1 ? 600 : 400 }}>{c}</span>
-              </span>
-            ))}
-          </div>
-          <div style={{ flex:1, overflowY:'auto', padding:24 }}>
-            {view === 'dashboard'   && <Dashboard onNavigate={goView} />}
-            {view === 'q-generate'  && <QuestionGenerate toast={toast} onNavigate={goView} />}
-            {view === 'q-review'    && <ExamReview toast={toast} />}
-            {view === 'q-bank'      && <QuestionBank toast={toast} onNavigate={goView} />}
-            {view === 'exam-sheet'  && <ExamSheet toast={toast} onNavigate={goView} />}
-            {view === 'exam-assign' && <ExamAssign toast={toast} />}
-            {view === 'exam-status' && <ExamStatus toast={toast} />}
-            {view === 'history'     && <History toast={toast} />}
-            {view === 'users'       && <Users toast={toast} />}
-            {view === 'results'     && <Results />}
-            {view === 'settings'    && <Settings />}
-            {view === 'teams'       && <TeamsManager toast={toast} />}
-          </div>
-        </main>
-      </div>
-    </div>
+      <AdminLayout title={meta.title} breadcrumbs={meta.bc} onLogout={() => apiLogout(navigate)}>
+        {view === 'dashboard'   && <Dashboard onNavigate={goView} />}
+        {Q_VIEWS.includes(view) && <QuestionRoutePage
+          GenerateComponent={PlannedQuestionGeneration}
+          ReviewComponent={PlannedQuestionReview}
+          BankComponent={PlannedQuestionBank}
+          RunsComponent={PlannedGenerationRuns}
+          toast={toast}
+          onNavigate={goView}
+        />}
+        {view === 'exam-sheet'  && (
+          <ExamPaperPage renderSetup={({ sourceExamId, onSaved }) => (
+            <ExamSheet toast={toast} onNavigate={goView} sourceExamId={sourceExamId} onSaved={onSaved} />
+          )} />
+        )}
+        {view === 'exam-assign' && (
+          <ExamManagementPage renderManagement={({ selectedExamId, onSelectExam }) => (
+            <ExamAssign toast={toast} selectedExamId={selectedExamId} onSelectExam={onSelectExam} />
+          )} />
+        )}
+        {view === 'exam-status' && (liveExamIdFromPathname(location.pathname) ? (
+          <ExamLiveDetailPage
+            examId={liveExamIdFromPathname(location.pathname)}
+            CardComponent={Card}
+            BadgeComponent={Badge}
+            TableComponent={DataTable}
+          />
+        ) : (
+          <ExamLivePage CardComponent={Card} BadgeComponent={Badge} />
+        ))}
+        {(view === 'history' || view === 'results') && <ResultRoutePage
+          HistoryComponent={History}
+          AnalyticsComponent={Results}
+          toast={toast}
+        />}
+        {(view === 'users' || view === 'settings' || view === 'teams') && <SystemRoutePage
+          UsersComponent={Users}
+          TeamsComponent={TeamsManager}
+          MaterialsComponent={MaterialsPanel}
+          StatusComponent={Settings}
+          AuditLogComponent={PlannedAuditLog}
+          toast={toast}
+        />}
+      </AdminLayout>
+    </>
   )
 }

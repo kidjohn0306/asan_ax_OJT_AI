@@ -1,5 +1,14 @@
 const API = ''
 
+export function apiErrorMessage(payload, status) {
+  const detail = payload?.detail
+  if (typeof detail === 'string' && detail) return detail
+  if (detail && typeof detail === 'object' && typeof detail.message === 'string' && detail.message) {
+    return detail.message
+  }
+  return `HTTP ${status}`
+}
+
 export async function apiFetch(method, path, body = null) {
   const token = sessionStorage.getItem('token')
   const opts = {
@@ -18,8 +27,8 @@ export async function apiFetch(method, path, body = null) {
     return
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }))
-    throw new Error(err.detail)
+    const err = await res.json().catch(() => null)
+    throw new Error(apiErrorMessage(err, res.status))
   }
   return res.json()
 }
@@ -40,8 +49,8 @@ export async function apiUpload(path, formData) {
     return
   }
   if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }))
-    throw new Error(err.detail)
+    const err = await res.json().catch(() => null)
+    throw new Error(apiErrorMessage(err, res.status))
   }
   return res.json()
 }

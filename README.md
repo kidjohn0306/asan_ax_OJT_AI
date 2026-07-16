@@ -103,7 +103,7 @@ npm run dev   # http://localhost:5173
 
 | 뷰 | 상태 | 설명 |
 |---|---|---|
-| 대시보드 | ✅ | 4개 통계 카드(문제수/시험세트/응시예정/전체인원) + 더미 데이터 주입 버튼 |
+| 대시보드 | ✅ | 4개 통계 카드(문제수/시험세트/응시예정/전체인원) |
 | 시험 생성 | ✅ | 팀·난이도 선택 → AI 생성 또는 mock 미리보기 |
 | 검토·수정 | ✅ | 생성된 문항 탭별 검토, gate 오류 표시 |
 | 응시 이력 | ⚠️ 더미 데이터 | 실 응시 데이터 없으면 하드코딩 5건 반환 |
@@ -165,7 +165,6 @@ npm run dev   # http://localhost:5173
 | POST | `/api/admin/upload-users` | Admin JWT | CSV 대량 사원 업로드 (multipart) |
 | GET  | `/api/admin/question-stats` | Admin JWT | 전체 문제 출제 횟수 조회 |
 | GET  | `/api/admin/question-stats/flagged` | Admin JWT | 자주 출제 문제 목록 (exam_count≥5) |
-| POST | `/api/admin/seed-mock-data` | Admin JWT | 더미 사용자 주입 (테스트용) |
 | GET  | `/api/admin/system-status` | Admin JWT | 실제 운영 모드(AI_PROVIDER 등)·API 키 설정 여부 조회 |
 | GET  | `/api/admin/materials/status` | Admin JWT | 교육자료 폴더의 신규/변경 파일 감지 (team_code 쿼리) |
 | POST | `/api/admin/materials/scan` | Admin JWT | 감지된 신규 파일 다운로드·텍스트추출·캐싱 실행 |

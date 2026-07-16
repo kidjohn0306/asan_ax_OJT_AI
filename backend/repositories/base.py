@@ -1,6 +1,10 @@
 from abc import ABC, abstractmethod
 
 
+class ResultConflict(RuntimeError):
+    """같은 result_id에 서로 다른 불변 결과가 저장되려 할 때 발생한다."""
+
+
 class QuestionRepository(ABC):
     @abstractmethod
     def get_all_questions(self) -> dict: ...
