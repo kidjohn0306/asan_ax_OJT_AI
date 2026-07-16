@@ -53,9 +53,7 @@ function IdentityScreen({ empInfo, examName, onStart }) {
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--bg)', padding:24 }}>
       <div style={{ background:'white', borderRadius:20, boxShadow:'0 8px 40px rgba(30,58,95,0.12)', padding:'48px 40px', width:'100%', maxWidth:480, display:'flex', flexDirection:'column', alignItems:'center' }}>
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', marginBottom:32 }}>
-          <div style={{ width:56, height:56, background:'var(--primary)', borderRadius:14, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:10 }}>
-            <svg viewBox="0 0 32 32" width={32} height={32} fill="white"><rect x="2" y="8" width="12" height="16" rx="2"/><rect x="18" y="4" width="12" height="10" rx="2"/><rect x="18" y="18" width="12" height="10" rx="2"/></svg>
-          </div>
+          <img src="/icons/icon-192.png" alt="(주)엑스티" style={{ width:56, height:56, borderRadius:14, marginBottom:10 }} />
           <div style={{ fontSize:20, fontWeight:800, color:'var(--primary)' }}>(주)엑스티</div>
           <div style={{ fontSize:13, color:'var(--text-muted)', marginTop:2 }}>인재개발부 · OJT 평가 시스템</div>
         </div>

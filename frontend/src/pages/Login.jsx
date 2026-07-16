@@ -150,6 +150,7 @@ export default function Login() {
       )}
       <div style={styles.wrap}>
         <div style={styles.logoArea}>
+          <img src="/icons/icon-192.png" alt="(주)엑스티" style={{ width:56, height:56, borderRadius:14, marginBottom:10 }} />
           <div style={styles.company}>(주)엑스티</div>
           <div style={styles.system}>OJT 평가 시스템</div>
         </div>
