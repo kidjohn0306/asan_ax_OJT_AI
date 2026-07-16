@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from repositories.base import (
     QuestionRepository,
+    ResultConflict,
     ResultRepository,
     SnapshotRepository,
     FeedbackRepository,
@@ -97,19 +98,19 @@ class LocalQuestionRepository(QuestionRepository):
 class LocalResultRepository(ResultRepository):
     """폴더 기반 결과 저장소.
 
-    results/{exam_id}/{employee_id}.json 구조로 저장한다 (exam_id = 시험 회차 식별자).
-    employee_id가 없는 구형 데이터는 results/legacy/{result_id}.json에 존재한다.
+    신규 결과는 results/{exam_id}/{result_id}.json 구조로 저장한다.
+    과거 employee_id 파일명과 results/legacy 파일도 조회 호환성을 위해 계속 읽는다.
     Vercel 읽기전용 FS 대응: /tmp/results/ 에 저장, mock_data/results/ 에서 읽기 폴백.
     """
 
     RESULTS_DIR = MOCK_DIR / "results"
     _TMP_RESULTS_DIR = Path("/tmp/results")
 
-    def _result_path(self, exam_id: str, employee_id: str, base: Path = None) -> Path:
+    def _result_path(self, exam_id: str, result_id: str, base: Path = None) -> Path:
         base = base or self.RESULTS_DIR
         set_dir = base / exam_id
         os.makedirs(set_dir, exist_ok=True)
-        return set_dir / f"{employee_id}.json"
+        return set_dir / f"{result_id}.json"
 
     def _iter_result_files(self):
         # RESULTS_DIR 먼저, _TMP_RESULTS_DIR 나중에 — get_all_results에서 dict 덮어쓰기 시 /tmp(런타임 변경) 우선
@@ -126,16 +127,32 @@ class LocalResultRepository(ResultRepository):
             return json.load(f)
 
     def save_result(self, result: dict) -> None:
+        result_id = str(result.get("result_id", "")).strip()
+        if not result_id:
+            raise ValueError("result_id is required")
+        existing = self.get_result(result_id)
+        if existing is not None:
+            comparable_existing = {
+                key: value for key, value in existing.items() if key != "saved_at"
+            }
+            comparable_incoming = {
+                key: value for key, value in result.items() if key != "saved_at"
+            }
+            if comparable_existing != comparable_incoming:
+                raise ResultConflict(
+                    f"immutable result conflict for result_id={result_id}"
+                )
+            return
+        result = dict(result)
         result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
         exam_id = result.get("exam_id") or "legacy"
-        employee_id = result.get("employee_id") or result.get("result_id")
         try:
-            path = self._result_path(exam_id, employee_id)
+            path = self._result_path(exam_id, result_id)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
         except OSError:
             # Vercel: filesystem is read-only, fall back to /tmp
-            path = self._result_path(exam_id, employee_id, base=self._TMP_RESULTS_DIR)
+            path = self._result_path(exam_id, result_id, base=self._TMP_RESULTS_DIR)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
 

@@ -32,6 +32,7 @@ class GenerateAIRequest(BaseModel):
     material_text: str = ""
     count: int = 10
     difficulty_hint: str = "중"
+    idempotency_key: str = ""
 
 
 class ApproveUserRequest(BaseModel):
@@ -53,11 +54,16 @@ class CreateExamSetRequest(BaseModel):
     name: str
     team_code: TeamCode
     question_ids: list[str]
+    question_scores: Optional[dict[str, int]] = None
+    evaluation_type: Literal["official", "practice"] = "official"
+    idempotency_key: str = ""
 
 
 class FromPaperRequest(BaseModel):
     exam_set_id: str
     name: Optional[str] = None
+    evaluation_type: Optional[Literal["official", "practice"]] = None
+    idempotency_key: str = ""
     exam_datetime: Optional[str] = None
     pass_score: Optional[int] = Field(None, ge=0, le=100)
     duration_min: Optional[int] = Field(None, ge=1, le=600)
@@ -135,6 +141,18 @@ def get_reviewing_question_count(_: dict = Depends(require_admin)):
     return fetch_reviewing_question_count()
 
 
+@router.get("/generation-jobs")
+def get_generation_jobs(_: dict = Depends(require_admin)):
+    from services.admin_service import fetch_generation_jobs
+    return fetch_generation_jobs()
+
+
+@router.get("/audit-logs")
+def get_audit_logs(_: dict = Depends(require_admin)):
+    from services.admin_service import fetch_audit_logs
+    return fetch_audit_logs()
+
+
 @router.get("/logs")
 def get_logs(
     team: Optional[str] = None,
@@ -174,9 +192,9 @@ def approve_question(
 
 
 @router.post("/questions/{question_id}/reject")
-def reject_question(question_id: str, body: RejectQuestionRequest, _: dict = Depends(require_admin)):
+def reject_question(question_id: str, body: RejectQuestionRequest, actor: dict = Depends(require_admin)):
     from services.admin_service import reject_question
-    return reject_question(question_id, body.reason)
+    return reject_question(question_id, body.reason, actor=actor)
 
 
 @router.post("/preview-exam")
@@ -190,9 +208,16 @@ def preview_exam(body: PreviewExamRequest, _: dict = Depends(require_admin)):
 
 
 @router.post("/generate-ai-questions")
-def generate_ai_questions(body: GenerateAIRequest, _: dict = Depends(require_admin)):
+def generate_ai_questions(body: GenerateAIRequest, actor: dict = Depends(require_admin)):
     from services.admin_service import generate_ai_questions as _generate
-    return _generate(body.team_code, body.material_text, body.count, body.difficulty_hint)
+    return _generate(
+        body.team_code,
+        body.material_text,
+        body.count,
+        body.difficulty_hint,
+        requested_by=actor.get("sub", ""),
+        idempotency_key=body.idempotency_key,
+    )
 
 
 @router.post("/approve-user")
@@ -208,9 +233,17 @@ def list_exam_sets(_: dict = Depends(require_admin)):
 
 
 @router.post("/exam-sets")
-def create_exam_set(body: CreateExamSetRequest, _: dict = Depends(require_admin)):
+def create_exam_set(body: CreateExamSetRequest, actor: dict = Depends(require_admin)):
     from services.admin_service import create_exam_set as _create
-    return _create(body.name, body.team_code, body.question_ids)
+    return _create(
+        body.name,
+        body.team_code,
+        body.question_ids,
+        created_by=actor.get("sub", ""),
+        question_scores=body.question_scores,
+        evaluation_type=body.evaluation_type,
+        idempotency_key=body.idempotency_key,
+    )
 
 
 @router.get("/exam-sets/papers")
@@ -220,18 +253,25 @@ def list_question_papers(_: dict = Depends(require_admin)):
 
 
 @router.post("/exam-sets/from-paper")
-def create_exam_round_from_paper(body: FromPaperRequest, _: dict = Depends(require_admin)):
+def create_exam_round_from_paper(body: FromPaperRequest, actor: dict = Depends(require_admin)):
     from services.admin_service import create_exam_round_from_paper as _create
     return _create(
-        body.exam_set_id, body.name,
-        exam_datetime=body.exam_datetime, pass_score=body.pass_score, duration_min=body.duration_min,
+        body.exam_set_id,
+        body.name,
+        created_by=actor.get("sub", ""),
+        evaluation_type=body.evaluation_type,
+        idempotency_key=body.idempotency_key,
+        exam_datetime=body.exam_datetime,
+        pass_score=body.pass_score,
+        duration_min=body.duration_min,
     )
 
 
 @router.post("/exam-sets/{exam_id}/assign")
-def assign_user(exam_id: str, body: AssignUserRequest, _: dict = Depends(require_admin)):
+def assign_user(exam_id: str, body: AssignUserRequest, actor: dict = Depends(require_admin)):
     from services.admin_service import assign_user_to_exam_set
-    return assign_user_to_exam_set(body.employee_id, exam_id)
+    audit_actor = {key: actor[key] for key in ("sub", "role") if key in actor}
+    return assign_user_to_exam_set(body.employee_id, exam_id, actor=audit_actor)
 
 
 @router.get("/exam-sets/{exam_id}/assignees")
@@ -241,9 +281,10 @@ def get_exam_set_assignees(exam_id: str, _: dict = Depends(require_admin)):
 
 
 @router.delete("/exam-sets/{exam_id}/assign/{employee_id}")
-def unassign_user(exam_id: str, employee_id: str, _: dict = Depends(require_admin)):
+def unassign_user(exam_id: str, employee_id: str, actor: dict = Depends(require_admin)):
     from services.admin_service import unassign_user_from_exam_set
-    return unassign_user_from_exam_set(employee_id, exam_id)
+    audit_actor = {key: actor[key] for key in ("sub", "role") if key in actor}
+    return unassign_user_from_exam_set(employee_id, exam_id, actor=audit_actor)
 
 
 @router.patch("/exam-sets/{exam_id}/schedule")

@@ -6,7 +6,12 @@ from pathlib import Path
 
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
-from repositories.base import QuestionRepository, ResultRepository, SnapshotRepository
+from repositories.base import (
+    QuestionRepository,
+    ResultConflict,
+    ResultRepository,
+    SnapshotRepository,
+)
 
 _MOCK_DIR = Path(__file__).parent.parent / "mock_data"
 _QUESTIONS_FILENAME = "questions.json"
@@ -174,7 +179,7 @@ class DriveResultRepository(ResultRepository):
     """Google Drive JSONL 기반 ResultRepository.
 
     환경변수 DRIVE_RESULTS_FOLDER_ID에 Drive 폴더 ID를 설정해야 동작.
-    results.jsonl 파일을 append-only로 유지한다.
+    results.jsonl 파일을 result_id 기준 멱등 append-only로 유지한다.
     """
 
     def __init__(self):
@@ -226,10 +231,29 @@ class DriveResultRepository(ResultRepository):
     def append_result(self, result: dict) -> None:
         if not self._folder_id:
             raise RuntimeError("DRIVE_RESULTS_FOLDER_ID 환경변수가 설정되지 않았습니다.")
-        result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
+        result_id = str(result.get("result_id", "")).strip()
+        if not result_id:
+            raise ValueError("result_id is required")
         svc = self._service()
         fid = self._find_file_id(svc)
         lines = self._download_lines(svc, fid) if fid else []
+        for line in lines:
+            existing = json.loads(line)
+            if existing.get("result_id") != result_id:
+                continue
+            comparable_existing = {
+                key: value for key, value in existing.items() if key != "saved_at"
+            }
+            comparable_incoming = {
+                key: value for key, value in result.items() if key != "saved_at"
+            }
+            if comparable_existing != comparable_incoming:
+                raise ResultConflict(
+                    f"immutable result conflict for result_id={result_id}"
+                )
+            return
+        result = dict(result)
+        result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
         lines.append(json.dumps(result, ensure_ascii=False))
         self._upload(svc, lines, fid)
 

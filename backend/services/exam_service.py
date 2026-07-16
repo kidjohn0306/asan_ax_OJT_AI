@@ -1,5 +1,7 @@
 import random
 import uuid
+import json
+import logging
 from datetime import datetime, timezone
 
 from fastapi import HTTPException
@@ -78,6 +80,156 @@ def _filter_by_exam_count(pool: list, max_exam_count: int | None) -> list:
     return filtered if filtered else pool
 
 
+def _exam_session_error(code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={"code": code, "message": message},
+    )
+
+
+def _positive_int(value, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed >= 0 else default
+
+
+def _frozen_question(item: dict) -> dict:
+    value = item.get("question_snapshot_json", {})
+    if isinstance(value, dict):
+        snapshot = dict(value)
+    else:
+        try:
+            snapshot = json.loads(value or "{}")
+        except (TypeError, json.JSONDecodeError) as exc:
+            raise _exam_session_error(
+                "EXAM_FROZEN_ITEMS_MISSING",
+                "확정 시험 문항 Snapshot을 읽을 수 없습니다.",
+            ) from exc
+    if not isinstance(snapshot, dict):
+        raise _exam_session_error(
+            "EXAM_FROZEN_ITEMS_MISSING",
+            "확정 시험 문항 Snapshot 형식이 올바르지 않습니다.",
+        )
+    return {
+        "question_id": item.get("question_id") or snapshot.get("question_id", ""),
+        "category": snapshot.get("category", ""),
+        "question": snapshot.get("question", ""),
+        "answer": snapshot.get("answer", ""),
+        "explanation": snapshot.get("explanation", ""),
+        "difficulty_init": (
+            snapshot.get("admin_override")
+            or snapshot.get("difficulty_ai")
+            or snapshot.get("difficulty_init")
+            or snapshot.get("difficulty")
+            or "중"
+        ),
+        "option_a": snapshot.get("option_a", ""),
+        "option_b": snapshot.get("option_b", ""),
+        "option_c": snapshot.get("option_c", ""),
+        "option_d": snapshot.get("option_d", ""),
+        "version": item.get("question_version") or snapshot.get("version", 1),
+    }
+
+
+def _start_frozen_exam_session(
+    assigned_set: dict,
+    employee_id: str,
+) -> tuple[list[dict], str, dict] | None:
+    from services.results.dual_write import (
+        build_attempt_id,
+        build_attempt_record,
+        get_result_write_policy,
+    )
+
+    policy = get_result_write_policy()
+    if not policy.result_answers:
+        return None
+
+    from repositories import exam_v2_repo, result_v2_repo
+    if exam_v2_repo is None or result_v2_repo is None:
+        raise HTTPException(
+            status_code=503,
+            detail="정규화 응시 세션 저장소를 사용할 수 없습니다.",
+        )
+
+    exam_id = assigned_set.get("exam_id", "")
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        assignment = exam_v2_repo.find_assignment(exam_id, employee_id)
+        if assignment is None or assignment.get("status") != "assigned":
+            raise _exam_session_error(
+                "EXAM_ATTEMPT_NOT_AVAILABLE",
+                "현재 응시 가능한 확정 시험 배정을 찾을 수 없습니다.",
+            )
+        version = exam_v2_repo.find_version(
+            assignment.get("exam_version_id", "")
+        )
+        if version is None:
+            raise _exam_session_error(
+                "EXAM_FROZEN_ITEMS_MISSING",
+                "배정된 확정 시험 버전을 찾을 수 없습니다.",
+            )
+        paper_version = _positive_int(version.get("version_no"), 0)
+        items = exam_v2_repo.list_version_items(
+            version.get("exam_set_id", ""), paper_version
+        )
+        if not items:
+            raise _exam_session_error(
+                "EXAM_FROZEN_ITEMS_MISSING",
+                "확정 시험 문항을 찾을 수 없습니다.",
+            )
+
+        current = result_v2_repo.find_attempt_for_assignment(
+            assignment["assignment_id"],
+            employee_id,
+            {"started", "submitting"},
+        )
+        attempts_used = _positive_int(assignment.get("attempts_used"), 0)
+        max_attempts = _positive_int(assignment.get("max_attempts"), 1)
+        attempt_no = attempts_used + 1
+        if current is None and attempts_used >= max_attempts:
+            raise _exam_session_error(
+                "EXAM_ATTEMPT_LIMIT_REACHED",
+                "허용된 시험 응시 횟수를 모두 사용했습니다.",
+            )
+        attempt_id = (
+            current.get("attempt_id")
+            if current is not None
+            else build_attempt_id(assignment["assignment_id"], attempt_no)
+        )
+        attempt = build_attempt_record(
+            attempt_id=attempt_id,
+            assignment_id=assignment["assignment_id"],
+            exam_id=exam_id,
+            exam_version_id=version["exam_version_id"],
+            employee_id=employee_id,
+            status=current.get("status", "started") if current else "started",
+            occurred_at=now,
+            current=current,
+        )
+        result_v2_repo.upsert_attempt(attempt)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.exception("normalized exam attempt start failed")
+        raise HTTPException(
+            status_code=503,
+            detail="정규화 응시 세션 시작에 실패했습니다.",
+        ) from exc
+
+    questions = [_frozen_question(item) for item in items]
+    return questions, attempt_id, {
+        "employee_id": employee_id,
+        "assignment_id": assignment["assignment_id"],
+        "exam_version_id": version["exam_version_id"],
+        "attempt_id": attempt_id,
+        "attempt_no": attempt_no,
+        "grading_mode": "frozen_v2",
+    }
+
+
 def generate_exam_questions(team_code: str, preview: bool = False, config: dict = None,
                             total_count: int = 25, manual_dist: dict = None,
                             employee_id: str = "", max_exam_count: int | None = None) -> dict:
@@ -86,13 +238,18 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
 
     assigned_set = None if preview else _find_assigned_exam_set(employee_id)
 
+    frozen_session = None
     if assigned_set:
         exam_name = assigned_set.get("name") or DEFAULT_EXAM_NAME
         round_exam_id = assigned_set.get("exam_id", "")
         team_code = assigned_set.get("team_code", team_code)
-        # 개별 get_question() 호출 대신 전체를 한 번에 불러와 id로 조회 — Sheets API 왕복 횟수를 줄인다.
-        all_by_id = {q["question_id"]: q for pool in data.values() for q in pool}
-        questions = [all_by_id[qid] for qid in assigned_set.get("question_ids", []) if qid in all_by_id]
+        frozen_session = _start_frozen_exam_session(assigned_set, employee_id)
+        if frozen_session is not None:
+            questions, result_id, session_meta = frozen_session
+        else:
+            # 개별 get_question() 호출 대신 전체를 한 번에 불러와 id로 조회 — Sheets API 왕복 횟수를 줄인다.
+            all_by_id = {q["question_id"]: q for pool in data.values() for q in pool}
+            questions = [all_by_id[qid] for qid in assigned_set.get("question_ids", []) if qid in all_by_id]
     else:
         exam_name = DEFAULT_EXAM_NAME
         round_exam_id = ""
@@ -119,8 +276,22 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
             questions += remaining[:total_count - len(questions)]
         random.shuffle(questions)
 
-    result_id = str(uuid.uuid4())
-    duration_min = assigned_set.get("duration_min", DEFAULT_DURATION_MIN) if assigned_set else DEFAULT_DURATION_MIN
+    if frozen_session is None:
+        result_id = str(uuid.uuid4())
+        session_meta = {}
+    duration_min = (
+        _positive_int(
+            assigned_set.get(
+                "duration_min",
+                assigned_set.get("duration_minutes", DEFAULT_DURATION_MIN),
+            ),
+            DEFAULT_DURATION_MIN,
+        )
+        if assigned_set
+        else DEFAULT_DURATION_MIN
+    )
+    if duration_min < 1:
+        duration_min = DEFAULT_DURATION_MIN
 
     if not preview:
         # 스냅샷 저장 (approved 문제 정보 + 정답 고정)
@@ -146,8 +317,18 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
             "pass_score": assigned_set.get("pass_score", PASS_SCORE) if assigned_set else PASS_SCORE,
             "duration_min": duration_min,
             "created_at": datetime.now(timezone.utc).isoformat(),
+            **session_meta,
         }
-        s_repo.save_snapshot(result_id, snapshot)
+        try:
+            s_repo.save_snapshot(result_id, snapshot)
+        except Exception as exc:
+            if frozen_session is None:
+                raise
+            logging.exception("frozen exam snapshot save failed")
+            raise HTTPException(
+                status_code=503,
+                detail="확정 시험 Snapshot 저장에 실패했습니다.",
+            ) from exc
 
         # 출제 횟수 트래킹 — 실패해도 시험 생성은 계속
         try:
@@ -184,16 +365,17 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
     }
 
 
-def score_and_save(result_id: str, answers: dict, response_times: dict, employee_id: str = "", name: str = "", skip_save: bool = False) -> dict:
-    q_repo, r_repo, s_repo = _get_repos()
-
-    snapshot = s_repo.get_snapshot(result_id)
-    if not snapshot:
-        raise HTTPException(
-            status_code=410,
-            detail="시험 세션이 만료됐습니다. 시험을 다시 시작해주세요.",
-        )
-
+def _legacy_score_and_save(
+    result_id: str,
+    answers: dict,
+    response_times: dict,
+    employee_id: str,
+    name: str,
+    skip_save: bool,
+    snapshot: dict,
+    r_repo,
+) -> dict:
+    """기존 동적 시험의 채점 계약을 변경하지 않고 유지한다."""
     meta = snapshot.get("_meta", {})
     results = []
     score = 0
@@ -244,15 +426,312 @@ def score_and_save(result_id: str, answers: dict, response_times: dict, employee
         "team_code": meta.get("team_code", ""),
         "submitted_at": datetime.now(timezone.utc).isoformat(),
     }
-
     if not skip_save:
         r_repo.append_result(result_data)
     return result_data
 
 
-def get_exam_result(result_id: str) -> dict:
+def _submission_error(status_code: int, code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=status_code,
+        detail={"code": code, "message": message},
+    )
+
+
+def _answer_value(field: str, value):
+    if value is None or value == "":
+        return ""
+    if field == "is_correct":
+        if isinstance(value, str):
+            return value.strip().lower() in {"true", "1", "yes"}
+        return bool(value)
+    if field in {"score", "response_time_seconds"}:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return value
+    return str(value)
+
+
+def _same_result_answers(existing: list[dict], incoming: list[dict]) -> bool:
+    fields = (
+        "result_answer_id", "result_id", "exam_set_item_id", "question_id",
+        "question_version", "selected_choice", "correct_choice", "is_correct",
+        "score", "response_time_seconds",
+    )
+    existing_by_id = {
+        str(row.get("result_answer_id", "")): row for row in existing
+    }
+    incoming_by_id = {
+        str(row.get("result_answer_id", "")): row for row in incoming
+    }
+    if set(existing_by_id) != set(incoming_by_id):
+        return False
+    return all(
+        all(
+            _answer_value(field, existing_by_id[row_id].get(field))
+            == _answer_value(field, incoming_by_id[row_id].get(field))
+            for field in fields
+        )
+        for row_id in incoming_by_id
+    )
+
+
+def _frozen_result_details(items: list[dict], answer_rows: list[dict]) -> list[dict]:
+    answer_by_question = {row["question_id"]: row for row in answer_rows}
+    details = []
+    for item in sorted(items, key=lambda row: int(row.get("order_no", 0))):
+        question = _frozen_question(item)
+        answer = answer_by_question[question["question_id"]]
+        details.append({
+            "q_id": question["question_id"],
+            "question": question.get("question", ""),
+            "category": question.get("category", ""),
+            "options": {
+                "A": question.get("option_a", ""),
+                "B": question.get("option_b", ""),
+                "C": question.get("option_c", ""),
+                "D": question.get("option_d", ""),
+            },
+            "correct": bool(answer["is_correct"]),
+            "answer": answer["correct_choice"],
+            "user_answer": answer["selected_choice"],
+            "explanation": question.get("explanation", ""),
+            "difficulty": question.get("difficulty_init", "중"),
+            "response_time": answer["response_time_seconds"],
+        })
+    return details
+
+
+def _score_frozen_submission(
+    result_id: str,
+    answers: dict,
+    response_times: dict,
+    employee_id: str,
+    name: str,
+    skip_save: bool,
+    snapshot: dict,
+    r_repo,
+    submission_idempotency_key: str,
+) -> dict:
+    from repositories import exam_v2_repo, result_v2_repo
+    from repositories.result_v2 import ImmutableResultAnswerConflict
+    from services.results.dual_write import (
+        SubmissionValidationError,
+        build_attempt_record,
+        build_frozen_grading_records,
+    )
+
+    meta = snapshot.get("_meta", {})
+    if meta.get("employee_id") != employee_id:
+        raise HTTPException(status_code=403, detail="시험 응시자 정보가 일치하지 않습니다.")
+    if exam_v2_repo is None or result_v2_repo is None:
+        raise HTTPException(status_code=503, detail="확정 시험 결과 저장소를 사용할 수 없습니다.")
+
+    try:
+        assignment = exam_v2_repo.find_assignment(meta.get("exam_id", ""), employee_id)
+        version = exam_v2_repo.find_version(meta.get("exam_version_id", ""))
+        if (
+            assignment is None
+            or assignment.get("assignment_id") != meta.get("assignment_id")
+            or version is None
+        ):
+            raise _submission_error(
+                409, "EXAM_ASSIGNMENT_CHANGED",
+                "시험 배정 또는 확정 버전 정보가 변경되었습니다.",
+            )
+        items = exam_v2_repo.list_version_items(
+            version.get("exam_set_id", ""),
+            _positive_int(version.get("version_no"), 0),
+        )
+        if not items:
+            raise _submission_error(
+                409, "EXAM_FROZEN_ITEMS_MISSING",
+                "확정 시험 문항을 찾을 수 없습니다.",
+            )
+        attempt = result_v2_repo.find_attempt(meta.get("attempt_id", ""))
+        if (
+            attempt is None
+            or attempt.get("assignment_id") != meta.get("assignment_id")
+            or attempt.get("employee_id") != employee_id
+        ):
+            raise _submission_error(
+                409, "EXAM_ATTEMPT_NOT_FOUND", "유효한 시험 응시 기록을 찾을 수 없습니다."
+            )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logging.exception("normalized submission read failed")
+        raise HTTPException(status_code=503, detail="확정 시험 정보를 읽지 못했습니다.") from exc
+
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        answer_rows, grading = build_frozen_grading_records(
+            result_id, items, answers, response_times, now
+        )
+    except SubmissionValidationError as exc:
+        raise _submission_error(400, exc.code, exc.message) from exc
+    except ValueError as exc:
+        raise _submission_error(
+            409, "EXAM_FROZEN_ITEMS_INVALID", "확정 시험 문항 정보가 올바르지 않습니다."
+        ) from exc
+
+    effective_key = str(submission_idempotency_key or "").strip() or result_id
+    current_key = str(attempt.get("submission_idempotency_key", "")).strip()
+    if attempt.get("status") == "submitted" and current_key != effective_key:
+        raise _submission_error(
+            409, "RESULT_ALREADY_SUBMITTED", "이미 다른 제출 요청으로 완료된 시험입니다."
+        )
+    if current_key and current_key != effective_key:
+        raise _submission_error(
+            409, "SUBMISSION_IDEMPOTENCY_CONFLICT",
+            "같은 시험에 서로 다른 제출 식별자가 사용되었습니다.",
+        )
+
+    try:
+        existing_answers = result_v2_repo.list_result_answers(result_id)
+    except Exception as exc:
+        logging.exception("normalized answers read failed")
+        raise HTTPException(status_code=503, detail="기존 답안 기록을 읽지 못했습니다.") from exc
+    if existing_answers and not _same_result_answers(existing_answers, answer_rows):
+        raise _submission_error(
+            409, "SUBMISSION_IDEMPOTENCY_CONFLICT",
+            "동일한 제출 식별자로 다른 답안을 저장할 수 없습니다.",
+        )
+
+    existing_result = r_repo.get_result(result_id)
+    submitted_at = (
+        existing_result.get("submitted_at") if existing_result else now
+    )
+    details = _frozen_result_details(items, answer_rows)
+    result_data = {
+        "result_id": result_id,
+        "employee_id": employee_id,
+        "exam_id": meta.get("exam_id", ""),
+        "name": name,
+        "score": grading["score"],
+        "pass": grading["score"] >= meta.get("pass_score", PASS_SCORE),
+        "difficulty_summary": grading["difficulty_summary"],
+        "results": details,
+        "team_code": meta.get("team_code", ""),
+        "submitted_at": submitted_at,
+        "assignment_id": meta.get("assignment_id", ""),
+        "attempt_no": _positive_int(meta.get("attempt_no"), 1),
+        "started_at": attempt.get("started_at", ""),
+        "total_questions": grading["total_questions"],
+        "correct_count": grading["correct_count"],
+        "response_time_total_seconds": grading["response_time_total_seconds"],
+        "grading_summary_json": grading,
+        "schema_version": 2,
+        "row_version": 1,
+        "exam_version_id": meta.get("exam_version_id", ""),
+        "attempt_id": meta.get("attempt_id", ""),
+        "grading_status": "completed",
+        "submission_status": "submitted",
+        "error_code": "",
+        "reeducation_required": False,
+        "retest_assignment_id": "",
+    }
+    if existing_result:
+        # 최초 저장된 이름과 제출 시각 등 불변 결과를 재시도 응답에도 그대로 쓴다.
+        result_data = dict(existing_result)
+    if skip_save:
+        return result_data
+
+    try:
+        if not existing_answers:
+            result_v2_repo.save_result_answers(answer_rows)
+
+        if attempt.get("status") == "started":
+            attempt = build_attempt_record(
+                attempt_id=attempt["attempt_id"],
+                assignment_id=attempt["assignment_id"],
+                exam_id=attempt["exam_id"],
+                exam_version_id=attempt["exam_version_id"],
+                employee_id=attempt["employee_id"],
+                status="submitting",
+                occurred_at=now,
+                current=attempt,
+                submission_idempotency_key=effective_key,
+            )
+            result_v2_repo.upsert_attempt(attempt)
+
+        if existing_result is None:
+            r_repo.append_result(result_data)
+
+        if attempt.get("status") != "submitted":
+            attempt = build_attempt_record(
+                attempt_id=attempt["attempt_id"],
+                assignment_id=attempt["assignment_id"],
+                exam_id=attempt["exam_id"],
+                exam_version_id=attempt["exam_version_id"],
+                employee_id=attempt["employee_id"],
+                status="submitted",
+                occurred_at=now,
+                current=attempt,
+                submission_idempotency_key=effective_key,
+            )
+            result_v2_repo.upsert_attempt(attempt)
+
+        attempt_no = _positive_int(meta.get("attempt_no"), 1)
+        if _positive_int(assignment.get("attempts_used"), 0) < attempt_no:
+            updated_assignment = dict(assignment)
+            updated_assignment.update({
+                "attempts_used": attempt_no,
+                "submitted_at": now,
+                "row_version": _positive_int(assignment.get("row_version"), 0) + 1,
+            })
+            exam_v2_repo.upsert_assignment(updated_assignment)
+    except HTTPException:
+        raise
+    except ImmutableResultAnswerConflict as exc:
+        raise _submission_error(
+            409, "RESULT_ANSWER_IMMUTABLE_CONFLICT",
+            "이미 저장된 답안과 제출 답안이 일치하지 않습니다.",
+        ) from exc
+    except Exception as exc:
+        logging.exception("normalized result dual write failed")
+        raise HTTPException(status_code=503, detail="시험 결과 저장을 완료하지 못했습니다.") from exc
+    return result_data
+
+
+def score_and_save(
+    result_id: str,
+    answers: dict,
+    response_times: dict,
+    employee_id: str = "",
+    name: str = "",
+    skip_save: bool = False,
+    submission_idempotency_key: str = "",
+) -> dict:
+    q_repo, r_repo, s_repo = _get_repos()
+
+    snapshot = s_repo.get_snapshot(result_id)
+    if not snapshot:
+        raise HTTPException(
+            status_code=410,
+            detail="시험 세션이 만료됐습니다. 시험을 다시 시작해주세요.",
+        )
+
+    meta = snapshot.get("_meta", {})
+    from services.results.dual_write import get_result_write_policy
+    policy = get_result_write_policy()
+    if meta.get("grading_mode") == "frozen_v2" and policy.result_answers:
+        return _score_frozen_submission(
+            result_id, answers, response_times, employee_id, name, skip_save,
+            snapshot, r_repo, submission_idempotency_key,
+        )
+    return _legacy_score_and_save(
+        result_id, answers, response_times, employee_id, name, skip_save,
+        snapshot, r_repo,
+    )
+
+
+def get_exam_result(result_id: str, requester_id: str, requester_role: str) -> dict:
     _, r_repo, _ = _get_repos()
     result = r_repo.get_result(result_id)
     if not result:
         raise HTTPException(status_code=404, detail="결과를 찾을 수 없습니다.")
+    if requester_role != "admin" and result.get("employee_id") != requester_id:
+        raise HTTPException(status_code=403, detail="이 결과를 조회할 권한이 없습니다.")
     return result

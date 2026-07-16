@@ -1,6 +1,17 @@
-import { useState, useEffect, Fragment } from 'react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import { useState, useEffect, useRef, Fragment } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch, apiUpload, logout as apiLogout } from '../api'
+import AdminLayout from '../admin/components/AdminLayout'
+import { ADMIN_ROUTE_META } from '../admin/config/navigation'
+import ExamPaperPage from '../admin/pages/exam-papers/ExamPaperPage'
+import QuestionRoutePage from '../admin/pages/questions/QuestionRoutePage'
+import ResultRoutePage from '../admin/pages/results/ResultRoutePage'
+import SystemRoutePage from '../admin/pages/system/SystemRoutePage'
+import ExamManagementPage from '../admin/pages/exams/ExamManagementPage'
+import ExamLivePage from '../admin/pages/exams/ExamLivePage'
+import ExamLiveDetailPage from '../admin/pages/exams/ExamLiveDetailPage'
+import { PlannedGenerationRuns, PlannedQuestionBank, PlannedQuestionGeneration, PlannedQuestionReview } from '../admin/pages/questions/PlannedQuestionPages'
+import PlannedAuditLog from '../admin/pages/system/PlannedAuditLog'
 
 /* ── SVG Icon ──────────────────────────────────────────────── */
 function Icon({ name, size = 16, style }) {
@@ -862,11 +873,11 @@ function ExamReview({ toast }) {
 }
 
 /* ── 문제은행 (승인된 문제 목록) ─────────────────────────────── */
-function QuestionBank({ toast, onNavigate }) {
+function QuestionBank({ toast, onNavigate, filters, onFiltersChange, questionId }) {
   const [items, setItems] = useState(null)
   const [stats, setStats] = useState({})
-  const [cat, setCat] = useState('')
-  const [statusFilter, setStatusFilter] = useState('approved')
+  const [cat, setCat] = useState(() => filters?.category ?? '')
+  const [statusFilter, setStatusFilter] = useState(() => filters?.status ?? 'approved')
   const [rejectingId, setRejectingId] = useState(null)
   const [rejectReason, setRejectReason] = useState('')
   const [reasonCodes, setReasonCodes] = useState({})
@@ -875,18 +886,21 @@ function QuestionBank({ toast, onNavigate }) {
     apiFetch('GET', '/api/admin/question-stats').then(data => setStats(data.stats || {})).catch(() => {})
   }, [])
 
+  useEffect(() => { setCat(filters?.category ?? '') }, [filters?.category])
+  useEffect(() => { setStatusFilter(filters?.status ?? 'approved') }, [filters?.status])
+
   const STATUS_TABS = [
     { value: 'approved',  label: '승인 (문제은행)' },
     { value: 'reviewing', label: '검토대기' },
     { value: 'rejected',  label: '반려' },
-    { value: '',          label: '전체' },
+    { value: 'all',       label: '전체' },
   ]
 
-  async function load(sf = statusFilter) {
+  async function load(sf = statusFilter, category = cat) {
     try {
       let path = '/api/admin/questions?'
-      if (cat) path += `category=${encodeURIComponent(cat)}&`
-      if (sf)  path += `status=${sf}&`
+      if (category) path += `category=${encodeURIComponent(category)}&`
+      if (sf && sf !== 'all') path += `status=${sf}&`
       const data = await apiFetch('GET', path)
       setItems(data.questions)
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
@@ -922,13 +936,26 @@ function QuestionBank({ toast, onNavigate }) {
 
   function switchTab(v) {
     setStatusFilter(v)
-    load(v)
+    onFiltersChange?.({ status: v })
   }
+
+  function changeCategory(v) {
+    setCat(v)
+    onFiltersChange?.({ category: v })
+  }
+
+  useEffect(() => {
+    load(filters?.status ?? 'approved', filters?.category ?? '')
+  }, [questionId, filters?.status, filters?.category])
+
+  const visibleItems = questionId && items
+    ? items.filter(item => item.question_id === questionId)
+    : items
 
   return (
     <Card title="문제은행" noPad action={
       <div style={{ display:'flex', gap:8 }}>
-        <FilterSelect value={cat} onChange={setCat}>
+        <FilterSelect value={cat} onChange={changeCategory}>
           <option value="">전체 카테고리</option>
           <option value="공통">공통</option>
           <option value="팀별">팀별</option>
@@ -943,7 +970,7 @@ function QuestionBank({ toast, onNavigate }) {
     }>
       <div style={{ display:'flex', borderBottom:'1px solid var(--border)', padding:'0 20px', background:'var(--bg)' }}>
         {STATUS_TABS.map(tab => (
-          <button key={tab.value} onClick={() => switchTab(tab.value)}
+          <button key={tab.value} onClick={() => switchTab(tab.value)} aria-pressed={statusFilter === tab.value}
             style={{ padding:'9px 14px', fontSize:12, cursor:'pointer', border:'none', borderBottom: statusFilter===tab.value ? '2px solid var(--accent)' : '2px solid transparent', background:'none', fontFamily:'var(--font)', fontWeight: statusFilter===tab.value ? 700 : 500, color: statusFilter===tab.value ? 'var(--accent)' : 'var(--text-muted)', marginBottom:-1 }}>
             {tab.label}
           </button>
@@ -955,15 +982,15 @@ function QuestionBank({ toast, onNavigate }) {
           : '난이도 드롭다운 변경은 즉시 반영됩니다. 승인/반려는 검토대기 문제에서 가능합니다.'}
       </div>
       <div style={{ padding:'14px 20px' }}>
-        {!items ? (
+        {!visibleItems ? (
           <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>조회 버튼을 눌러 문제를 불러오세요.</p>
-        ) : items.length === 0 ? (
+        ) : visibleItems.length === 0 ? (
           <p style={{ color:'var(--text-muted)', textAlign:'center', padding:'28px 0', fontSize:13 }}>
             {statusFilter === 'approved' ? '승인된 문제가 없습니다. 검토·검증 탭에서 승인해주세요.' : '문제가 없습니다.'}
           </p>
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-            {items.map(q => {
+            {visibleItems.map(q => {
               const d = q.admin_override || q.difficulty_ai || q.difficulty_init
               const isReviewing = q.status === 'reviewing'
               const isRejecting = rejectingId === q.question_id
@@ -1028,7 +1055,30 @@ function QuestionBank({ toast, onNavigate }) {
 }
 
 /* ── 시험지 생성 (자동 배분 + 피드백 편집) ───────────────────── */
-function ExamSheet({ toast, onNavigate }) {
+function normalizeQuestionScores(questionIds, preferredScores = {}) {
+  if (questionIds.length === 0 || questionIds.length > 100 || new Set(questionIds).size !== questionIds.length) return null
+
+  const preferred = questionIds.map(questionId => Number(preferredScores[questionId]))
+  if (preferred.every(score => Number.isInteger(score) && score > 0)
+      && preferred.reduce((sum, score) => sum + score, 0) === 100) {
+    return Object.fromEntries(questionIds.map((questionId, index) => [questionId, preferred[index]]))
+  }
+
+  const weights = preferred.map(score => Number.isFinite(score) && score > 0 ? score : 0)
+  if (weights.every(weight => weight === 0)) weights.fill(1)
+  const weightTotal = weights.reduce((sum, weight) => sum + weight, 0)
+  const distributable = 100 - questionIds.length
+  const rawShares = weights.map(weight => weight / weightTotal * distributable)
+  const scores = rawShares.map(share => 1 + Math.floor(share))
+  let remainder = 100 - scores.reduce((sum, score) => sum + score, 0)
+  const remainderOrder = rawShares
+    .map((share, index) => ({ index, fraction:share - Math.floor(share) }))
+    .sort((left, right) => right.fraction - left.fraction || left.index - right.index)
+  for (let index = 0; index < remainder; index += 1) scores[remainderOrder[index].index] += 1
+  return Object.fromEntries(questionIds.map((questionId, index) => [questionId, scores[index]]))
+}
+
+export function ExamSheet({ toast, onNavigate, sourceExamId = null, onSaved }) {
   const [examName, setExamName] = useState('')
   const [team, setTeam] = useState('T1')
   const [teamDropdownOpen, setTeamDropdownOpen] = useState(false)
@@ -1045,6 +1095,7 @@ function ExamSheet({ toast, onNavigate }) {
   const [swapTargetIdx, setSwapTargetIdx] = useState(null)
   const [swapPool, setSwapPool] = useState([])
   const [selectedIdx, setSelectedIdx] = useState(0)
+  const [sourceQuestionScores, setSourceQuestionScores] = useState({})
 
   useEffect(() => {
     const upper = Math.round(totalCount * 0.28)
@@ -1057,6 +1108,35 @@ function ExamSheet({ toast, onNavigate }) {
   useEffect(() => {
     apiFetch('GET', '/api/admin/teams').then(d => setTeams(d.teams || [])).catch(() => {})
   }, [])
+
+  useEffect(() => {
+    if (!sourceExamId) {
+      setSourceQuestionScores({})
+      return undefined
+    }
+    let active = true
+    apiFetch('GET', `/api/admin/exam-sets/${encodeURIComponent(sourceExamId)}/questions`)
+      .then(data => {
+        if (!active) return
+        const source = data.exam_set || {}
+        const copiedQuestions = (data.questions || []).map((question, index) => ({
+          ...question,
+          id: question.question_id || question.id,
+          _order:index + 1,
+        }))
+        setExamName(`${source.name || '시험지'} 수정본`)
+        setTeam(source.team_code || 'T1')
+        setQuestions(copiedQuestions)
+        setTotalCount(copiedQuestions.length || 1)
+        setSelectedIdx(0)
+        setSwapTargetIdx(null)
+        setSourceQuestionScores(source.question_scores || Object.fromEntries(
+          copiedQuestions.map(question => [question.question_id || question.id, Number(question.score || 0)]),
+        ))
+      })
+      .catch(error => { if (active) toast(`원본 시험지 조회 실패: ${error.message}`, 'error') })
+    return () => { active = false }
+  }, [sourceExamId])
 
   const teamOpts = (teams.length > 0 ? teams : [{ team_code:'T1', team_name:'1팀' }, { team_code:'T2', team_name:'2팀' }, { team_code:'T3', team_name:'3팀' }])
     .map(t => [t.team_code, t.team_name])
@@ -1138,6 +1218,14 @@ function ExamSheet({ toast, onNavigate }) {
       difficulty: replacement.difficulty || replacement.admin_override || replacement.difficulty_ai || replacement.difficulty_init || '중',
       answer: replacement.answer,
     }
+    if (sourceExamId) {
+      const previousId = questions[idx]?.id || questions[idx]?.question_id
+      const replacementId = normalized.id
+      setSourceQuestionScores(previous => ({
+        ...previous,
+        [replacementId]:Number(previous[previousId] || 0),
+      }))
+    }
     setQuestions(prev => {
       const arr = [...prev]
       arr[idx] = { ...normalized, _order: arr[idx]._order }
@@ -1152,12 +1240,22 @@ function ExamSheet({ toast, onNavigate }) {
     if (!questions || questions.length === 0) { toast('먼저 문제를 배분해주세요.', 'error'); return }
     try {
       const question_ids = questions.map(q => q.id || q.question_id).filter(Boolean)
-      const res = await apiFetch('POST', '/api/admin/exam-sets', { name: examName.trim(), team_code: team, question_ids })
+      const body = { name: examName.trim(), team_code: team, question_ids }
+      if (sourceExamId) {
+        const normalizedScores = normalizeQuestionScores(question_ids, sourceQuestionScores)
+        if (!normalizedScores) {
+          toast('복사 시험지는 문항별 배점을 양의 정수로 구성해야 하며 최대 100문항까지 저장할 수 있습니다.', 'error')
+          return
+        }
+        body.question_scores = normalizedScores
+      }
+      const res = await apiFetch('POST', '/api/admin/exam-sets', body)
       if (res.invalid_question_ids?.length > 0) {
         toast(`시험지가 저장됐지만, 존재하지 않는 문제 ${res.invalid_question_ids.length}개는 제외됐습니다.`, 'error')
       } else {
         toast('시험지가 저장됐습니다.')
       }
+      onSaved?.(res.exam_id)
     } catch (e) { toast(`저장 실패: ${e.message}`, 'error') }
   }
 
@@ -1505,12 +1603,22 @@ function ExamSheet({ toast, onNavigate }) {
 }
 
 /* ── 응시 이력 ───────────────────────────────────────────────── */
-function History({ toast }) {
+function History({ toast, filters, onFiltersChange }) {
   const [rows, setRows] = useState(null)
-  const [filterTeam, setFilterTeam] = useState('')
-  const [filterFrom, setFilterFrom] = useState('')
-  const [filterTo, setFilterTo] = useState('')
-  const [search, setSearch] = useState('')
+  const [filterTeam, setFilterTeam] = useState(() => filters?.team ?? '')
+  const [filterFrom, setFilterFrom] = useState(() => filters?.from ?? '')
+  const [filterTo, setFilterTo] = useState(() => filters?.to ?? '')
+  const [search, setSearch] = useState(() => filters?.q ?? '')
+
+  useEffect(() => { setFilterTeam(filters?.team ?? '') }, [filters?.team])
+  useEffect(() => { setFilterFrom(filters?.from ?? '') }, [filters?.from])
+  useEffect(() => { setFilterTo(filters?.to ?? '') }, [filters?.to])
+  useEffect(() => { setSearch(filters?.q ?? '') }, [filters?.q])
+
+  function changeFilter(key, value, setter) {
+    setter(value)
+    onFiltersChange?.({ [key]: value })
+  }
 
   async function load() {
     try {
@@ -1528,15 +1636,15 @@ function History({ toast }) {
   return (
     <Card title="응시 이력" noPad action={
       <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-        <FilterSelect value={filterTeam} onChange={setFilterTeam}><option value="">전체 팀</option><option value="T1">1팀</option><option value="T2">2팀</option><option value="T3">3팀</option></FilterSelect>
-        <input type="date" value={filterFrom} onChange={e => setFilterFrom(e.target.value)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }} />
+        <FilterSelect value={filterTeam} onChange={value => changeFilter('team', value, setFilterTeam)}><option value="">전체 팀</option><option value="T1">1팀</option><option value="T2">2팀</option><option value="T3">3팀</option></FilterSelect>
+        <input type="date" value={filterFrom} onChange={e => changeFilter('from', e.target.value, setFilterFrom)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }} />
         <span style={{ color:'var(--text-muted)', fontSize:13 }}>~</span>
-        <input type="date" value={filterTo} onChange={e => setFilterTo(e.target.value)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }} />
+        <input type="date" value={filterTo} onChange={e => changeFilter('to', e.target.value, setFilterTo)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }} />
         <BtnOutlineSm onClick={load}>조회</BtnOutlineSm>
       </div>
     }>
       <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border)' }}>
-        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="이름 검색" style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', maxWidth:240, width:'100%', outline:'none' }} />
+        <input value={search} onChange={e => changeFilter('q', e.target.value, setSearch)} placeholder="이름 검색" style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', maxWidth:240, width:'100%', outline:'none' }} />
       </div>
       <DataTable headers={['이름','팀','점수','결과','응시일','난이도 분포']}>
         {!filtered ? (
@@ -1882,10 +1990,10 @@ function ScoreBoxPlot({ takers, stats, passScore }) {
   )
 }
 
-function Results() {
+function Results({ filters, onFiltersChange }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
-  const [teamFilter, setTeamFilter] = useState([])
+  const [teamFilter, setTeamFilter] = useState(() => filters?.teams ?? [])
   const [selectedExamId, setSelectedExamId] = useState(null)
   const [expandedTaker, setExpandedTaker] = useState(null)
   const [answerSheetOpen, setAnswerSheetOpen] = useState(false)
@@ -1896,6 +2004,8 @@ function Results() {
       .then(setData)
       .catch(e => setError(e.message))
   }, [])
+
+  useEffect(() => { setTeamFilter(filters?.teams ?? []) }, [filters?.teams?.join(',')])
 
   if (error) {
     return <Card><p style={{ fontSize:13, color:'var(--danger)', textAlign:'center', padding:'24px 0' }}>조회 실패: {error}</p></Card>
@@ -1915,7 +2025,11 @@ function Results() {
   const scoreStats = selectedExam ? computeBoxStats(selectedExam.takers.map(t => t.score)) : null
 
   function toggleTeamFilter(teamCode) {
-    setTeamFilter(prev => prev.includes(teamCode) ? prev.filter(t => t !== teamCode) : [...prev, teamCode])
+    setTeamFilter(prev => {
+      const next = prev.includes(teamCode) ? prev.filter(t => t !== teamCode) : [...prev, teamCode]
+      onFiltersChange?.({ team: next })
+      return next
+    })
   }
 
   function openExam(examSetId) {
@@ -2083,6 +2197,72 @@ function Results() {
   )
 }
 
+function MaterialsPanel({ toast }) {
+  const [teams, setTeams] = useState([])
+  const [team, setTeam] = useState('T1')
+  const [status, setStatus] = useState(null)
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    apiFetch('GET', '/api/admin/teams').then(data => setTeams(data.teams || [])).catch(() => {})
+  }, [])
+
+  async function load() {
+    setLoading(true)
+    try {
+      const data = await apiFetch('GET', `/api/admin/materials/status?team_code=${encodeURIComponent(team)}`)
+      setStatus(data)
+    } catch (error) {
+      toast?.(`자료 상태 조회 실패: ${error.message}`, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { load() }, [team])
+
+  async function scan() {
+    setLoading(true)
+    try {
+      await apiFetch('POST', '/api/admin/materials/scan', { team_code: team })
+      toast?.('교육자료 스캔이 완료됐습니다.')
+      await load()
+    } catch (error) {
+      toast?.(`스캔 실패: ${error.message}`, 'error')
+      setLoading(false)
+    }
+  }
+
+  const teamOptions = teams.length ? teams : [
+    { team_code:'T1', team_name:'1팀' },
+    { team_code:'T2', team_name:'2팀' },
+    { team_code:'T3', team_name:'3팀' },
+  ]
+  const files = status
+    ? Object.values(status.categories || {}).flatMap(category => category.new_files || [])
+    : []
+
+  return (
+    <Card title="자료 · 연동" action={
+      <div style={{ display:'flex', gap:8 }}>
+        <FilterSelect value={team} onChange={setTeam}>
+          {teamOptions.map(item => <option key={item.team_code} value={item.team_code}>{item.team_name}</option>)}
+        </FilterSelect>
+        <BtnOutlineSm onClick={load} disabled={loading}>새로고침</BtnOutlineSm>
+      </div>
+    }>
+      <div style={{ padding:16, border:'1px solid var(--border)', borderRadius:8, background:'var(--bg)', marginBottom:14 }}>
+        <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', marginBottom:6 }}>교육자료 상태</div>
+        <div style={{ fontSize:12, color:'var(--text-muted)' }}>
+          {loading && !status ? '확인 중...' : status?.has_new_any ? `새 자료 ${files.length}개가 있습니다.` : '새로 반영할 교육자료가 없습니다.'}
+        </div>
+        {files.length > 0 && <div style={{ marginTop:8, fontSize:12, color:'var(--text)' }}>{files.map(file => file.name).join(', ')}</div>}
+      </div>
+      <BtnPrimary onClick={scan} disabled={loading}>{loading ? '처리 중...' : '새 자료 스캔'}</BtnPrimary>
+    </Card>
+  )
+}
+
 /* ── 설정 ────────────────────────────────────────────────────── */
 function Settings() {
   const [driveStatus, setDriveStatus] = useState('확인 중...')
@@ -2172,11 +2352,11 @@ function Settings() {
 
 /* ── Admin Layout ───────────────────────────────────────────── */
 /* ── 시험 생성·관리 ──────────────────────────────────────────── */
-function ExamAssign({ toast, focusExamId, onFocusConsumed }) {
+function ExamAssign({ toast, selectedExamId, onSelectExam }) {
   const [sets, setSets] = useState([])
   const [users, setUsers] = useState([])
   const [papers, setPapers] = useState([])
-  const [viewedSetId, setViewedSetId] = useState('')
+  const viewedSetId = selectedExamId || ''
   const [assignees, setAssignees] = useState([])
   const [userQuery, setUserQuery] = useState('')
   const [selectedUser, setSelectedUser] = useState('')
@@ -2199,6 +2379,7 @@ function ExamAssign({ toast, focusExamId, onFocusConsumed }) {
   const [questionsModalSet, setQuestionsModalSet] = useState(null)
   const [questionsModalData, setQuestionsModalData] = useState(null)
   const [questionsModalLoading, setQuestionsModalLoading] = useState(false)
+  const assigneeRequestSequence = useRef(0)
 
   function loadSets() {
     return apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
@@ -2224,35 +2405,39 @@ function ExamAssign({ toast, focusExamId, onFocusConsumed }) {
       toast('새 시험을 만들었습니다.')
       setCreateForm({ paperId: '', name: '', datetime: '', durationMin: 60, passScore: 70 })
       await loadSets()
-      setViewedSetId(created.exam_id)
-      loadAssignees(created.exam_id)
+      onSelectExam(created.exam_id)
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
     finally { setCreating(false) }
   }
 
   async function loadAssignees(setId) {
-    if (!setId) { setAssignees([]); return }
+    const requestSequence = ++assigneeRequestSequence.current
+    if (!setId) {
+      if (requestSequence === assigneeRequestSequence.current) setAssignees([])
+      return
+    }
     try {
       const d = await apiFetch('GET', `/api/admin/exam-sets/${setId}/assignees`)
-      setAssignees(d.assignees || [])
-    } catch { setAssignees([]) }
+      if (requestSequence === assigneeRequestSequence.current) setAssignees(d.assignees || [])
+    } catch {
+      if (requestSequence === assigneeRequestSequence.current) setAssignees([])
+    }
   }
 
   useEffect(() => { setListPage(1) }, [listStatusFilter])
 
   function openSet(setId) {
-    setViewedSetId(setId)
-    setAssignError('')
-    setUserQuery('')
-    setSelectedUser('')
-    loadAssignees(setId)
+    onSelectExam(setId)
   }
 
   useEffect(() => {
-    if (!focusExamId) return
-    openSet(focusExamId)
-    onFocusConsumed?.()
-  }, [focusExamId])
+    setAssignError('')
+    setUserQuery('')
+    setSelectedUser('')
+    if (viewedSetId) loadAssignees(viewedSetId)
+    else setAssignees([])
+    return () => { assigneeRequestSequence.current += 1 }
+  }, [viewedSetId])
 
   async function handleAssign() {
     if (!viewedSetId || !selectedUser) { toast('응시자를 선택하세요.', 'error'); return }
@@ -2290,7 +2475,7 @@ function ExamAssign({ toast, focusExamId, onFocusConsumed }) {
     try {
       await apiFetch('DELETE', `/api/admin/exam-sets/${setId}`)
       toast('시험세트가 삭제됐습니다.')
-      if (viewedSetId === setId) { setViewedSetId(''); setAssignees([]) }
+      if (viewedSetId === setId) onSelectExam(null)
       const setsData = await apiFetch('GET', '/api/admin/exam-sets')
       setSets(setsData.sets || [])
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
@@ -2678,66 +2863,6 @@ function ExamAssign({ toast, focusExamId, onFocusConsumed }) {
   )
 }
 
-/* ── 응시 현황 ──────────────────────────────────────────────── */
-function ExamStatus({ toast }) {
-  const [sets, setSets] = useState([])
-  const [selectedSet, setSelectedSet] = useState('')
-  const [results, setResults] = useState([])
-  const [loading, setLoading] = useState(false)
-
-  useEffect(() => {
-    apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
-  }, [])
-
-  async function loadResults(setId) {
-    setSelectedSet(setId)
-    if (!setId) { setResults([]); return }
-    setLoading(true)
-    try {
-      const d = await apiFetch('GET', `/api/admin/exam-sets/${setId}/results`)
-      setResults(d.results || [])
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
-    finally { setLoading(false) }
-  }
-
-  return (
-    <div style={{ display:'flex', flexDirection:'column', gap:20 }}>
-      <Card title="응시 현황 조회">
-        <select value={selectedSet} onChange={e => loadResults(e.target.value)}
-          style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
-          <option value="">-- 시험세트 선택 --</option>
-          {sets.map(s => <option key={s.exam_id} value={s.exam_id}>{s.name} ({s.team_code})</option>)}
-        </select>
-      </Card>
-
-      {selectedSet && (
-        <Card title={`응시 결과 (${results.length}명)`}>
-          {loading ? (
-            <p style={{ color:'var(--text-muted)', fontSize:14 }}>불러오는 중...</p>
-          ) : results.length === 0 ? (
-            <p style={{ color:'var(--text-muted)', fontSize:14 }}>아직 응시 결과가 없습니다.</p>
-          ) : (
-            <DataTable headers={['응시자 ID','점수','합격 여부','응시일']}>
-              {results.map((r, i) => (
-                <tr key={i}>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontFamily:'monospace' }}>{r.employee_id || '-'}</td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:700 }}>{r.score}점</td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>
-                    <span style={{ fontSize:12, fontWeight:700, padding:'3px 10px', borderRadius:20, background: r.pass ? 'var(--success-light)' : 'var(--danger-light)', color: r.pass ? 'var(--success)' : 'var(--danger)' }}>
-                      {r.pass ? '합격' : '불합격'}
-                    </span>
-                  </td>
-                  <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{r.submitted_at ? r.submitted_at.slice(0,10) : '-'}</td>
-                </tr>
-              ))}
-            </DataTable>
-          )}
-        </Card>
-      )}
-    </div>
-  )
-}
-
 /* ── 팀 관리 ─────────────────────────────────────────────────── */
 function TeamsManager({ toast }) {
   const [teams, setTeams] = useState([])
@@ -2842,165 +2967,111 @@ const Q_VIEWS    = ['q-generate','q-review','q-bank']
 const EXAM_VIEWS = ['exam-sheet','exam-assign','exam-status']
 const ADMIN_VIEWS = ['dashboard', ...Q_VIEWS, ...EXAM_VIEWS, 'history', 'users', 'results', 'settings', 'teams']
 
-function initialAdminView() {
+function initialAdminView(initialView) {
+  if (ADMIN_VIEWS.includes(initialView)) return initialView
   const saved = sessionStorage.getItem(ADMIN_VIEW_KEY)
   return ADMIN_VIEWS.includes(saved) ? saved : 'dashboard'
 }
 
-export default function Admin() {
+function adminMetaForPath(pathname, fallback) {
+  const exact = ADMIN_ROUTE_META[pathname]
+  if (exact) return { title: exact.title, bc: exact.breadcrumbs }
+  if (/^\/admin\/questions\/generate\/runs\/[^/]+$/.test(pathname)) return { title:'생성 결과', bc:['홈','문제 관리','생성 작업','생성 결과'] }
+  if (/^\/admin\/questions\/[^/]+\/history$/.test(pathname)) return { title:'변경 이력', bc:['홈','문제 관리','문제은행','변경 이력'] }
+  if (/^\/admin\/questions\/[^/]+$/.test(pathname)) return { title:'문제 상세', bc:['홈','문제 관리','문제은행','문제 상세'] }
+  if (/^\/admin\/results\/[^/]+$/.test(pathname)) return { title:'결과 상세', bc:['홈','결과 관리','응시 결과','결과 상세'] }
+  if (/^\/admin\/exams\/[^/]+\/live$/.test(pathname)) return { title:'시험별 응시 현황', bc:['홈','시험 관리','응시 현황','시험별 상세'] }
+  return fallback
+}
+
+function liveExamIdFromPathname(pathname) {
+  const match = pathname.match(/^\/admin\/exams\/([^/]+)\/live$/)
+  if (!match) return null
+  try { return decodeURIComponent(match[1]) } catch { return match[1] }
+}
+
+export function examIdFromPathname(pathname) {
+  const match = pathname.match(/^\/admin\/exams\/([^/]+)$/)
+  if (!match) return null
+  try {
+    return decodeURIComponent(match[1])
+  } catch {
+    return match[1]
+  }
+}
+
+export default function Admin({ initialView, onRouteNavigate }) {
   const navigate = useNavigate()
-  const [searchParams, setSearchParams] = useSearchParams()
-  const rawView = searchParams.get('view')
-  const view = ADMIN_VIEWS.includes(rawView) ? rawView : initialAdminView()
-  const [qSubOpen, setQSubOpen] = useState(() => Q_VIEWS.includes(view))
-  const [examSubOpen, setExamSubOpen] = useState(() => EXAM_VIEWS.includes(view))
-  const [examAssignFocusId, setExamAssignFocusId] = useState(null)
+  const location = useLocation()
+  const [view, setView] = useState(() => initialAdminView(initialView))
+  const [examAssignFocusId, setExamAssignFocusId] = useState(() => examIdFromPathname(location.pathname))
   const { toast, ToastContainer } = useToast()
 
-  const meta = NAV_META[view] || NAV_META.dashboard
-
-  // 브라우저 뒤로/앞으로 가기가 대시보드 밖으로 바로 나가버리지 않도록, 탭 전환을
-  // URL(?view=)에 기록해 히스토리 엔트리로 남긴다. 새로고침·직접 진입 시에는
-  // 쿼리가 없으므로 sessionStorage에 남은 마지막 탭으로 한 번만 보정한다.
   useEffect(() => {
-    if (!ADMIN_VIEWS.includes(rawView)) setSearchParams({ view }, { replace: true })
-  }, [rawView]) // eslint-disable-line react-hooks/exhaustive-deps
+    if (!ADMIN_VIEWS.includes(initialView)) return
+    setView(initialView)
+    setExamAssignFocusId(examIdFromPathname(location.pathname))
+  }, [initialView, location.pathname])
 
-  useEffect(() => {
-    sessionStorage.setItem(ADMIN_VIEW_KEY, view)
-    if (Q_VIEWS.includes(view))    setQSubOpen(true)
-    if (EXAM_VIEWS.includes(view)) setExamSubOpen(true)
-  }, [view])
+  const meta = adminMetaForPath(location.pathname, NAV_META[view] || NAV_META.dashboard)
 
   function goView(v, opts) {
+    if (onRouteNavigate) {
+      onRouteNavigate(v, opts)
+      return
+    }
+    setView(v)
+    sessionStorage.setItem(ADMIN_VIEW_KEY, v)
     if (opts?.focusExamId) setExamAssignFocusId(opts.focusExamId)
-    setSearchParams({ view: v })
-  }
-
-  const navItems = [
-    { id:'dashboard',   icon:'grid',  label:'대시보드' },
-    { id:'q-manage',    icon:'book',  label:'문제 관리', sub:[
-      { id:'q-generate', icon:'ai',    label:'문제 생성' },
-      { id:'q-review',   icon:'check', label:'검토·검증' },
-      { id:'q-bank',     icon:'book',  label:'문제은행' },
-    ]},
-    { id:'exam-manage', icon:'file',  label:'시험 관리', sub:[
-      { id:'exam-sheet',  icon:'file',  label:'시험지 생성·관리' },
-      { id:'exam-assign', icon:'users', label:'시험 생성·관리' },
-      { id:'exam-status', icon:'chart', label:'응시 현황' },
-    ]},
-    { id:'history',     icon:'clock',    label:'응시 이력' },
-    { id:'users',       icon:'users',    label:'사용자 승인' },
-    { id:'results',     icon:'chart',    label:'결과 분석' },
-    { id:'settings',    icon:'settings', label:'설정' },
-    { id:'teams',       icon:'users',    label:'팀 관리' },
-  ]
-
-  const SIDEBAR_W = 220
-  const HEADER_H  = 56
-
-  const isActive = id => {
-    if (id === 'q-manage')    return Q_VIEWS.includes(view)
-    if (id === 'exam-manage') return EXAM_VIEWS.includes(view)
-    return view === id
   }
 
   return (
-    <div style={{ fontFamily:'var(--font)', fontSize:14, color:'var(--text)', background:'var(--bg)', height:'100vh', overflow:'hidden', display:'flex', flexDirection:'column' }}>
+    <>
       <ToastContainer />
-
-      {/* Header */}
-      <header style={{ position:'fixed', top:0, left:0, right:0, zIndex:100, height:HEADER_H, background:'var(--card)', borderBottom:'1px solid var(--border)', display:'flex', alignItems:'center', padding:'0 24px 0 0' }}>
-        <div style={{ width:SIDEBAR_W, padding:'0 18px', display:'flex', alignItems:'center', gap:10, borderRight:'1px solid var(--border)', height:'100%', flexShrink:0 }}>
-          <div style={{ width:30, height:30, background:'var(--accent)', borderRadius:7, display:'flex', alignItems:'center', justifyContent:'center', fontSize:13, color:'white', fontWeight:800, flexShrink:0 }}>X</div>
-          <div>
-            <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', lineHeight:1.2 }}>(주)엑스티</div>
-            <div style={{ fontSize:10, color:'var(--text-muted)', lineHeight:1.2 }}>OJT 평가 시스템</div>
-          </div>
-        </div>
-        <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 24px' }}>
-          <span style={{ fontSize:16, fontWeight:700, color:'var(--text)' }}>{meta.title}</span>
-          <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-            <div style={{ width:32, height:32, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:13, fontWeight:700 }}>김</div>
-            <div>
-              <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', lineHeight:1.2 }}>김흥길 과장</div>
-              <div style={{ fontSize:11, color:'var(--text-muted)', lineHeight:1.2 }}>인사팀 · 관리자</div>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Shell */}
-      <div style={{ display:'flex', marginTop:HEADER_H, height:`calc(100vh - ${HEADER_H}px)`, overflow:'hidden' }}>
-
-        {/* Sidebar */}
-        <nav style={{ width:SIDEBAR_W, background:'var(--primary)', flexShrink:0, display:'flex', flexDirection:'column', overflowY:'auto', overflowX:'hidden' }}>
-          <div style={{ padding:'10px 0', flex:1 }}>
-            <div style={{ padding:'10px 18px 4px', fontSize:9, fontWeight:700, letterSpacing:'.10em', color:'rgba(255,255,255,.22)', textTransform:'uppercase' }}>메뉴</div>
-            {navItems.map(item => (
-              <div key={item.id}>
-                <div
-                  onClick={() => item.id === 'q-manage' ? setQSubOpen(v => !v) : item.id === 'exam-manage' ? setExamSubOpen(v => !v) : goView(item.id)}
-                  style={{ display:'flex', alignItems:'center', gap:9, padding:'9px 18px', color: isActive(item.id) ? 'white' : 'rgba(255,255,255,.60)', cursor:'pointer', fontSize:13, borderLeft:`2px solid ${isActive(item.id) ? 'var(--accent)' : 'transparent'}`, background: isActive(item.id) ? 'rgba(255,255,255,.10)' : 'transparent', fontWeight: isActive(item.id) ? 600 : 400 }}
-                >
-                  <Icon name={item.icon} size={15} style={{ opacity: isActive(item.id) ? 1 : 0.65 }} />
-                  <span>{item.label}</span>
-                  {item.sub && <span style={{ marginLeft:'auto', fontSize:11, color:'rgba(255,255,255,.30)', display:'inline-block', transform: (item.id === 'q-manage' ? qSubOpen : examSubOpen) ? 'rotate(90deg)' : 'none', transition:'transform .2s' }}>›</span>}
-                </div>
-                {item.sub && (item.id === 'q-manage' ? qSubOpen : examSubOpen) && (
-                  <div style={{ background:'rgba(0,0,0,.15)' }}>
-                    {item.sub.map(s => (
-                      <div key={s.id} onClick={() => goView(s.id)}
-                        style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 18px 8px 40px', color: view === s.id ? 'white' : 'rgba(255,255,255,.55)', cursor:'pointer', fontSize:12.5, borderLeft:`2px solid ${view === s.id ? 'var(--accent)' : 'transparent'}`, background: view === s.id ? 'rgba(255,255,255,.08)' : 'transparent', fontWeight: view === s.id ? 600 : 400 }}>
-                        <Icon name={s.icon} size={13} style={{ opacity: view === s.id ? 1 : 0.55 }} />
-                        {s.label}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-          <div style={{ borderTop:'1px solid rgba(255,255,255,.07)', padding:'14px 16px' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:12, padding:'8px 4px 14px' }}>
-              <div style={{ width:40, height:40, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:16, fontWeight:700, flexShrink:0 }}>김</div>
-              <div style={{ overflow:'hidden' }}>
-                <div style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,.88)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>김흥길 과장</div>
-                <div style={{ fontSize:11, color:'rgba(255,255,255,.35)', marginTop:2 }}>관리자</div>
-              </div>
-            </div>
-            <button onClick={() => apiLogout(navigate)} style={{ width:'100%', background:'rgba(255,255,255,.07)', border:'1px solid rgba(255,255,255,.10)', borderRadius:7, padding:'9px 10px', fontFamily:'var(--font)', fontSize:13, color:'rgba(255,255,255,.55)', cursor:'pointer', display:'flex', alignItems:'center', gap:7 }}>
-              <Icon name="logout" size={14} style={{ color:'rgba(255,255,255,.5)' }} /> 로그아웃
-            </button>
-          </div>
-        </nav>
-
-        {/* Main */}
-        <main style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
-          <div style={{ padding:'8px 24px', display:'flex', alignItems:'center', gap:6, fontSize:12, color:'var(--text-muted)', borderBottom:'1px solid var(--border)', background:'var(--card)', flexShrink:0 }}>
-            {meta.bc.map((c, i) => (
-              <span key={i} style={{ display:'flex', alignItems:'center', gap:6 }}>
-                {i > 0 && <span style={{ color:'var(--text-light)' }}>›</span>}
-                <span style={{ color: i === meta.bc.length-1 ? 'var(--text)' : 'var(--text-muted)', fontWeight: i === meta.bc.length-1 ? 600 : 400 }}>{c}</span>
-              </span>
-            ))}
-          </div>
-          <div style={{ flex:1, overflowY:'auto', padding:24 }}>
-            {view === 'dashboard'   && <Dashboard onNavigate={goView} />}
-            {view === 'q-generate'  && <QuestionGenerate toast={toast} onNavigate={goView} />}
-            {view === 'q-review'    && <ExamReview toast={toast} />}
-            {view === 'q-bank'      && <QuestionBank toast={toast} onNavigate={goView} />}
-            {view === 'exam-sheet'  && <ExamSheet toast={toast} onNavigate={goView} />}
-            {view === 'exam-assign' && <ExamAssign toast={toast} focusExamId={examAssignFocusId} onFocusConsumed={() => setExamAssignFocusId(null)} />}
-            {view === 'exam-status' && <ExamStatus toast={toast} />}
-            {view === 'history'     && <History toast={toast} />}
-            {view === 'users'       && <Users toast={toast} />}
-            {view === 'results'     && <Results />}
-            {view === 'settings'    && <Settings />}
-            {view === 'teams'       && <TeamsManager toast={toast} />}
-          </div>
-        </main>
-      </div>
-    </div>
+      <AdminLayout title={meta.title} breadcrumbs={meta.bc} onLogout={() => apiLogout(navigate)}>
+        {view === 'dashboard'   && <Dashboard onNavigate={goView} />}
+        {Q_VIEWS.includes(view) && <QuestionRoutePage
+          GenerateComponent={PlannedQuestionGeneration}
+          ReviewComponent={PlannedQuestionReview}
+          BankComponent={PlannedQuestionBank}
+          RunsComponent={PlannedGenerationRuns}
+          toast={toast}
+          onNavigate={goView}
+        />}
+        {view === 'exam-sheet'  && (
+          <ExamPaperPage renderSetup={({ sourceExamId, onSaved }) => (
+            <ExamSheet toast={toast} onNavigate={goView} sourceExamId={sourceExamId} onSaved={onSaved} />
+          )} />
+        )}
+        {view === 'exam-assign' && (
+          <ExamManagementPage renderManagement={({ selectedExamId, onSelectExam }) => (
+            <ExamAssign toast={toast} selectedExamId={selectedExamId} onSelectExam={onSelectExam} />
+          )} />
+        )}
+        {view === 'exam-status' && (liveExamIdFromPathname(location.pathname) ? (
+          <ExamLiveDetailPage
+            examId={liveExamIdFromPathname(location.pathname)}
+            CardComponent={Card}
+            BadgeComponent={Badge}
+            TableComponent={DataTable}
+          />
+        ) : (
+          <ExamLivePage CardComponent={Card} BadgeComponent={Badge} />
+        ))}
+        {(view === 'history' || view === 'results') && <ResultRoutePage
+          HistoryComponent={History}
+          AnalyticsComponent={Results}
+          toast={toast}
+        />}
+        {(view === 'users' || view === 'settings' || view === 'teams') && <SystemRoutePage
+          UsersComponent={Users}
+          TeamsComponent={TeamsManager}
+          MaterialsComponent={MaterialsPanel}
+          StatusComponent={Settings}
+          AuditLogComponent={PlannedAuditLog}
+          toast={toast}
+        />}
+      </AdminLayout>
+    </>
   )
 }

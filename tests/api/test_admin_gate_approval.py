@@ -115,6 +115,9 @@ class ApprovalApiContractTests(unittest.TestCase):
     def _approve_url(self) -> str:
         return f"/api/admin/questions/{self.question_id}/approve"
 
+    def _reject_url(self) -> str:
+        return f"/api/admin/questions/{self.question_id}/reject"
+
     def test_approve_without_body_succeeds_when_all_pass(self):
         resp = self.client.post(
             self._approve_url(), headers={"Authorization": f"Bearer {self.admin_token}"},
@@ -142,6 +145,23 @@ class ApprovalApiContractTests(unittest.TestCase):
     def test_approve_rejects_missing_token(self):
         resp = self.client.post(self._approve_url())
         self.assertEqual(resp.status_code, 401)
+
+    def test_reject_forwards_authenticated_actor(self):
+        with patch(
+            "services.admin_service.reject_question",
+            return_value={"rejected": True, "question_id": self.question_id},
+        ) as reject:
+            resp = self.client.post(
+                self._reject_url(),
+                headers={"Authorization": f"Bearer {self.admin_token}"},
+                json={"reason": "근거 부족"},
+            )
+        self.assertEqual(resp.status_code, 200)
+        reject.assert_called_once()
+        args, kwargs = reject.call_args
+        self.assertEqual(args, (self.question_id, "근거 부족"))
+        self.assertEqual(kwargs["actor"]["sub"], "admin001")
+        self.assertEqual(kwargs["actor"]["role"], "admin")
 
 
 if __name__ == "__main__":

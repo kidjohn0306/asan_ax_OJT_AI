@@ -4,7 +4,15 @@ import logging
 import functools
 import threading
 from datetime import datetime, timezone
-from repositories.base import ExamSetRepository, ResultRepository, SnapshotRepository
+from config.storage import should_fallback_to_local
+from repositories.base import (
+    ExamSetRepository,
+    ResultConflict,
+    ResultRepository,
+    SnapshotRepository,
+)
+from repositories.schema_sheets import column_name
+from schema.sheets_v2 import SHEET_HEADERS
 from repositories.local_json import (
     LocalExamSetRepository,
     LocalResultRepository,
@@ -24,7 +32,16 @@ def _fallback_on_error(local_cls):
         def wrapper(self, *args, **kwargs):
             try:
                 return func(self, *args, **kwargs)
+            except ResultConflict:
+                raise
             except Exception as exc:
+                if not should_fallback_to_local():
+                    logging.exception(
+                        "%s.%s failed in strict Sheets mode",
+                        type(self).__name__,
+                        func.__name__,
+                    )
+                    raise
                 logging.warning(f"{type(self).__name__}.{func.__name__} 실패, {local_cls.__name__}로 폴백: {exc}")
                 if getattr(self, "_local_fallback", None) is None:
                     self._local_fallback = local_cls()
@@ -35,15 +52,22 @@ def _fallback_on_error(local_cls):
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 SHEET_TAB = "exam_sets"
-HEADERS = ["exam_set_id", "name", "team_code", "question_ids", "assigned_users", "created_at", "exam_datetime", "pass_score", "status", "created_by", "exam_id", "duration_min"]
+HEADERS = list(SHEET_HEADERS["exam_sets"][:11])
 # 컬럼 문자 매핑 — 헤더 순서와 반드시 일치해야 한다.
-_COLUMNS = {h: chr(ord("A") + i) for i, h in enumerate(HEADERS)}
+_COLUMNS = {
+    header: column_name(index)
+    for index, header in enumerate(SHEET_HEADERS["exam_sets"], start=1)
+}
+# API/Legacy 저장소는 duration_min을 사용하고, canonical Sheet는
+# duration_minutes(X열)를 사용한다. 기존 11열 prefix 사이에 새 열을 끼우지 않는다.
+_COLUMNS["duration_min"] = _COLUMNS["duration_minutes"]
+_EXAM_SET_INDEX = {
+    header: index
+    for index, header in enumerate(SHEET_HEADERS["exam_sets"])
+}
 
 RESULTS_TAB = "results"
-RESULTS_HEADERS = [
-    "result_id", "exam_id", "employee_id", "name", "score",
-    "pass", "team_code", "submitted_at", "difficulty_summary", "results",
-]
+RESULTS_HEADERS = list(SHEET_HEADERS["results"][:10])
 
 SNAPSHOTS_SHEET_TAB = "snapshots"
 SNAPSHOTS_HEADERS = ["result_id", "created_at", "data_json"]
@@ -112,6 +136,30 @@ def _safe_json_list(s) -> list:
         return json.loads(s)
     except (json.JSONDecodeError, TypeError):
         return []
+
+
+def _json_object_or_none(value):
+    if not isinstance(value, str) or not value.strip().startswith("{"):
+        return None
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _parse_snapshot_row(row: list) -> tuple[str, str, dict]:
+    """Read both canonical B=created_at/C=JSON and legacy swapped rows."""
+    result_id = row[0] if row else ""
+    second = row[1] if len(row) > 1 else ""
+    third = row[2] if len(row) > 2 else ""
+    second_json = _json_object_or_none(second)
+    third_json = _json_object_or_none(third)
+    if third_json is not None:
+        return result_id, second, third_json
+    if second_json is not None:
+        return result_id, third, second_json
+    raise ValueError(f"invalid snapshot row for result_id={result_id!r}")
 
 
 def _ensure_tab(svc, spreadsheet_id: str, tab: str, headers: list[str]) -> None:
@@ -221,7 +269,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         """헤더를 제외한 데이터 행 반환 (raw list)."""
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A:L",
+            range=f"{SHEET_TAB}!A:AH",
         ).execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -229,14 +277,26 @@ class SheetsExamSetRepository(ExamSetRepository):
     @staticmethod
     def _row_to_dict(row: list) -> dict:
         def _get(i): return row[i] if len(row) > i else ""
+        def _field(name): return _get(_EXAM_SET_INDEX[name])
+        def _int_field(name, default):
+            try:
+                return int(_field(name)) if _field(name) != "" else default
+            except (TypeError, ValueError):
+                return default
+        def _json_dict(name):
+            value = _field(name)
+            if isinstance(value, dict):
+                return value
+            try:
+                parsed = json.loads(value or "{}")
+            except (TypeError, json.JSONDecodeError):
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
         try:
             pass_score = int(_get(7)) if _get(7) else 70
         except ValueError:
             pass_score = 70
-        try:
-            duration_min = int(_get(11)) if _get(11) else 60
-        except ValueError:
-            duration_min = 60
+        duration_min = _int_field("duration_minutes", 60)
         return {
             "exam_set_id": _get(0),
             "name": _get(1),
@@ -251,6 +311,17 @@ class SheetsExamSetRepository(ExamSetRepository):
             "status": _get(8) or "active",
             "created_by": _get(9),
             "exam_id": _get(10),
+            "evaluation_type": _field("evaluation_type") or "official",
+            "blueprint_json": _json_dict("blueprint_json"),
+            "frozen_at": _field("frozen_at"),
+            "frozen_by": _field("frozen_by"),
+            "paper_version": _int_field("paper_version", 0),
+            "snapshot_checksum": _field("snapshot_checksum"),
+            "row_version": _int_field("row_version", 0),
+            "confirmed_by": _field("confirmed_by"),
+            "confirmed_at": _field("confirmed_at"),
+            "current_exam_version_id": _field("current_exam_version_id"),
+            "idempotency_key": _field("idempotency_key"),
             "duration_min": duration_min,
         }
 
@@ -370,6 +441,14 @@ class SheetsExamSetRepository(ExamSetRepository):
             col = _COLUMNS.get(key)
             if not col:
                 continue
+            if isinstance(value, (dict, list, tuple)):
+                value = json.dumps(
+                    value,
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+            elif isinstance(value, bool):
+                value = "TRUE" if value else "FALSE"
             updates.append({"range": f"{SHEET_TAB}!{col}{row_idx}", "values": [[value]]})
         if not updates:
             return True
@@ -424,7 +503,7 @@ class SheetsResultRepository(ResultRepository):
         self._maybe_ensure_tab()
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{RESULTS_TAB}!A:J",
+            range=f"{RESULTS_TAB}!A:Z",
         ).execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -440,6 +519,23 @@ class SheetsResultRepository(ResultRepository):
             results = json.loads(_get(9)) if _get(9) else []
         except (json.JSONDecodeError, ValueError):
             results = []
+        try:
+            grading_summary = json.loads(_get(16)) if _get(16) else {}
+        except (json.JSONDecodeError, ValueError):
+            grading_summary = {}
+
+        def _int(index, default=0):
+            try:
+                return int(_get(index)) if _get(index) != "" else default
+            except (TypeError, ValueError):
+                return default
+
+        def _float(index, default=0.0):
+            try:
+                return float(_get(index)) if _get(index) != "" else default
+            except (TypeError, ValueError):
+                return default
+
         return {
             "result_id": _get(0),
             "exam_id": _get(1),
@@ -451,6 +547,22 @@ class SheetsResultRepository(ResultRepository):
             "submitted_at": _get(7),
             "difficulty_summary": difficulty_summary,
             "results": results,
+            "assignment_id": _get(10),
+            "attempt_no": _int(11),
+            "started_at": _get(12),
+            "total_questions": _int(13),
+            "correct_count": _int(14),
+            "response_time_total_seconds": _float(15),
+            "grading_summary_json": grading_summary,
+            "schema_version": _int(17),
+            "row_version": _int(18),
+            "exam_version_id": _get(19),
+            "attempt_id": _get(20),
+            "grading_status": _get(21),
+            "submission_status": _get(22),
+            "error_code": _get(23),
+            "reeducation_required": _get(24) in ("TRUE", "True", True),
+            "retest_assignment_id": _get(25),
         }
 
     @staticmethod
@@ -466,18 +578,57 @@ class SheetsResultRepository(ResultRepository):
             data.get("submitted_at", ""),
             json.dumps(data.get("difficulty_summary", {}), ensure_ascii=False),
             json.dumps(data.get("results", []), ensure_ascii=False),
+            data.get("assignment_id", ""),
+            str(data.get("attempt_no", 0)),
+            data.get("started_at", ""),
+            str(data.get("total_questions", 0)),
+            str(data.get("correct_count", 0)),
+            str(float(data.get("response_time_total_seconds", 0) or 0)),
+            json.dumps(
+                data.get("grading_summary_json", {}),
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            str(data.get("schema_version", 0)),
+            str(data.get("row_version", 0)),
+            data.get("exam_version_id", ""),
+            data.get("attempt_id", ""),
+            data.get("grading_status", ""),
+            data.get("submission_status", ""),
+            data.get("error_code", ""),
+            "TRUE" if data.get("reeducation_required") else "FALSE",
+            data.get("retest_assignment_id", ""),
         ]
 
     @_fallback_on_error(LocalResultRepository)
     def append_result(self, result: dict) -> None:
         self._maybe_ensure_tab()
         result.setdefault("submitted_at", datetime.now(timezone.utc).isoformat())
+        result_id = str(result.get("result_id", "")).strip()
+        if not result_id:
+            raise ValueError("result_id is required")
+        incoming_row = self._dict_to_row(result)
+        for row_number, row in enumerate(self._read_all_rows(), start=2):
+            if not row or str(row[0]) != result_id:
+                continue
+            existing_row = self._dict_to_row(self._row_to_dict(row))
+            if existing_row != incoming_row:
+                raise ResultConflict(
+                    f"immutable result conflict for result_id={result_id}"
+                )
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{RESULTS_TAB}!A{row_number}:Z{row_number}",
+                valueInputOption="RAW",
+                body={"values": [incoming_row]},
+            ).execute()
+            return
         self._values().append(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{RESULTS_TAB}!A:J",
+            range=f"{RESULTS_TAB}!A:Z",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
-            body={"values": [self._dict_to_row(result)]},
+            body={"values": [incoming_row]},
         ).execute()
 
     @_fallback_on_error(LocalResultRepository)
@@ -552,8 +703,8 @@ class SheetsSnapshotRepository(SnapshotRepository):
         rows = res.get("values", [])
         for row in rows[1:]:
             if row and row[0] == result_id:
-                data_json = row[2] if len(row) > 2 else ""
-                return json.loads(data_json) if data_json else None
+                _, _, snapshot = _parse_snapshot_row(row)
+                return snapshot
         return None
 
 

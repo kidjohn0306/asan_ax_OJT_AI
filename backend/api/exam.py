@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from typing import Optional
 
 from api.deps import require_auth
 
@@ -12,21 +13,35 @@ TeamCode = str
 
 class GenerateRequest(BaseModel):
     team_code: TeamCode
+    employee_id: Optional[str] = ""
 
 
 class SubmitRequest(BaseModel):
     result_id: str
     answers: dict[str, str]          # { "C-001": "A", "T1-001": "C", ... }
     response_times: dict[str, float]  # { "C-001": 12.5, ... }  단위: 초
+    employee_id: Optional[str] = ""
+    name: Optional[str] = ""
+    submission_idempotency_key: Optional[str] = ""
+
+
+def _require_claim_match(auth: dict, claimed_employee_id: str = "") -> str:
+    requester_id = auth.get("sub", "")
+    if not requester_id:
+        raise HTTPException(status_code=401, detail="사용자 신원을 확인할 수 없습니다.")
+    if claimed_employee_id and claimed_employee_id != requester_id:
+        raise HTTPException(status_code=403, detail="다른 사용자의 신원을 사용할 수 없습니다.")
+    return requester_id
 
 
 @router.get("/assigned-name")
-def assigned_exam_name(auth: dict = Depends(require_auth)):
+def assigned_exam_name(employee_id: str = "", auth: dict = Depends(require_auth)):
     """
     로그인 직후 응시자에게 배정된 시험명 조회 (시험 생성 없이 이름만 확인)
     """
     from services.exam_service import get_assigned_exam_name
-    return {"name": get_assigned_exam_name(auth["sub"])}
+    requester_id = _require_claim_match(auth, employee_id)
+    return {"name": get_assigned_exam_name(requester_id)}
 
 
 @router.post("/generate")
@@ -38,7 +53,9 @@ def generate_exam(body: GenerateRequest, auth: dict = Depends(require_auth)):
     USE_MOCK_DATA=true 이면 mock_data/questions.json 사용
     """
     from services.exam_service import generate_exam_questions
-    return generate_exam_questions(body.team_code, employee_id=auth["sub"])
+    employee_id = _require_claim_match(auth, body.employee_id)
+    team_code = auth.get("team") or body.team_code
+    return generate_exam_questions(team_code, employee_id=employee_id)
 
 
 @router.post("/submit")
@@ -49,13 +66,21 @@ def submit_exam(body: SubmitRequest, auth: dict = Depends(require_auth)):
     """
     skip_save = auth.get("role") == "admin"
     from services.exam_service import score_and_save
-    return score_and_save(body.result_id, body.answers, body.response_times, auth["sub"], auth.get("name", ""), skip_save=skip_save)
+    employee_id = _require_claim_match(auth, body.employee_id)
+    name = auth.get("name", "")
+    return score_and_save(
+        body.result_id,
+        body.answers,
+        body.response_times,
+        employee_id,
+        name,
+        skip_save=skip_save,
+        submission_idempotency_key=body.submission_idempotency_key or "",
+    )
 
 
 @router.get("/result/{result_id}")
 def get_result(result_id: str, auth: dict = Depends(require_auth)):
     from services.exam_service import get_exam_result
-    result = get_exam_result(result_id)
-    if auth.get("role") != "admin" and result.get("employee_id") != auth.get("sub"):
-        raise HTTPException(status_code=403, detail="본인 응시 결과만 조회할 수 있습니다.")
-    return result
+    requester_id = _require_claim_match(auth)
+    return get_exam_result(result_id, requester_id, auth.get("role", ""))
