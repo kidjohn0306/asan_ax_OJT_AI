@@ -339,6 +339,7 @@ class SheetsExamSetRepository(ExamSetRepository):
             data.get("status", "active"),
             data.get("created_by", ""),
             data.get("exam_id", ""),
+            str(data.get("duration_min", 60)),
         ]
 
     def _find_sheet_row(self, exam_id: str) -> int:

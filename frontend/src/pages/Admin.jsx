@@ -1790,12 +1790,214 @@ function Users({ toast }) {
 }
 
 /* ── 결과 분석 ───────────────────────────────────────────────── */
+function computeBoxStats(scores) {
+  const sorted = [...scores].sort((a, b) => a - b)
+  const n = sorted.length
+  const quantile = q => {
+    if (n === 1) return sorted[0]
+    const pos = (n - 1) * q
+    const base = Math.floor(pos)
+    const rest = pos - base
+    return sorted[base + 1] !== undefined ? sorted[base] + rest * (sorted[base + 1] - sorted[base]) : sorted[base]
+  }
+  return {
+    min: sorted[0],
+    max: sorted[n - 1],
+    q1: Math.round(quantile(0.25) * 10) / 10,
+    median: Math.round(quantile(0.5) * 10) / 10,
+    q3: Math.round(quantile(0.75) * 10) / 10,
+    avg: Math.round((sorted.reduce((a, b) => a + b, 0) / n) * 10) / 10,
+  }
+}
+
+function rankTakers(takers) {
+  const sorted = [...takers].sort((a, b) => b.score - a.score)
+  let rank = 0
+  let prevScore = null
+  return sorted.map((t, i) => {
+    if (t.score !== prevScore) rank = i + 1
+    prevScore = t.score
+    return { ...t, rank }
+  })
+}
+
+function categoryBreakdown(results) {
+  const map = new Map()
+  for (const q of (results || [])) {
+    const cat = q.category || '기타'
+    if (!map.has(cat)) map.set(cat, { correct: 0, total: 0 })
+    const c = map.get(cat)
+    c.total += 1
+    if (q.correct) c.correct += 1
+  }
+  return [...map.entries()].map(([cat, v]) => ({ cat, ...v }))
+}
+
+function niceUpperBound(v) {
+  if (v <= 0) return 10
+  const step = v <= 50 ? 10 : v <= 100 ? 20 : 50
+  return Math.ceil(v / step) * step
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+function toCsvValue(v) {
+  const s = String(v ?? '')
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+}
+
+function xmlEscape(v) {
+  return String(v ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
+function takerExportRows(rankedTakers) {
+  return rankedTakers.map(t => [t.rank, t.name, t.employee_id || '-', t.score, t.pass ? '합격' : '재교육', t.date])
+}
+
+const EXPORT_HEADERS = ['등수', '이름', '사번', '점수', '결과', '응시일']
+
+function exportTakersCsv(examName, rankedTakers) {
+  const rows = takerExportRows(rankedTakers)
+  const csv = [EXPORT_HEADERS, ...rows].map(r => r.map(toCsvValue).join(',')).join('\r\n')
+  downloadBlob(new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' }), `${examName}_응시결과.csv`)
+}
+
+function exportTakersExcel(examName, rankedTakers) {
+  const rows = takerExportRows(rankedTakers)
+  const headerRow = `<Row>${EXPORT_HEADERS.map(h => `<Cell ss:StyleID="Header"><Data ss:Type="String">${xmlEscape(h)}</Data></Cell>`).join('')}</Row>`
+  const dataRows = rows.map(r => `<Row>${r.map(v => `<Cell><Data ss:Type="${typeof v === 'number' ? 'Number' : 'String'}">${xmlEscape(v)}</Data></Cell>`).join('')}</Row>`).join('')
+  const xml = `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Styles>
+  <Style ss:ID="Header"><Font ss:Bold="1"/><Interior ss:Color="#EEF2FF" ss:Pattern="Solid"/></Style>
+ </Styles>
+ <Worksheet ss:Name="응시결과">
+  <Table>
+   ${headerRow}
+   ${dataRows}
+  </Table>
+ </Worksheet>
+</Workbook>`
+  downloadBlob(new Blob([xml], { type: 'application/vnd.ms-excel' }), `${examName}_응시결과.xls`)
+}
+
+function exportTakersPdf(exam, rankedTakers, toast) {
+  const rowsHtml = takerExportRows(rankedTakers).map(r => `
+    <tr>${r.map(v => `<td>${xmlEscape(v)}</td>`).join('')}</tr>`).join('')
+  const html = `<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<title>${xmlEscape(exam.name)} 응시 결과</title>
+<style>
+  @page { size: A4; margin: 18mm; }
+  body { font-family: 'Apple SD Gothic Neo', 'Malgun Gothic', sans-serif; color:#1a1a1a; }
+  h1 { font-size:18pt; margin:0 0 4px; }
+  .meta { font-size:10.5pt; color:#555; margin-bottom:20px; }
+  table { width:100%; border-collapse:collapse; font-size:10pt; }
+  th, td { padding:8px 10px; border-bottom:1px solid #e2e8f0; text-align:left; }
+  th { background:#f8fafc; font-weight:700; }
+</style>
+</head>
+<body>
+  <h1>${xmlEscape(exam.name)} 응시 결과</h1>
+  <p class="meta">${xmlEscape(exam.team_name)} · 응시 ${exam.taker_count}명 · 평균 ${exam.avg_score}점 · 합격 ${exam.pass_count}명</p>
+  <table>
+    <thead><tr>${EXPORT_HEADERS.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rowsHtml}</tbody>
+  </table>
+</body>
+</html>`
+  const win = window.open('', '_blank')
+  if (!win) { toast?.('팝업이 차단되어 PDF를 열 수 없습니다. 브라우저의 팝업 차단을 해제해주세요.', 'error'); return }
+  win.document.write(html)
+  win.document.close()
+  win.focus()
+  setTimeout(() => { win.print() }, 300)
+}
+
+function StatTile({ label, value, accent }) {
+  return (
+    <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'14px 16px' }}>
+      <div style={{ fontSize:11, color:'var(--text-muted)', fontWeight:600, marginBottom:6 }}>{label}</div>
+      <div style={{ fontSize:22, fontWeight:800, color: accent || 'var(--text)' }}>{value}</div>
+    </div>
+  )
+}
+
+/* ── 점수 분포 박스플롯 (5수 요약 + 개별 응시자 점) ─────────────── */
+function ScoreBoxPlot({ takers, stats, passScore }) {
+  const W = 800, H = 150
+  const padL = 34, padR = 34
+  const plotW = W - padL - padR
+  const domainMax = niceUpperBound(Math.max(stats.max, passScore || 0))
+  const x = v => padL + (v / domainMax) * plotW
+  const boxTop = 46, boxBottom = 86, boxMid = (boxTop + boxBottom) / 2
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(domainMax * f))
+  const jitterFor = i => [0, -12, 12, -6, 6, -18, 18][i % 7]
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block' }}>
+      {/* 축 */}
+      <line x1={padL} y1={H - 24} x2={padL + plotW} y2={H - 24} stroke="var(--border)" strokeWidth={1} />
+      {ticks.map((t, i) => (
+        <text key={i} x={x(t)} y={H - 8} fontSize={10} fill="var(--text-muted)" textAnchor="middle">{t}</text>
+      ))}
+
+      {/* 합격 커트라인 */}
+      {passScore > 0 && (
+        <>
+          <line x1={x(passScore)} y1={16} x2={x(passScore)} y2={H - 24} stroke="var(--danger)" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
+          <text x={x(passScore)} y={12} fontSize={10} fill="var(--danger)" textAnchor="middle">커트라인 {passScore}</text>
+        </>
+      )}
+
+      {/* 위스커 */}
+      <line x1={x(stats.min)} y1={boxMid} x2={x(stats.q1)} y2={boxMid} stroke="var(--text-muted)" strokeWidth={2} />
+      <line x1={x(stats.q3)} y1={boxMid} x2={x(stats.max)} y2={boxMid} stroke="var(--text-muted)" strokeWidth={2} />
+      <line x1={x(stats.min)} y1={boxTop + 8} x2={x(stats.min)} y2={boxBottom - 8} stroke="var(--text-muted)" strokeWidth={2} />
+      <line x1={x(stats.max)} y1={boxTop + 8} x2={x(stats.max)} y2={boxBottom - 8} stroke="var(--text-muted)" strokeWidth={2} />
+      <text x={x(stats.min)} y={boxBottom + 20} fontSize={10} fill="var(--text-muted)" textAnchor="middle">
+        {stats.min === stats.max ? `최저·최고 ${stats.min}` : `최저 ${stats.min}`}
+      </text>
+      {stats.min !== stats.max && (
+        <text x={x(stats.max)} y={boxBottom + 20} fontSize={10} fill="var(--text-muted)" textAnchor="middle">최고 {stats.max}</text>
+      )}
+
+      {/* 박스 (Q1~Q3) + 중앙값 */}
+      <rect x={x(stats.q1)} y={boxTop} width={Math.max(1, x(stats.q3) - x(stats.q1))} height={boxBottom - boxTop}
+        fill="var(--accent)" fillOpacity={0.15} stroke="var(--accent)" strokeWidth={2} rx={3} />
+      <line x1={x(stats.median)} y1={boxTop} x2={x(stats.median)} y2={boxBottom} stroke="var(--accent-dark)" strokeWidth={2.5} />
+      <text x={x(stats.median)} y={boxTop - 8} fontSize={11} fontWeight={700} fill="var(--accent-dark)" textAnchor="middle">중앙값 {stats.median}</text>
+
+      {/* 개별 응시자 점 (지터) */}
+      {takers.map((t, i) => (
+        <circle key={i} cx={x(t.score)} cy={boxMid + jitterFor(i)} r={5} fill="var(--accent)" stroke="var(--card)" strokeWidth={2}>
+          <title>{t.name}: {t.score}점</title>
+        </circle>
+      ))}
+    </svg>
+  )
+}
+
 function Results({ filters, onFiltersChange }) {
   const [data, setData] = useState(null)
   const [error, setError] = useState('')
   const [teamFilter, setTeamFilter] = useState(() => filters?.teams ?? [])
   const [selectedExamId, setSelectedExamId] = useState(null)
   const [expandedTaker, setExpandedTaker] = useState(null)
+  const [answerSheetOpen, setAnswerSheetOpen] = useState(false)
+  const { toast, ToastContainer } = useToast()
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/results-analysis')
@@ -1819,6 +2021,9 @@ function Results({ filters, onFiltersChange }) {
   const teamOptions = [...new Map(data.exams.map(e => [e.team_code, e.team_name])).entries()]
   const filteredExams = data.exams.filter(e => teamFilter.length === 0 || teamFilter.includes(e.team_code))
 
+  const rankedTakers = selectedExam ? rankTakers(selectedExam.takers) : []
+  const scoreStats = selectedExam ? computeBoxStats(selectedExam.takers.map(t => t.score)) : null
+
   function toggleTeamFilter(teamCode) {
     setTeamFilter(prev => {
       const next = prev.includes(teamCode) ? prev.filter(t => t !== teamCode) : [...prev, teamCode]
@@ -1830,61 +2035,115 @@ function Results({ filters, onFiltersChange }) {
   function openExam(examSetId) {
     setSelectedExamId(examSetId)
     setExpandedTaker(null)
+    setAnswerSheetOpen(false)
+  }
+
+  function toggleTaker(i) {
+    setExpandedTaker(prev => prev === i ? null : i)
+    setAnswerSheetOpen(false)
   }
 
   return (
     <div>
+      <ToastContainer />
       {selectedExam ? (
-        <Card title={selectedExam.name} noPad action={<BtnOutlineSm onClick={() => setSelectedExamId(null)}>← 시험 목록으로</BtnOutlineSm>}>
-          <div style={{ padding:'12px 20px', borderBottom:'1px solid var(--border)', display:'flex', gap:22, fontSize:12, color:'var(--text-muted)', flexWrap:'wrap' }}>
-            <span>팀 <b style={{ color:'var(--text)' }}>{selectedExam.team_name}</b></span>
-            <span>응시 인원 <b style={{ color:'var(--text)' }}>{selectedExam.taker_count}명</b></span>
-            <span>평균 점수 <b style={{ color:'var(--text)' }}>{selectedExam.avg_score}점</b></span>
-            <span>정답률 <b style={{ color:'var(--text)' }}>{selectedExam.accuracy_pct}%</b></span>
-            <span>합격자 <b style={{ color:'var(--text)' }}>{selectedExam.pass_count}명</b></span>
-          </div>
-          <DataTable headers={['이름','점수','결과','응시일','']}>
-            {selectedExam.takers.map((t, i) => (
-              <Fragment key={i}>
-                <tr style={{ cursor:'pointer' }} onClick={() => setExpandedTaker(expandedTaker === i ? null : i)}>
-                  <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:500 }}>{t.name}</td>
-                  <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{t.score}점</td>
-                  <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><Badge type={t.pass ? 'success' : 'danger'}>{t.pass ? '합격' : '재교육'}</Badge></td>
-                  <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{t.date}</td>
-                  <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--accent)', whiteSpace:'nowrap' }}>{expandedTaker === i ? '접기 ▲' : '상세 ▼'}</td>
-                </tr>
-                {expandedTaker === i && (
-                  <tr>
-                    <td colSpan={5} style={{ padding:'4px 18px 16px', borderBottom:'1px solid var(--border)', background:'#FAFAFA' }}>
-                      {t.results.length === 0 ? (
-                        <p style={{ fontSize:12, color:'var(--text-muted)', margin:0 }}>문항별 상세 데이터가 없습니다.</p>
-                      ) : (
-                        <table style={{ width:'100%', borderCollapse:'collapse' }}>
-                          <thead>
-                            <tr>{['문항','난이도','정답','응답','정오'].map(h => (
-                              <th key={h} style={{ textAlign:'left', fontSize:11, fontWeight:700, color:'var(--text-muted)', padding:'6px 8px', borderBottom:'1px solid var(--border)' }}>{h}</th>
-                            ))}</tr>
-                          </thead>
-                          <tbody>
-                            {t.results.map((q, qi) => (
-                              <tr key={qi}>
-                                <td style={{ fontSize:12, padding:'6px 8px' }}>{q.q_id}</td>
-                                <td style={{ fontSize:12, padding:'6px 8px' }}>{q.difficulty || '-'}</td>
-                                <td style={{ fontSize:12, padding:'6px 8px' }}>{q.answer || '-'}</td>
-                                <td style={{ fontSize:12, padding:'6px 8px' }}>{q.user_answer || '-'}</td>
-                                <td style={{ fontSize:12, padding:'6px 8px' }}><Badge type={q.correct ? 'success' : 'danger'}>{q.correct ? '정답' : '오답'}</Badge></td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
-                    </td>
+        <>
+          <Card title={selectedExam.name} noPad action={<BtnOutlineSm onClick={() => setSelectedExamId(null)}>← 시험 목록으로</BtnOutlineSm>}>
+            <div style={{ padding:'12px 20px', display:'flex', gap:22, fontSize:12, color:'var(--text-muted)', flexWrap:'wrap' }}>
+              <span>팀 <b style={{ color:'var(--text)' }}>{selectedExam.team_name}</b></span>
+              <span>응시 인원 <b style={{ color:'var(--text)' }}>{selectedExam.taker_count}명</b></span>
+              <span>평균 점수 <b style={{ color:'var(--text)' }}>{selectedExam.avg_score}점</b></span>
+              <span>중앙값 <b style={{ color:'var(--text)' }}>{scoreStats.median}점</b></span>
+              <span>정답률 <b style={{ color:'var(--text)' }}>{selectedExam.accuracy_pct}%</b></span>
+              <span>합격자 <b style={{ color:'var(--text)' }}>{selectedExam.pass_count}명</b></span>
+            </div>
+          </Card>
+
+          <Card title="점수 분포">
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(110px, 1fr))', gap:12, marginBottom:22 }}>
+              <StatTile label="평균" value={`${scoreStats.avg}점`} />
+              <StatTile label="중앙값" value={`${scoreStats.median}점`} />
+              <StatTile label="최고점" value={`${scoreStats.max}점`} accent="var(--success)" />
+              <StatTile label="최저점" value={`${scoreStats.min}점`} accent="var(--danger)" />
+              <StatTile label="합격률" value={`${selectedExam.taker_count ? Math.round(selectedExam.pass_count / selectedExam.taker_count * 100) : 0}%`} />
+            </div>
+            <ScoreBoxPlot takers={selectedExam.takers} stats={scoreStats} passScore={selectedExam.pass_score} />
+          </Card>
+
+          <Card
+            title={`응시자 목록 (${rankedTakers.length}명)`}
+            noPad
+            action={
+              <div style={{ display:'flex', gap:8 }}>
+                <BtnOutlineSm onClick={() => exportTakersCsv(selectedExam.name, rankedTakers)}>CSV 저장</BtnOutlineSm>
+                <BtnOutlineSm onClick={() => exportTakersExcel(selectedExam.name, rankedTakers)}>Excel 저장</BtnOutlineSm>
+                <BtnOutlineSm onClick={() => exportTakersPdf(selectedExam, rankedTakers, toast)}>PDF 저장</BtnOutlineSm>
+              </div>
+            }
+          >
+            <DataTable headers={['등수','이름','점수','결과','응시일','']}>
+              {rankedTakers.map((t, i) => (
+                <Fragment key={i}>
+                  <tr style={{ cursor:'pointer' }} onClick={() => toggleTaker(i)}>
+                    <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:700, color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{t.rank}</td>
+                    <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:500 }}>{t.name}</td>
+                    <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{t.score}점</td>
+                    <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><Badge type={t.pass ? 'success' : 'danger'}>{t.pass ? '합격' : '재교육'}</Badge></td>
+                    <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{t.date}</td>
+                    <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--accent)', whiteSpace:'nowrap' }}>{expandedTaker === i ? '접기 ▲' : '상세 ▼'}</td>
                   </tr>
-                )}
-              </Fragment>
-            ))}
-          </DataTable>
-        </Card>
+                  {expandedTaker === i && (
+                    <tr>
+                      <td colSpan={6} style={{ padding:'12px 18px 18px', borderBottom:'1px solid var(--border)', background:'#FAFAFA' }}>
+                        <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', marginBottom:8 }}>문제 영역별 정답 수</div>
+                        <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginBottom:14 }}>
+                          {categoryBreakdown(t.results).length === 0 ? (
+                            <span style={{ fontSize:12, color:'var(--text-muted)' }}>영역별 데이터가 없습니다.</span>
+                          ) : categoryBreakdown(t.results).map(c => (
+                            <span key={c.cat} style={{ fontSize:12, padding:'5px 10px', borderRadius:20, background:'white', border:'1px solid var(--border)', color:'var(--text)' }}>
+                              {c.cat} <b style={{ color: c.correct === c.total ? 'var(--success)' : 'var(--text)' }}>{c.correct}</b>/{c.total}
+                            </span>
+                          ))}
+                        </div>
+
+                        <BtnOutlineSm onClick={() => setAnswerSheetOpen(o => !o)}>
+                          {answerSheetOpen ? '정오표 닫기 ▲' : '정오표 보기 ▼'}
+                        </BtnOutlineSm>
+
+                        {answerSheetOpen && (
+                          t.results.length === 0 ? (
+                            <p style={{ fontSize:12, color:'var(--text-muted)', marginTop:10 }}>문항별 상세 데이터가 없습니다.</p>
+                          ) : (
+                            <table style={{ width:'100%', borderCollapse:'collapse', marginTop:10 }}>
+                              <thead>
+                                <tr>{['문항','난이도','정답','응답','정오'].map(h => (
+                                  <th key={h} style={{ textAlign:'left', fontSize:11, fontWeight:700, color:'var(--text-muted)', padding:'6px 8px', borderBottom:'1px solid var(--border)' }}>{h}</th>
+                                ))}</tr>
+                              </thead>
+                              <tbody>
+                                {t.results.map((q, qi) => (
+                                  <tr key={qi}>
+                                    <td style={{ fontSize:12, padding:'6px 8px', maxWidth:340 }} title={q.question || ''}>
+                                      <div style={{ overflow:'hidden', whiteSpace:'nowrap', textOverflow:'ellipsis', maxWidth:340 }}>{q.question || q.q_id}</div>
+                                    </td>
+                                    <td style={{ fontSize:12, padding:'6px 8px' }}>{q.difficulty || '-'}</td>
+                                    <td style={{ fontSize:12, padding:'6px 8px', fontWeight:700 }}>{q.answer || '-'}</td>
+                                    <td style={{ fontSize:12, padding:'6px 8px', fontWeight:700 }}>{q.user_answer || '-'}</td>
+                                    <td style={{ fontSize:13, padding:'6px 8px', fontWeight:800, color: q.correct ? 'var(--success)' : 'var(--danger)' }}>{q.correct ? 'O' : 'X'}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          )
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              ))}
+            </DataTable>
+          </Card>
+        </>
       ) : (
         <Card
           title="시험 목록"
@@ -1918,7 +2177,7 @@ function Results({ filters, onFiltersChange }) {
         </Card>
       )}
 
-      {data.insights.length > 0 && (
+      {!selectedExam && data.insights.length > 0 && (
         <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, padding:16, marginBottom:14 }}>
           <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
             <div style={{ width:28, height:28, background:'var(--accent)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center' }}>

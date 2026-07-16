@@ -272,6 +272,7 @@ def fetch_results_analysis() -> dict:
             "team_code": team_code,
             "team_name": team_names.get(team_code, team_code),
             "exam_datetime": meta.get("exam_datetime") or meta.get("created_at", ""),
+            "pass_score": meta.get("pass_score", 70),
             "taker_count": g_count,
             "avg_score": round(sum(r.get("score", 0) for r in group) / g_count, 1),
             "pass_count": sum(1 for r in group if r.get("pass")),
@@ -1318,8 +1319,6 @@ def create_exam_round_from_paper(
             version["exam_version_id"] if version is not None else ""
         ),
     }
-
-
 def _is_approved_exam_user(user: dict | None) -> bool:
     if not user:
         return False
