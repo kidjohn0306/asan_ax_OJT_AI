@@ -4,6 +4,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from repositories.base import (
     QuestionRepository,
+    ResultConflict,
     ResultRepository,
     SnapshotRepository,
     FeedbackRepository,
@@ -97,19 +98,19 @@ class LocalQuestionRepository(QuestionRepository):
 class LocalResultRepository(ResultRepository):
     """폴더 기반 결과 저장소.
 
-    results/{exam_set_id}/{employee_id}.json 구조로 저장한다.
-    employee_id가 없는 구형 데이터는 results/legacy/{exam_id}.json에 존재한다.
+    신규 결과는 results/{exam_id}/{result_id}.json 구조로 저장한다.
+    과거 employee_id 파일명과 results/legacy 파일도 조회 호환성을 위해 계속 읽는다.
     Vercel 읽기전용 FS 대응: /tmp/results/ 에 저장, mock_data/results/ 에서 읽기 폴백.
     """
 
     RESULTS_DIR = MOCK_DIR / "results"
     _TMP_RESULTS_DIR = Path("/tmp/results")
 
-    def _result_path(self, exam_set_id: str, employee_id: str, base: Path = None) -> Path:
+    def _result_path(self, exam_id: str, result_id: str, base: Path = None) -> Path:
         base = base or self.RESULTS_DIR
-        set_dir = base / exam_set_id
+        set_dir = base / exam_id
         os.makedirs(set_dir, exist_ok=True)
-        return set_dir / f"{employee_id}.json"
+        return set_dir / f"{result_id}.json"
 
     def _iter_result_files(self):
         # RESULTS_DIR 먼저, _TMP_RESULTS_DIR 나중에 — get_all_results에서 dict 덮어쓰기 시 /tmp(런타임 변경) 우선
@@ -126,16 +127,32 @@ class LocalResultRepository(ResultRepository):
             return json.load(f)
 
     def save_result(self, result: dict) -> None:
+        result_id = str(result.get("result_id", "")).strip()
+        if not result_id:
+            raise ValueError("result_id is required")
+        existing = self.get_result(result_id)
+        if existing is not None:
+            comparable_existing = {
+                key: value for key, value in existing.items() if key != "saved_at"
+            }
+            comparable_incoming = {
+                key: value for key, value in result.items() if key != "saved_at"
+            }
+            if comparable_existing != comparable_incoming:
+                raise ResultConflict(
+                    f"immutable result conflict for result_id={result_id}"
+                )
+            return
+        result = dict(result)
         result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
-        exam_set_id = result.get("exam_set_id") or "legacy"
-        employee_id = result.get("employee_id") or result.get("exam_id")
+        exam_id = result.get("exam_id") or "legacy"
         try:
-            path = self._result_path(exam_set_id, employee_id)
+            path = self._result_path(exam_id, result_id)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
         except OSError:
             # Vercel: filesystem is read-only, fall back to /tmp
-            path = self._result_path(exam_set_id, employee_id, base=self._TMP_RESULTS_DIR)
+            path = self._result_path(exam_id, result_id, base=self._TMP_RESULTS_DIR)
             with open(path, "w", encoding="utf-8") as f:
                 json.dump(result, f, ensure_ascii=False, indent=2)
 
@@ -143,17 +160,17 @@ class LocalResultRepository(ResultRepository):
     def append_result(self, result: dict) -> None:
         self.save_result(result)
 
-    def get_result(self, exam_id: str) -> dict:
+    def get_result(self, result_id: str) -> dict:
         for path in self._iter_result_files():
             r = self._read(path)
-            if r.get("exam_id") == exam_id:
+            if r.get("result_id") == result_id:
                 return r
         return None
 
-    def list_results_by_set(self, exam_set_id: str) -> list:
+    def list_results_by_exam(self, exam_id: str) -> list:
         results = []
         for base in (self.RESULTS_DIR, self._TMP_RESULTS_DIR):
-            set_dir = base / exam_set_id
+            set_dir = base / exam_id
             if set_dir.exists():
                 results.extend(self._read(f) for f in set_dir.glob("*.json"))
         return results
@@ -162,7 +179,7 @@ class LocalResultRepository(ResultRepository):
         results = {}
         for path in self._iter_result_files():
             r = self._read(path)
-            key = r.get("exam_id") or path.stem
+            key = r.get("result_id") or path.stem
             results[key] = r
         return results
 
@@ -178,8 +195,8 @@ class LocalSnapshotRepository(SnapshotRepository):
         tmp = self._tmp_file
         return tmp if tmp.exists() else self._file
 
-    def save_snapshot(self, exam_id: str, snapshot: dict) -> None:
-        record = {"exam_id": exam_id, "snapshot": snapshot,
+    def save_snapshot(self, result_id: str, snapshot: dict) -> None:
+        record = {"result_id": result_id, "snapshot": snapshot,
                   "created_at": datetime.now(timezone.utc).isoformat()}
         try:
             with open(self._file, "a", encoding="utf-8") as f:
@@ -188,14 +205,14 @@ class LocalSnapshotRepository(SnapshotRepository):
             with open(self._tmp_file, "a", encoding="utf-8") as f:
                 f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
-    def get_snapshot(self, exam_id: str) -> dict:
+    def get_snapshot(self, result_id: str) -> dict:
         target = self._active_file()
         if not target.exists():
             return None
         with open(target, encoding="utf-8") as f:
             for line in f:
                 r = json.loads(line.strip())
-                if r.get("exam_id") == exam_id:
+                if r.get("result_id") == result_id:
                     return r.get("snapshot")
         return None
 
@@ -250,9 +267,9 @@ class LocalExamSetRepository(ExamSetRepository):
     def list_exam_sets(self) -> list:
         return self._load().get("sets", [])
 
-    def get_exam_set(self, exam_set_id: str) -> dict | None:
+    def get_exam(self, exam_id: str) -> dict | None:
         for s in self.list_exam_sets():
-            if s.get("exam_set_id") == exam_set_id:
+            if s.get("exam_id") == exam_id:
                 return s
         return None
 
@@ -260,14 +277,16 @@ class LocalExamSetRepository(ExamSetRepository):
         stored = self._load()
         data.setdefault("assigned_users", [])
         data.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        data.setdefault("pass_score", 70)
+        data.setdefault("duration_min", 60)
         stored.setdefault("sets", []).append(data)
         self._save(stored)
         return data
 
-    def assign_user(self, exam_set_id: str, employee_id: str) -> bool:
+    def assign_user(self, exam_id: str, employee_id: str) -> bool:
         stored = self._load()
         for s in stored.get("sets", []):
-            if s.get("exam_set_id") == exam_set_id:
+            if s.get("exam_id") == exam_id:
                 assigned = s.setdefault("assigned_users", [])
                 if employee_id not in assigned:
                     assigned.append(employee_id)
@@ -275,10 +294,10 @@ class LocalExamSetRepository(ExamSetRepository):
                 return True
         return False
 
-    def unassign_user(self, exam_set_id: str, employee_id: str) -> bool:
+    def unassign_user(self, exam_id: str, employee_id: str) -> bool:
         stored = self._load()
         for s in stored.get("sets", []):
-            if s.get("exam_set_id") == exam_set_id:
+            if s.get("exam_id") == exam_id:
                 assigned = s.get("assigned_users", [])
                 if employee_id in assigned:
                     assigned.remove(employee_id)
@@ -286,11 +305,20 @@ class LocalExamSetRepository(ExamSetRepository):
                 return True
         return False
 
-    def delete_exam_set(self, exam_set_id: str) -> bool:
+    def update_exam_set(self, exam_id: str, fields: dict) -> bool:
+        stored = self._load()
+        for s in stored.get("sets", []):
+            if s.get("exam_id") == exam_id:
+                s.update(fields)
+                self._save(stored)
+                return True
+        return False
+
+    def delete_exam_set(self, exam_id: str) -> bool:
         stored = self._load()
         sets = stored.get("sets", [])
         before = len(sets)
-        stored["sets"] = [s for s in sets if s.get("exam_set_id") != exam_set_id]
+        stored["sets"] = [s for s in sets if s.get("exam_id") != exam_id]
         if len(stored["sets"]) == before:
             return False
         self._save(stored)

@@ -45,7 +45,7 @@ function catBadgeStyle(cat) {
 }
 
 /* ── IdentityScreen ─────────────────────────────────────────── */
-function IdentityScreen({ empInfo, onStart }) {
+function IdentityScreen({ empInfo, examName, onStart }) {
   const today = new Date()
   const dateStr = `${today.getFullYear()}년 ${today.getMonth()+1}월 ${today.getDate()}일`
 
@@ -53,14 +53,12 @@ function IdentityScreen({ empInfo, onStart }) {
     <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--bg)', padding:24 }}>
       <div style={{ background:'white', borderRadius:20, boxShadow:'0 8px 40px rgba(30,58,95,0.12)', padding:'48px 40px', width:'100%', maxWidth:480, display:'flex', flexDirection:'column', alignItems:'center' }}>
         <div style={{ display:'flex', flexDirection:'column', alignItems:'center', marginBottom:32 }}>
-          <div style={{ width:56, height:56, background:'var(--primary)', borderRadius:14, display:'flex', alignItems:'center', justifyContent:'center', marginBottom:10 }}>
-            <svg viewBox="0 0 32 32" width={32} height={32} fill="white"><rect x="2" y="8" width="12" height="16" rx="2"/><rect x="18" y="4" width="12" height="10" rx="2"/><rect x="18" y="18" width="12" height="10" rx="2"/></svg>
-          </div>
+          <img src="/icons/icon-192.png" alt="(주)엑스티" style={{ width:56, height:56, borderRadius:14, marginBottom:10 }} />
           <div style={{ fontSize:20, fontWeight:800, color:'var(--primary)' }}>(주)엑스티</div>
           <div style={{ fontSize:13, color:'var(--text-muted)', marginTop:2 }}>인재개발부 · OJT 평가 시스템</div>
         </div>
 
-        <div style={{ fontSize:22, fontWeight:800, color:'var(--text)', letterSpacing:'-0.5px', marginBottom:6, textAlign:'center' }}>OJT 기초고사</div>
+        <div style={{ fontSize:22, fontWeight:800, color:'var(--text)', letterSpacing:'-0.5px', marginBottom:6, textAlign:'center' }}>{examName}</div>
         <div style={{ fontSize:14, color:'var(--text-muted)', marginBottom:28, textAlign:'center' }}>시험 전 응시자 정보를 확인해 주세요</div>
 
         <div style={{ width:'100%', background:'var(--bg)', borderRadius:12, border:'1px solid var(--border)', padding:'20px 24px', marginBottom:24 }}>
@@ -304,10 +302,12 @@ function ScoringScreen({ title, sub }) {
 }
 
 /* ── ResultScreen ───────────────────────────────────────────── */
-function ResultScreen({ empInfo, questions, answers, score, submitResults, onFinish }) {
+function ResultScreen({ empInfo, examName, questions, answers, score, pass, submitResults, onFinish }) {
   const [accordionOpen, setAccordionOpen] = useState(false)
   const [expandedRow, setExpandedRow] = useState(null)
-  const pass = score >= 70
+  // 서버가 pass를 안 준 경우(오프라인 mock 폴백)에만 기본 70점 기준으로 클라이언트에서 계산한다.
+  // 정상 흐름에서는 회차별 합격 커트라인이 다를 수 있어 서버 판정을 그대로 써야 한다.
+  if (pass === null || pass === undefined) pass = score >= 70
 
   // 서버 채점 결과(문제 텍스트·정답·내 답·해설 포함)가 있으면 이걸 기준으로 렌더링한다.
   // 시험 출제 시점 응답에는 부정행위 방지를 위해 정답이 빠져있어 로컬 questions/answers만으로는
@@ -331,7 +331,7 @@ function ResultScreen({ empInfo, questions, answers, score, submitResults, onFin
       <div style={{ background:'var(--primary)', padding:'20px 32px', display:'flex', alignItems:'center', justifyContent:'space-between', color:'white', flexShrink:0 }}>
         <div>
           <div style={{ fontSize:16, fontWeight:800 }}>(주)엑스티</div>
-          <div style={{ fontSize:13, opacity:0.65, marginTop:2 }}>OJT 기초고사 · 시험 결과</div>
+          <div style={{ fontSize:13, opacity:0.65, marginTop:2 }}>{examName} · 시험 결과</div>
         </div>
         <div style={{ fontSize:13, opacity:0.7, textAlign:'right' }}>{empInfo.name} · {empInfo.empno}</div>
       </div>
@@ -460,6 +460,15 @@ export default function Exam() {
     if (!empInfo.name || !empInfo.empno) navigate('/', { replace: true })
   }, [])
 
+  useEffect(() => {
+    if (!empInfo.empno) return
+    const token = sessionStorage.getItem('token')
+    fetch('/api/exam/assigned-name', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
+      .then(res => res.ok ? res.json() : null)
+      .then(data => { if (data?.name) setExamName(data.name) })
+      .catch(() => {})
+  }, [])
+
   const [screen, setScreen] = useState('identity')
   const [showAdminNotice, setShowAdminNotice] = useState(sessionStorage.getItem('role') === 'admin')
   const [showExitConfirm, setShowExitConfirm] = useState(false)
@@ -468,8 +477,10 @@ export default function Exam() {
   const [bookmarks, setBookmarks] = useState(new Array(25).fill(false))
   const [currentQ, setCurrentQ] = useState(0)
   const [timerSeconds, setTimerSeconds] = useState(3600)
-  const [examId, setExamId] = useState(null)
+  const [resultId, setResultId] = useState(null)
+  const [examName, setExamName] = useState('OJT 기초고사')
   const [score, setScore] = useState(null)
+  const [pass, setPass] = useState(null)
   const [submitResults, setSubmitResults] = useState(null)
   const timerRef = useRef(null)
   const handleSubmitRef = useRef(null)
@@ -573,7 +584,9 @@ export default function Exam() {
       })
       if (res.ok) {
         const data = await res.json()
-        setExamId(data.exam_id)
+        setResultId(data.result_id)
+        if (data.name) setExamName(data.name)
+        if (data.duration_min) setTimerSeconds(data.duration_min * 60)
         const qs = data.questions.map(q => ({
           id: q.id, cat: q.category, diff: q.difficulty || '중',
           q: q.question, opts: [q.options.A, q.options.B, q.options.C, q.options.D], ans: -1,
@@ -607,7 +620,7 @@ export default function Exam() {
   async function handleSubmit() {
     stopTimer()
     setScreen('scoring')
-    if (examId) {
+    if (resultId) {
       try {
         const LMAP = ['A','B','C','D']
         const answersDict = {}
@@ -617,11 +630,12 @@ export default function Exam() {
         const res = await fetch('/api/exam/submit', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ exam_id: examId, answers: answersDict, response_times: timesDict, employee_id: empInfo.empno, name: empInfo.name }),
+          body: JSON.stringify({ result_id: resultId, answers: answersDict, response_times: timesDict, employee_id: empInfo.empno, name: empInfo.name }),
         })
         if (res.ok) {
           const data = await res.json()
           setScore(data.score)
+          setPass(typeof data.pass === 'boolean' ? data.pass : null)
           setSubmitResults(data.results || null)
           setTimeout(() => setScreen('result'), 2000)
           return
@@ -640,7 +654,7 @@ export default function Exam() {
 
   return (
     <>
-      {screen === 'identity' && <IdentityScreen empInfo={empInfo} onStart={handleStart} />}
+      {screen === 'identity' && <IdentityScreen empInfo={empInfo} examName={examName} onStart={handleStart} />}
       {(screen === 'exam' || screen === 'confirm') && (
         <ExamScreen
           questions={questions}
@@ -680,7 +694,7 @@ export default function Exam() {
         />
       )}
       {screen === 'result' && score !== null && (
-        <ResultScreen empInfo={empInfo} questions={questions} answers={answers} score={score} submitResults={submitResults} onFinish={handleFinish} />
+        <ResultScreen empInfo={empInfo} examName={examName} questions={questions} answers={answers} score={score} pass={pass} submitResults={submitResults} onFinish={handleFinish} />
       )}
     </>
   )

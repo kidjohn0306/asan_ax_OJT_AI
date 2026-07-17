@@ -1,4 +1,6 @@
+import logging
 import os
+from config.storage import should_fallback_to_local
 from repositories.local_json import (
     LocalQuestionRepository,
     LocalResultRepository,
@@ -10,6 +12,13 @@ from repositories.local_json import (
     LocalMaterialRepository,
     LocalUserRepository,
 )
+
+
+def _fallback_or_raise(error: Exception, local_factory, label: str):
+    if not should_fallback_to_local():
+        raise error
+    logging.warning("%s initialization failed; using local fallback: %s", label, error)
+    return local_factory()
 
 _backend = os.getenv("STORAGE_BACKEND", "local")
 _exam_backend = os.getenv("EXAM_SET_STORAGE", "")
@@ -28,22 +37,26 @@ if _use_sheets:
         from repositories.sheets_repo import SheetsExamSetRepository
         exam_set_repo = SheetsExamSetRepository()
     except Exception as _sheets_err:
-        import logging
-        logging.warning(f"SheetsExamSetRepository 초기화 실패, LocalExamSetRepository로 폴백: {_sheets_err}")
-        exam_set_repo = LocalExamSetRepository()
+        exam_set_repo = _fallback_or_raise(
+            _sheets_err, LocalExamSetRepository, "SheetsExamSetRepository"
+        )
 else:
     exam_set_repo = LocalExamSetRepository()
 
 if _backend == "sheets":
+    # 문제은행은 로컬 유지 — results·snapshots만 Sheets로
+    question_repo = LocalQuestionRepository()
     try:
         from repositories.sheets_repo import SheetsResultRepository, SheetsSnapshotRepository
         result_repo = SheetsResultRepository()
         snapshot_repo = SheetsSnapshotRepository()
-    except Exception as _sheets_err:
-        import logging
-        logging.warning(f"SheetsResultRepository 초기화 실패, local로 폴백: {_sheets_err}")
-        result_repo = LocalResultRepository()
-        snapshot_repo = LocalSnapshotRepository()
+    except Exception as _sheets_rs_err:
+        result_repo = _fallback_or_raise(
+            _sheets_rs_err, LocalResultRepository, "SheetsResultRepository"
+        )
+        snapshot_repo = _fallback_or_raise(
+            _sheets_rs_err, LocalSnapshotRepository, "SheetsSnapshotRepository"
+        )
 elif _backend == "local":
     result_repo = LocalResultRepository()
     snapshot_repo = LocalSnapshotRepository()
@@ -73,9 +86,7 @@ if _use_sheets:
         from repositories.sheets_repo import SheetsTeamRepository
         team_repo = SheetsTeamRepository()
     except Exception as _e:
-        import logging
-        logging.warning(f"SheetsTeamRepository 초기화 실패, Local로 폴백: {_e}")
-        team_repo = LocalTeamRepository()
+        team_repo = _fallback_or_raise(_e, LocalTeamRepository, "SheetsTeamRepository")
 else:
     team_repo = LocalTeamRepository()
 
@@ -85,9 +96,9 @@ if _use_sheets:
         from repositories.sheets_repo import SheetsQuestionStatsRepository
         question_stats_repo = SheetsQuestionStatsRepository()
     except Exception as _e:
-        import logging
-        logging.warning(f"SheetsQuestionStatsRepository 초기화 실패, Local로 폴백: {_e}")
-        question_stats_repo = LocalQuestionStatsRepository()
+        question_stats_repo = _fallback_or_raise(
+            _e, LocalQuestionStatsRepository, "SheetsQuestionStatsRepository"
+        )
 else:
     question_stats_repo = LocalQuestionStatsRepository()
 
@@ -98,9 +109,9 @@ if _backend != "drive":
             from repositories.sheets_repo import SheetsQuestionRepository
             question_repo = SheetsQuestionRepository()
         except Exception as _e:
-            import logging
-            logging.warning(f"SheetsQuestionRepository 초기화 실패, Local로 폴백: {_e}")
-            question_repo = LocalQuestionRepository()
+            question_repo = _fallback_or_raise(
+                _e, LocalQuestionRepository, "SheetsQuestionRepository"
+            )
     else:
         question_repo = LocalQuestionRepository()
 
@@ -110,9 +121,9 @@ if _use_sheets:
         from repositories.sheets_repo import SheetsMaterialRepository
         material_repo = SheetsMaterialRepository()
     except Exception as _e:
-        import logging
-        logging.warning(f"SheetsMaterialRepository 초기화 실패, Local로 폴백: {_e}")
-        material_repo = LocalMaterialRepository()
+        material_repo = _fallback_or_raise(
+            _e, LocalMaterialRepository, "SheetsMaterialRepository"
+        )
 else:
     material_repo = LocalMaterialRepository()
 
@@ -123,8 +134,32 @@ if _use_sheets:
         from repositories.sheets_repo import SheetsUserRepository
         user_repo = SheetsUserRepository()
     except Exception as _e:
-        import logging
-        logging.warning(f"SheetsUserRepository 초기화 실패, Local로 폴백: {_e}")
-        user_repo = LocalUserRepository()
+        user_repo = _fallback_or_raise(_e, LocalUserRepository, "SheetsUserRepository")
 else:
     user_repo = LocalUserRepository()
+
+# Phase 3 normalized generation writer. It is inert by default and never falls
+# back to Local storage when explicitly enabled.
+from repositories.generation_v2 import build_generation_v2_repository
+
+generation_v2_repo = build_generation_v2_repository(use_sheets=_use_sheets)
+
+# Phase 4 normalized exam writer. It is inert by default and never falls back
+# to Local storage when explicitly enabled.
+from repositories.exam_v2 import build_exam_v2_repository
+
+exam_v2_repo = build_exam_v2_repository(use_sheets=_use_sheets)
+
+# Phase 5 normalized result writer. It is inert by default and never falls
+# back to Local storage when explicitly enabled.
+from repositories.result_v2 import build_result_v2_repository
+
+result_v2_repo = build_result_v2_repository(use_sheets=_use_sheets)
+
+# 관리자 행동 감사 로그. OJT_USE_AUDIT_LOG=true일 때만 audit_logs 탭에 기록하며
+# 기본값은 비활성(None) — Local 폴백은 두지 않는다(감사 기록은 Sheets 전용).
+from repositories.audit_v2 import build_audit_v2_repository
+
+audit_repo = build_audit_v2_repository(
+    enabled=_use_sheets and os.getenv("OJT_USE_AUDIT_LOG", "false").strip().lower() == "true",
+)

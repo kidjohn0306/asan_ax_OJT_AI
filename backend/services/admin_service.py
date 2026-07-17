@@ -1,6 +1,9 @@
 import logging
 import os
 import time
+import uuid
+import json
+from datetime import datetime, timezone
 
 from fastapi import HTTPException
 from services.difficulty import update_difficulty_from_feedback
@@ -20,6 +23,36 @@ def _category_label_for_pool(pool_key: str) -> str:
 def _get_repos():
     from repositories import question_repo, result_repo, feedback_repo
     return question_repo, result_repo, feedback_repo
+
+
+def _record_audit(actor: dict | None, action_type: str, target_type: str, target_id: str,
+                   before: dict | None = None, after: dict | None = None, reason: str = "") -> None:
+    """감사 로그 기록은 최선 노력으로만 수행한다 — 실패해도 실제 작업(승인/반려 등)을 막지 않는다."""
+    from repositories import audit_repo
+    if audit_repo is None:
+        return
+    try:
+        audit_repo.record(
+            actor_id=(actor or {}).get("sub", ""),
+            actor_role=(actor or {}).get("role", ""),
+            action_type=action_type,
+            target_type=target_type,
+            target_id=target_id,
+            before=before,
+            after=after,
+            reason=reason,
+        )
+    except Exception:
+        logging.exception("audit log write failed for %s %s", action_type, target_id)
+
+
+def fetch_audit_logs() -> dict:
+    """audit_logs 탭에서 실제 감사 기록을 조회한다. OJT_USE_AUDIT_LOG가 꺼져 있으면
+    빈 목록과 enabled=False를 반환한다(가짜 데이터를 만들지 않는다)."""
+    from repositories import audit_repo
+    if audit_repo is None:
+        return {"logs": [], "enabled": False}
+    return {"logs": audit_repo.list_logs(), "enabled": True}
 
 
 _VALID_GATE_MODES = {"legacy", "strict"}
@@ -54,6 +87,7 @@ def _generate_ai_questions_strict(
     team_code: str,
     material_text: str,
     flagged_question_ids: frozenset,
+    persist_legacy: bool = True,
 ) -> tuple:
     """OJT_GATE_MODE=strict 전용 경로. PASS 여부와 관계없이 모든 Candidate를 정확히 한 번 저장하고,
     Gate 전체 판정을 기존 flags JSON 안의 gate_snapshot에 보존한다."""
@@ -89,7 +123,8 @@ def _generate_ai_questions_strict(
         q["gate_errors"] = gate_result["failed"]
         q["status"] = "reviewing" if gate_result["pass"] else "draft"
 
-        q_repo.add_question(pool_key, q)
+        if persist_legacy:
+            q_repo.add_question(pool_key, q)
         approved_questions.append(q)  # 같은 배치의 다음 Candidate와도 V06 중복 비교 대상이 된다.
 
         (passed if gate_result["pass"] else failed_list).append(q)
@@ -159,6 +194,15 @@ def fetch_reviewing_question_count() -> dict:
     return {"count": q_repo.count_by_status("reviewing")}
 
 
+def fetch_generation_jobs() -> dict:
+    """생성_jobs 목록을 실제 Sheets(generation_jobs 탭)에서 조회한다.
+    OJT_USE_CANDIDATE_TAB이 꺼져 있어 저장소가 구성되지 않았으면 빈 목록과 enabled=False를 반환한다."""
+    from repositories import generation_v2_repo
+    if generation_v2_repo is None:
+        return {"jobs": [], "enabled": False}
+    return {"jobs": generation_v2_repo.list_jobs(), "enabled": True}
+
+
 def fetch_logs(team=None, date_from=None, date_to=None) -> dict:
     _, r_repo, _ = _get_repos()
     all_results = r_repo.get_all_results()
@@ -184,31 +228,125 @@ def fetch_logs(team=None, date_from=None, date_to=None) -> dict:
     return {"logs": logs}
 
 
-def fetch_results_summary() -> dict:
-    """응시 결과 전체 집계 — 결과 분석 화면의 통계 카드·부서별 평균 점수용."""
+def fetch_results_analysis() -> dict:
+    """결과 분석 화면용 실제 응시 결과 집계 — 시험 회차(exam_id) 단위로 그룹화한다.
+    같은 시험지(exam_set_id)를 여러 회차가 공유할 수 있으므로 회차 단위로 묶어야 한다.
+    데이터가 없으면 빈 요약을 반환한다(목업으로 채우지 않음)."""
+    from repositories import team_repo, exam_set_repo
     _, r_repo, _ = _get_repos()
     all_results = list(r_repo.get_all_results().values())
 
+    team_names = {t["team_code"]: t["team_name"] for t in team_repo.list_teams()}
+    exam_meta = {s["exam_id"]: s for s in exam_set_repo.list_exam_sets()}
+
+    groups: dict = {}
+    for r in all_results:
+        groups.setdefault(r.get("exam_id") or "legacy", []).append(r)
+
+    exams = []
+    for exam_id, group in groups.items():
+        meta = exam_meta.get(exam_id, {})
+        team_code = meta.get("team_code") or group[0].get("team_code", "-")
+        takers = sorted(
+            [
+                {
+                    "employee_id": r.get("employee_id", "-"),
+                    "name": r.get("name") or "-",
+                    "score": r.get("score", 0),
+                    "pass": r.get("pass", False),
+                    "date": r.get("submitted_at", "")[:10],
+                    "results": r.get("results", []),
+                }
+                for r in group
+            ],
+            key=lambda x: x["date"],
+            reverse=True,
+        )
+        g_count = len(group)
+        g_correct = sum(1 for r in group for q in r.get("results", []) if q.get("correct"))
+        g_answered = sum(len(r.get("results", [])) for r in group)
+        exams.append({
+            "exam_id": exam_id,
+            "exam_set_id": meta.get("exam_set_id", exam_id),
+            "name": meta.get("name") or "미배정 시험(레거시)",
+            "team_code": team_code,
+            "team_name": team_names.get(team_code, team_code),
+            "exam_datetime": meta.get("exam_datetime") or meta.get("created_at", ""),
+            "pass_score": meta.get("pass_score", 70),
+            "taker_count": g_count,
+            "avg_score": round(sum(r.get("score", 0) for r in group) / g_count, 1),
+            "pass_count": sum(1 for r in group if r.get("pass")),
+            "accuracy_pct": round(g_correct / g_answered * 100, 1) if g_answered else 0,
+            "takers": takers,
+        })
+    exams.sort(key=lambda x: (x["exam_datetime"] or "", x["takers"][0]["date"] if x["takers"] else ""), reverse=True)
+
+    if not all_results:
+        return {
+            "summary": {"count": 0, "avg_score": 0, "accuracy_pct": 0, "pass_count": 0},
+            "team_averages": [],
+            "difficulty_accuracy": {},
+            "exams": [],
+            "insights": [],
+        }
+
     count = len(all_results)
-    avg_score = round(sum(r.get("score", 0) for r in all_results) / count, 1) if count else 0
+    avg_score = round(sum(r.get("score", 0) for r in all_results) / count, 1)
     pass_count = sum(1 for r in all_results if r.get("pass"))
 
-    correct = sum(1 for r in all_results for item in r.get("results", []) if item.get("correct"))
-    total_answers = sum(len(r.get("results", [])) for r in all_results)
-    accuracy = round(correct / total_answers * 100, 1) if total_answers else 0
+    total_correct = total_answered = 0
+    diff_totals = {"상": {"correct": 0, "total": 0}, "중": {"correct": 0, "total": 0}, "하": {"correct": 0, "total": 0}}
+    for r in all_results:
+        for q in r.get("results", []):
+            total_answered += 1
+            if q.get("correct"):
+                total_correct += 1
+            d = q.get("difficulty")
+            if d in diff_totals:
+                diff_totals[d]["total"] += 1
+                if q.get("correct"):
+                    diff_totals[d]["correct"] += 1
+    accuracy_pct = round(total_correct / total_answered * 100, 1) if total_answered else 0
+
+    difficulty_accuracy = {
+        d: {**v, "pct": round(v["correct"] / v["total"] * 100, 1) if v["total"] else 0}
+        for d, v in diff_totals.items()
+    }
 
     team_scores: dict = {}
     for r in all_results:
-        team = r.get("team_code") or "미배정"
-        team_scores.setdefault(team, []).append(r.get("score", 0))
-    team_avg_score = {team: round(sum(scores) / len(scores), 1) for team, scores in team_scores.items()}
+        team_scores.setdefault(r.get("team_code", "-"), []).append(r.get("score", 0))
+    team_averages = sorted(
+        [
+            {
+                "team_code": code,
+                "team_name": team_names.get(code, code),
+                "avg_score": round(sum(scores) / len(scores), 1),
+                "count": len(scores),
+            }
+            for code, scores in team_scores.items()
+        ],
+        key=lambda x: x["avg_score"],
+    )
+
+    insights = []
+    if team_averages:
+        weakest_team = team_averages[0]
+        insights.append(f"{weakest_team['team_name']} 평균 점수가 {weakest_team['avg_score']}점으로 가장 낮습니다.")
+    scored_diffs = {d: v for d, v in difficulty_accuracy.items() if v["total"] > 0}
+    if scored_diffs:
+        weakest_diff = min(scored_diffs.items(), key=lambda kv: kv[1]["pct"])
+        insights.append(f"난이도 '{weakest_diff[0]}' 문항의 정답률이 {weakest_diff[1]['pct']}%로 가장 낮습니다.")
+    insights.append(
+        f"전체 정답률은 {accuracy_pct}%, 합격률은 {round(pass_count / count * 100, 1)}%입니다."
+    )
 
     return {
-        "count": count,
-        "avg_score": avg_score,
-        "accuracy": accuracy,
-        "pass_count": pass_count,
-        "team_avg_score": team_avg_score,
+        "summary": {"count": count, "avg_score": avg_score, "accuracy_pct": accuracy_pct, "pass_count": pass_count},
+        "team_averages": team_averages,
+        "difficulty_accuracy": difficulty_accuracy,
+        "exams": exams,
+        "insights": insights,
     }
 
 
@@ -274,9 +412,23 @@ def override_difficulty(question_id: str, new_difficulty: str, reason_code: str 
     }
 
 
-def generate_ai_questions(team_code: str, material_text: str, count: int, difficulty_hint: str) -> dict:
+def generate_ai_questions(
+    team_code: str,
+    material_text: str,
+    count: int,
+    difficulty_hint: str,
+    requested_by: str = "",
+    idempotency_key: str = "",
+) -> dict:
     from ai_engine.router import generate_questions_from_material
     from services.generation.gates import run_gates
+    from services.generation.dual_write import (
+        assign_candidate_ids,
+        build_candidate_row,
+        build_gate_rows,
+        get_generation_write_policy,
+        link_candidate_to_legacy,
+    )
     from services.material_service import get_material_text_for_team
 
     from repositories import question_stats_repo
@@ -284,6 +436,53 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
     category = TEAM_KEY_MAP.get(team_code, team_code)  # pool_key — 문제 저장 위치(add_question)에 사용
     category_label = _category_label_for_pool(category)  # 공통/팀별/환경안전/일반상식 — 문제의 category 필드·게이트 검증·프론트 필터에 사용
     q_repo, _, fb_repo = _get_repos()
+    policy = get_generation_write_policy()
+    provider = os.getenv("AI_PROVIDER", "mock")
+    now = datetime.now(timezone.utc).isoformat()
+    generation_job_id = ""
+    generation_v2_repo = None
+
+    if policy.candidates:
+        from repositories import generation_v2_repo
+        if generation_v2_repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="정규화 문제 저장소가 구성되지 않았습니다.",
+            )
+        if idempotency_key:
+            generation_job_id = "gen-" + uuid.uuid5(
+                uuid.NAMESPACE_URL,
+                f"ojt:generation:{idempotency_key}",
+            ).hex
+        else:
+            generation_job_id = "gen-" + uuid.uuid4().hex
+        job = {
+            "generation_job_id": generation_job_id,
+            "requested_by": requested_by,
+            "evaluation_type": "OJT",
+            "team_code": team_code,
+            "category_counts_json": {},
+            "difficulty_counts_json": {difficulty_hint: count},
+            "knowledge_unit_ids_json": [],
+            "requested_count": count,
+            "candidate_multiplier": 1,
+            "provider": provider,
+            "model_name": os.getenv("AI_MODEL", ""),
+            "prompt_version": os.getenv("OJT_PROMPT_VERSION", ""),
+            "status": "RUNNING",
+            "started_at": now,
+            "row_version": 1,
+            "work_name": f"{team_code} AI 문제 생성",
+            "progress_percent": 0,
+            "completed_count": 0,
+            "review_required_count": 0,
+            "failed_count": 0,
+        }
+        try:
+            generation_v2_repo.create_job(job)
+        except Exception as exc:
+            logging.exception("generation job 생성 실패: %s", exc)
+            raise HTTPException(status_code=503, detail="문제 생성 작업 저장에 실패했습니다.")
 
     # Drive에서 스캔해둔 교육자료(공통+팀별)를 기본 자료로 사용하고,
     # 관리자가 직접 붙여넣은 텍스트는 이번 출제에 한해 보충하는 내용으로 뒤에 덧붙인다.
@@ -334,7 +533,16 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
             rejected_examples, overused_questions, difficulty_corrections,
         )
     except Exception as e:
-        provider = os.getenv("AI_PROVIDER", "mock")
+        if generation_v2_repo is not None:
+            try:
+                generation_v2_repo.update_job(generation_job_id, {
+                    "status": "FAILED",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "error_message": str(e),
+                    "failed_count": count,
+                })
+            except Exception:
+                logging.exception("generation job 실패 상태 저장 실패")
         logging.exception(f"AI 문제 생성 실패 (provider={provider}): {e}")
         raise HTTPException(status_code=502, detail="AI 문제 생성에 실패했습니다. 잠시 후 다시 시도해주세요.")
 
@@ -347,11 +555,15 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
     for i, q in enumerate(questions):
         q["question_id"] = f"{category}-{batch_stamp}-{i+1:03d}"
 
+    if policy.candidates:
+        questions = assign_candidate_ids(questions, generation_job_id)
+
     gate_mode = _get_gate_mode()
     if gate_mode == "strict":
         passed, failed_list = _generate_ai_questions_strict(
             questions, q_repo, category, category_label, team_code,
             material_text, frozenset(flagged_ids),
+            persist_legacy=not policy.candidates,
         )
     else:
         passed, failed_list = [], []
@@ -360,16 +572,88 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
             if gate_result["pass"]:
                 q["status"] = "reviewing"
                 q["flags"] = gate_result["flags"]
-                q_repo.add_question(category, q)
+                if not policy.candidates:
+                    q_repo.add_question(category, q)
                 passed.append(q)
             else:
                 q["status"] = "draft"
                 q["gate_errors"] = gate_result["failed"]
                 failed_list.append(q)
 
+    if generation_v2_repo is not None:
+        completed_at = datetime.now(timezone.utc).isoformat()
+        candidates = passed + failed_list
+        candidate_rows = [
+            build_candidate_row(
+                question,
+                generation_job_id=generation_job_id,
+                team_code=team_code,
+                provider=provider,
+                generated_at=completed_at,
+                model_name=os.getenv("AI_MODEL", ""),
+                prompt_version=os.getenv("OJT_PROMPT_VERSION", ""),
+            )
+            for question in candidates
+        ]
+        gate_rows = [
+            row
+            for question in candidates
+            for row in build_gate_rows(question, completed_at)
+        ] if policy.gates else []
+        try:
+            generation_v2_repo.save_candidates(candidate_rows)
+            if gate_rows:
+                generation_v2_repo.save_gate_results(gate_rows)
+        except Exception as exc:
+            try:
+                generation_v2_repo.update_job(generation_job_id, {
+                    "status": "FAILED",
+                    "completed_at": completed_at,
+                    "error_message": str(exc),
+                    "failed_count": len(candidates),
+                })
+            except Exception:
+                logging.exception("generation job 실패 상태 저장 실패")
+            raise HTTPException(status_code=503, detail="정규화 문제 데이터 저장에 실패했습니다.")
+
+        try:
+            legacy_questions = candidates if gate_mode == "strict" else passed
+            for question in legacy_questions:
+                linked = link_candidate_to_legacy(
+                    question,
+                    question.get("candidate_id", ""),
+                )
+                q_repo.add_question(category, linked)
+        except Exception as exc:
+            try:
+                generation_v2_repo.update_job(generation_job_id, {
+                    "status": "PARTIAL_FAILED",
+                    "completed_at": completed_at,
+                    "error_message": str(exc),
+                })
+            except Exception:
+                logging.exception("generation job 부분 실패 상태 저장 실패")
+            raise HTTPException(status_code=503, detail="Legacy 문제은행 저장에 실패했습니다.")
+
+        try:
+            generation_v2_repo.update_job(generation_job_id, {
+                "status": "COMPLETED",
+                "completed_at": completed_at,
+                "progress_percent": 100,
+                "completed_count": len(passed),
+                "review_required_count": sum(
+                    1 for question in candidates
+                    if question.get("status") == "reviewing"
+                ),
+                "failed_count": len(failed_list),
+            })
+        except Exception:
+            logging.exception("generation job 완료 상태 저장 실패")
+            raise HTTPException(status_code=503, detail="문제 생성 완료 상태 저장에 실패했습니다.")
+
     return {
         "team_code": team_code,
-        "provider": os.getenv("AI_PROVIDER", "mock"),
+        "provider": provider,
         "count": len(passed),
         "failed_count": len(failed_list),
         "questions": [
@@ -389,6 +673,7 @@ def generate_ai_questions(team_code: str, material_text: str, count: int, diffic
             }
             for q in passed + failed_list
         ],
+        **({"generation_job_id": generation_job_id} if generation_job_id else {}),
     }
 
 
@@ -399,6 +684,72 @@ _MIN_OVERRIDE_REASON_LENGTH = 10
 
 def _gate_error(code: str, message: str) -> HTTPException:
     return HTTPException(status_code=409, detail={"code": code, "message": message})
+
+
+def _write_normalized_question_review(
+    question: dict,
+    updated_fields: dict,
+    action: str,
+    actor: dict | None,
+    reason: str,
+) -> bool:
+    from repositories import generation_v2_repo
+    from services.generation.dual_write import (
+        build_review_records,
+        get_generation_write_policy,
+    )
+
+    if not get_generation_write_policy().candidates:
+        return False
+    if generation_v2_repo is None:
+        raise HTTPException(
+            status_code=503,
+            detail="정규화 문제 저장소를 사용할 수 없습니다.",
+        )
+
+    before = dict(question)
+    after = {**question, **updated_fields}
+    reviewed_at = datetime.now(timezone.utc).isoformat()
+    actor_id = (actor or {}).get("sub", "")
+    review, history = build_review_records(
+        before,
+        after,
+        action=action,
+        actor_id=actor_id,
+        reason=reason,
+        reviewed_at=reviewed_at,
+    )
+    candidate_id = review["candidate_id"]
+    if not candidate_id:
+        existing = generation_v2_repo.find_candidate_by_question_id(
+            question.get("question_id", "")
+        )
+        candidate_id = (existing or {}).get("candidate_id", "")
+        review["candidate_id"] = candidate_id
+
+    candidate_fields = {
+        "status": updated_fields["status"],
+        "review_status": updated_fields["status"],
+        "reviewed_by": actor_id,
+        "reviewed_at": reviewed_at,
+        "last_saved_at": reviewed_at,
+    }
+    if action == "APPROVE":
+        candidate_fields["approved_question_id"] = question.get("question_id", "")
+    else:
+        candidate_fields["rejection_reason"] = reason
+
+    try:
+        generation_v2_repo.record_review(review, history)
+        if candidate_id:
+            generation_v2_repo.update_candidate(candidate_id, candidate_fields)
+    except Exception as exc:
+        logging.exception("normalized question review write failed")
+        raise HTTPException(
+            status_code=503,
+            detail="정규화 승인·반려 기록 저장에 실패했습니다.",
+        ) from exc
+    return True
 
 
 def approve_question(question_id: str, actor: dict = None, override_reason: str = "") -> dict:
@@ -464,20 +815,57 @@ def approve_question(question_id: str, actor: dict = None, override_reason: str 
         }
         updated_fields["flags"] = updated_flags
 
-    q_repo.update_question(question_id, updated_fields)
+    used_normalized_repo = _write_normalized_question_review(
+        q,
+        updated_fields,
+        action="APPROVE",
+        actor=actor,
+        reason=override_reason.strip(),
+    )
+    try:
+        q_repo.update_question(question_id, updated_fields)
+    except Exception as exc:
+        if not used_normalized_repo:
+            raise
+        logging.exception("legacy question approval update failed after normalized write")
+        raise HTTPException(
+            status_code=503,
+            detail="기존 문제 승인 저장에 실패했습니다.",
+        ) from exc
+    _record_audit(actor, "APPROVE_QUESTION", "question", question_id,
+                  before={"status": q.get("status")}, after=updated_fields, reason=override_reason.strip())
     return {"approved": True, "question_id": question_id}
 
 
-def reject_question(question_id: str, reason: str) -> dict:
+def reject_question(question_id: str, reason: str, actor: dict = None) -> dict:
     q_repo, _, _ = _get_repos()
     q = q_repo.get_question(question_id)
     if not q:
         raise HTTPException(status_code=404, detail="문제를 찾을 수 없습니다.")
-    q_repo.update_question(question_id, {
+    updated_fields = {
         "status": "rejected",
         "flags": {**q.get("flags", {}), "needs_edit": True},
         "reject_reason": reason,
-    })
+    }
+    used_normalized_repo = _write_normalized_question_review(
+        q,
+        updated_fields,
+        action="REJECT",
+        actor=actor,
+        reason=reason,
+    )
+    try:
+        q_repo.update_question(question_id, updated_fields)
+    except Exception as exc:
+        if not used_normalized_repo:
+            raise
+        logging.exception("legacy question rejection update failed after normalized write")
+        raise HTTPException(
+            status_code=503,
+            detail="기존 문제 반려 저장에 실패했습니다.",
+        ) from exc
+    _record_audit(actor, "REJECT_QUESTION", "question", question_id,
+                  before={"status": q.get("status")}, after=updated_fields, reason=reason)
     return {"rejected": True, "question_id": question_id, "reason": reason}
 
 
@@ -508,67 +896,709 @@ def list_exam_sets() -> list:
     return exam_set_repo.list_exam_sets()
 
 
-def create_exam_set(name: str, team_code: str, question_ids: list, created_by: str = "") -> dict:
-    import uuid
-    from repositories import exam_set_repo
+def _load_approved_exam_questions(question_repo, question_ids: list[str]) -> list[dict]:
+    approved = []
+    rejected = []
+    for question_id in dict.fromkeys(question_ids):
+        question = question_repo.get_question(question_id)
+        if not question or question.get("status") != "approved":
+            rejected.append(question_id)
+        else:
+            approved.append(question)
+    if rejected:
+        raise HTTPException(status_code=409, detail={
+            "code": "EXAM_QUESTION_NOT_APPROVED",
+            "message": "승인된 문제만 시험에 사용할 수 있습니다.",
+            "question_ids": rejected,
+        })
+    if not approved:
+        raise HTTPException(
+            status_code=400,
+            detail="시험에는 승인 문제 한 개 이상이 필요합니다.",
+        )
+    return approved
+
+
+def _validate_exam_question_ids(question_repo, question_ids: list[str]) -> list[str]:
+    return [
+        question["question_id"]
+        for question in _load_approved_exam_questions(question_repo, question_ids)
+    ]
+
+
+def _exam_input_error(code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=400,
+        detail={"code": code, "message": message},
+    )
+
+
+def _validate_evaluation_type(evaluation_type: str) -> str:
+    if evaluation_type not in {"official", "practice"}:
+        raise _exam_input_error(
+            "EXAM_EVALUATION_TYPE_INVALID",
+            "evaluation_type must be official or practice",
+        )
+    return evaluation_type
+
+
+def _resolve_exam_scores(question_ids, question_scores):
+    from services.exams.dual_write import resolve_question_scores
+
+    try:
+        return resolve_question_scores(question_ids, question_scores)
+    except ValueError as exc:
+        raise _exam_input_error("EXAM_SCORE_INVALID", str(exc)) from exc
+
+
+def _frozen_exam_metadata(
+    version: dict,
+    scores: dict[str, int],
+    evaluation_type: str,
+    idempotency_key: str,
+) -> dict:
+    return {
+        "evaluation_type": evaluation_type,
+        "blueprint_json": {"question_scores": scores},
+        "frozen_at": version.get("confirmed_at", ""),
+        "frozen_by": version.get("confirmed_by", ""),
+        "paper_version": version.get("version_no", 1),
+        "snapshot_checksum": version.get("question_hash", ""),
+        "row_version": 1,
+        "confirmed_by": version.get("confirmed_by", ""),
+        "confirmed_at": version.get("confirmed_at", ""),
+        "current_exam_version_id": version.get("exam_version_id", ""),
+        "idempotency_key": idempotency_key,
+    }
+
+
+def _existing_exam_retry(exam_set_repo, exam_id: str, idempotency_key: str):
+    return next((
+        row
+        for row in exam_set_repo.list_exam_sets()
+        if row.get("exam_id") == exam_id
+        or (
+            idempotency_key
+            and row.get("idempotency_key") == idempotency_key
+        )
+    ), None)
+
+
+def _assert_same_idempotent_exam(existing: dict, data: dict) -> None:
+    immutable_fields = (
+        "exam_set_id",
+        "name",
+        "team_code",
+        "question_ids",
+        "evaluation_type",
+    )
+    if any(existing.get(field) != data.get(field) for field in immutable_fields):
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "EXAM_IDEMPOTENCY_CONFLICT",
+                "message": "idempotency_key was already used with different exam data",
+            },
+        )
+
+
+def _persist_legacy_exam(
+    exam_set_repo,
+    data: dict,
+    normalized_used: bool,
+    metadata: dict | None,
+) -> dict:
+    existing = _existing_exam_retry(
+        exam_set_repo,
+        data["exam_id"],
+        data.get("idempotency_key", ""),
+    )
+    if existing:
+        _assert_same_idempotent_exam(existing, data)
+    try:
+        stored = existing or exam_set_repo.create_exam_set(data)
+        if metadata is not None:
+            if not exam_set_repo.update_exam_set(data["exam_id"], metadata):
+                raise RuntimeError("legacy exam metadata target was not found")
+            stored.update(metadata)
+        return stored
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if not normalized_used:
+            raise
+        logging.exception("legacy exam write failed after normalized persistence")
+        raise HTTPException(
+            status_code=503,
+            detail="기존 시험 저장에 실패했습니다.",
+        ) from exc
+
+
+def create_exam_set(
+    name: str,
+    team_code: str,
+    question_ids: list,
+    created_by: str = "",
+    question_scores: dict[str, int] | None = None,
+    evaluation_type: str = "official",
+    idempotency_key: str = "",
+) -> dict:
+    from repositories import exam_set_repo, question_repo, exam_v2_repo
+    from repositories.exam_v2 import ImmutableExamConflict
+    from services.exams.dual_write import (
+        build_exam_ids,
+        build_frozen_exam_records,
+        get_exam_write_policy,
+    )
+
+    evaluation_type = _validate_evaluation_type(evaluation_type)
+    approved_questions = _load_approved_exam_questions(
+        question_repo, question_ids
+    )
+    valid_ids = [question["question_id"] for question in approved_questions]
+    scores = _resolve_exam_scores(question_ids, question_scores)
+    exam_set_id, exam_id = build_exam_ids(idempotency_key)
+    policy = get_exam_write_policy()
+    confirmed_at = datetime.now(timezone.utc).isoformat()
+    version = None
+    metadata = None
+
+    # 같은 멱등키 재시도는 같은 exam_id를 재사용한다. 그 외 시험 중 이름 또는
+    # 문제 구성이 같으면 어떤 V2/Legacy 행도 쓰기 전에 차단한다.
+    existing = exam_set_repo.list_exam_sets()
+    other_exams = [
+        row for row in existing if str(row.get("exam_id", "")) != exam_id
+    ]
+    name_key = name.strip()
+    question_set = set(valid_ids)
+    if any(row.get("name", "").strip() == name_key for row in other_exams):
+        raise HTTPException(status_code=409, detail="이미 동일한 이름의 시험지가 있습니다.")
+    if any(set(row.get("question_ids", [])) == question_set for row in other_exams):
+        raise HTTPException(status_code=409, detail="이미 동일한 문제 구성의 시험지가 있습니다.")
+
+    if policy.frozen_exams:
+        if exam_v2_repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="정규화 시험 저장소를 사용할 수 없습니다.",
+            )
+        version, items = build_frozen_exam_records(
+            exam_set_id=exam_set_id,
+            questions=approved_questions,
+            scores=scores,
+            confirmed_by=created_by,
+            confirmed_at=confirmed_at,
+            version_no=1,
+        )
+        try:
+            exam_v2_repo.save_frozen_exam(version, items)
+        except ImmutableExamConflict as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "EXAM_IMMUTABLE_CONFLICT",
+                    "message": str(exc),
+                },
+            ) from exc
+        except Exception as exc:
+            logging.exception("normalized frozen exam write failed")
+            raise HTTPException(
+                status_code=503,
+                detail="정규화 시험 저장에 실패했습니다.",
+            ) from exc
+        metadata = _frozen_exam_metadata(
+            version, scores, evaluation_type, idempotency_key
+        )
+
     data = {
-        "exam_set_id": f"set-{str(uuid.uuid4())[:8]}",
+        "exam_set_id": exam_set_id,
+        "exam_id": exam_id,
         "name": name,
         "team_code": team_code,
-        "question_ids": question_ids,
+        "question_ids": valid_ids,
+        "question_scores": scores,
+        "evaluation_type": evaluation_type,
+        "total_score": 100,
+        "exam_version_id": (
+            version["exam_version_id"] if version is not None else ""
+        ),
+        "idempotency_key": idempotency_key,
         "created_by": created_by,
         "status": "active",
     }
-    return exam_set_repo.create_exam_set(data)
+    stored = _persist_legacy_exam(
+        exam_set_repo,
+        data,
+        normalized_used=policy.frozen_exams,
+        metadata=metadata,
+    )
+    return {
+        **stored,
+        "evaluation_type": evaluation_type,
+        "total_score": 100,
+        "exam_version_id": (
+            version["exam_version_id"] if version is not None else ""
+        ),
+    }
 
 
-def assign_user_to_exam_set(employee_id: str, exam_set_id: str) -> dict:
+def list_question_papers() -> list:
+    """시험지(문제 구성) 목록 — 같은 exam_set_id를 쓰는 여러 회차 중 대표 1건씩만 반환."""
     from repositories import exam_set_repo
 
-    # 한 응시자는 동시에 하나의 시험 세트에만 배정되어야 한다. 그렇지 않으면 이전에
-    # 배정된 세트가 그대로 남아있어, 새 세트로 재배정해도 실제 출제 시 어느 세트를 써야
-    # 할지 모호해지고 이전 문제가 그대로 나오는 버그로 이어진다.
-    for s in exam_set_repo.list_exam_sets():
-        other_id = s.get("exam_set_id")
-        if other_id and other_id != exam_set_id and employee_id in s.get("assigned_users", []):
-            exam_set_repo.unassign_user(other_id, employee_id)
+    def rank(row):
+        try:
+            paper_version = int(row.get("paper_version") or 0)
+        except (TypeError, ValueError):
+            paper_version = 0
+        return paper_version, str(row.get("created_at") or "")
 
-    if not exam_set_repo.assign_user(exam_set_id, employee_id):
-        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
-    return {"success": True, "employee_id": employee_id, "exam_set_id": exam_set_id}
+    grouped = {}
+    for row in exam_set_repo.list_exam_sets():
+        exam_set_id = row.get("exam_set_id")
+        if exam_set_id:
+            grouped.setdefault(exam_set_id, []).append(row)
+
+    papers = {}
+    for exam_set_id, rows in grouped.items():
+        representative = max(rows, key=rank)
+        paper_version = rank(representative)[0]
+        papers[exam_set_id] = {
+            "exam_id": str(representative.get("exam_id") or ""),
+            "exam_set_id": str(exam_set_id),
+            "name": str(representative.get("name") or ""),
+            "team_code": str(representative.get("team_code") or ""),
+            "paper_version": paper_version,
+            "question_count": len(representative.get("question_ids") or []),
+            "used_by_exam_count": len(rows),
+            "created_at": str(representative.get("created_at") or ""),
+        }
+    return sorted(papers.values(), key=lambda p: p.get("created_at") or "", reverse=True)
 
 
-def unassign_user_from_exam_set(employee_id: str, exam_set_id: str) -> dict:
+def _scores_from_exam_version(version: dict) -> dict[str, int]:
+    blueprint = version.get("blueprint_json") or "[]"
+    if isinstance(blueprint, str):
+        try:
+            blueprint = json.loads(blueprint)
+        except json.JSONDecodeError:
+            blueprint = []
+    if not isinstance(blueprint, list):
+        return {}
+    scores = {}
+    for item in blueprint:
+        try:
+            score = int(item.get("score", 0))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        question_id = str(item.get("question_id", ""))
+        if question_id and score > 0:
+            scores[question_id] = score
+    return scores
+
+
+def create_exam_round_from_paper(
+    exam_set_id: str,
+    name: str = None,
+    created_by: str = "",
+    evaluation_type: str | None = None,
+    idempotency_key: str = "",
+    exam_datetime: str = None,
+    pass_score: int = None,
+    duration_min: int = None,
+) -> dict:
+    """기존 시험지(exam_set_id)의 문제 구성을 재사용해 새 시험 회차를 만든다.
+    배정 대상은 새로 시작(빈 배정). 일시·커트라인·시험 시간은 주어지면 생성 시점에 바로 반영하고,
+    없으면 기존처럼 미정 일시·기본 커트라인 70점·기본 시험 시간 60분으로 시작한다."""
+    from repositories import exam_set_repo, question_repo, exam_v2_repo
+    from repositories.exam_v2 import ImmutableExamConflict
+    from services.exams.dual_write import (
+        build_exam_ids,
+        build_frozen_exam_records,
+        get_exam_write_policy,
+    )
+    source = next((s for s in exam_set_repo.list_exam_sets() if s.get("exam_set_id") == exam_set_id), None)
+    if not source:
+        raise HTTPException(status_code=404, detail="시험지를 찾을 수 없습니다.")
+    evaluation_type = _validate_evaluation_type(
+        evaluation_type or source.get("evaluation_type") or "official"
+    )
+    policy = get_exam_write_policy()
+    version = None
+    scores = {}
+    metadata = None
+
+    if policy.frozen_exams:
+        if exam_v2_repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="정규화 시험 저장소를 사용할 수 없습니다.",
+            )
+        try:
+            version = exam_v2_repo.find_current_version(exam_set_id)
+        except Exception as exc:
+            logging.exception("normalized exam version lookup failed")
+            raise HTTPException(
+                status_code=503,
+                detail="정규화 시험 버전 조회에 실패했습니다.",
+            ) from exc
+        if version is not None:
+            scores = _scores_from_exam_version(version)
+
+    if version is None:
+        current_questions = _load_approved_exam_questions(
+            question_repo,
+            source.get("question_ids", []),
+        )
+        valid_ids = [question["question_id"] for question in current_questions]
+        scores = _resolve_exam_scores(
+            valid_ids,
+            source.get("question_scores"),
+        )
+        if policy.frozen_exams:
+            confirmed_at = datetime.now(timezone.utc).isoformat()
+            version, items = build_frozen_exam_records(
+                exam_set_id=exam_set_id,
+                questions=current_questions,
+                scores=scores,
+                confirmed_by=created_by,
+                confirmed_at=confirmed_at,
+                version_no=1,
+            )
+            try:
+                exam_v2_repo.save_frozen_exam(version, items)
+            except ImmutableExamConflict as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "EXAM_IMMUTABLE_CONFLICT",
+                        "message": str(exc),
+                    },
+                ) from exc
+            except Exception as exc:
+                logging.exception("normalized frozen exam write failed")
+                raise HTTPException(
+                    status_code=503,
+                    detail="정규화 시험 저장에 실패했습니다.",
+                ) from exc
+    else:
+        valid_ids = list(source.get("question_ids", []))
+        if set(scores) != set(valid_ids):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "EXAM_VERSION_BLUEPRINT_INVALID",
+                    "message": "확정 시험 버전의 문항 배점이 일치하지 않습니다.",
+                },
+            )
+
+    if version is not None:
+        metadata = _frozen_exam_metadata(
+            version, scores, evaluation_type, idempotency_key
+        )
+    _, exam_id = build_exam_ids(idempotency_key)
+    data = {
+        "exam_set_id": exam_set_id,
+        "exam_id": exam_id,
+        "name": name or source.get("name"),
+        "team_code": source.get("team_code"),
+        "question_ids": valid_ids,
+        "question_scores": scores,
+        "evaluation_type": evaluation_type,
+        "total_score": 100,
+        "exam_version_id": (
+            version["exam_version_id"] if version is not None else ""
+        ),
+        "idempotency_key": idempotency_key,
+        "created_by": created_by,
+        "status": "active",
+        "exam_datetime": exam_datetime or "",
+        "pass_score": 70 if pass_score is None else pass_score,
+        "duration_min": 60 if duration_min is None else duration_min,
+    }
+    update_fields = {
+        key: value
+        for key, value in {
+            "exam_datetime": exam_datetime,
+            "pass_score": pass_score,
+            "duration_min": duration_min,
+        }.items()
+        if value is not None
+    }
+    if update_fields:
+        metadata = {**(metadata or {}), **update_fields}
+    stored = _persist_legacy_exam(
+        exam_set_repo,
+        data,
+        normalized_used=policy.frozen_exams,
+        metadata=metadata,
+    )
+    return {
+        **stored,
+        "evaluation_type": evaluation_type,
+        "total_score": 100,
+        "exam_version_id": (
+            version["exam_version_id"] if version is not None else ""
+        ),
+    }
+def _is_approved_exam_user(user: dict | None) -> bool:
+    if not user:
+        return False
+    approved = user.get("approved", False)
+    return approved is True or str(approved).strip().lower() == "true"
+
+def _exam_evaluation_type(exam: dict | None) -> str:
+    value = str((exam or {}).get("evaluation_type") or "official").strip().lower()
+    return value if value in {"official", "practice"} else "official"
+
+
+def _assignment_error(code: str, message: str) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={"code": code, "message": message},
+    )
+
+
+def assign_user_to_exam_set(
+    employee_id: str,
+    exam_id: str,
+    actor: dict | None = None,
+) -> dict:
+    from repositories import exam_set_repo, user_repo, exam_v2_repo
+    from services.exams.dual_write import (
+        build_assignment_record,
+        get_exam_write_policy,
+    )
+
+    target = exam_set_repo.get_exam(exam_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+
+    user = user_repo.find_user(employee_id)
+    if (
+        user
+        and target.get("team_code")
+        and user.get("team")
+        and user.get("team") != target.get("team_code")
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="시험지 대상 팀과 응시자 소속 팀이 다릅니다.",
+        )
+
+    if not _is_approved_exam_user(user):
+        raise _assignment_error(
+            "EXAM_ASSIGNEE_NOT_APPROVED",
+            "승인된 응시자만 시험에 배정할 수 있습니다.",
+        )
+
+    actor_id = str((actor or {}).get("sub") or "")
+    assigned_at = datetime.now(timezone.utc).isoformat()
+    policy = get_exam_write_policy()
+    all_exams = exam_set_repo.list_exam_sets()
+    exams_by_id = {
+        row.get("exam_id"): row
+        for row in all_exams
+        if row.get("exam_id")
+    }
+
+    # 정식 시험은 사용자당 하나만 유지한다. 연습 시험은 기존 정식/연습 배정을
+    # 모두 보존하므로 학습용 시험을 여러 개 동시에 제공할 수 있다.
+    legacy_conflicts = []
+    if _exam_evaluation_type(target) == "official":
+        legacy_conflicts = [
+            row
+            for row in all_exams
+            if row.get("exam_id") != exam_id
+            and employee_id in row.get("assigned_users", [])
+            and _exam_evaluation_type(row) == "official"
+        ]
+
+    normalized_written = False
+    if policy.assignments:
+        if exam_v2_repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="정규화 시험 배정 저장소를 사용할 수 없습니다.",
+            )
+        try:
+            version = exam_v2_repo.find_current_version(target.get("exam_set_id", ""))
+            if version is None:
+                raise _assignment_error(
+                    "EXAM_VERSION_NOT_CONFIRMED",
+                    "확정된 시험 버전이 있어야 응시자를 배정할 수 있습니다.",
+                )
+
+            conflict_ids = [row["exam_id"] for row in legacy_conflicts]
+            if _exam_evaluation_type(target) == "official":
+                for active in exam_v2_repo.list_active_assignments(employee_id):
+                    other_id = active.get("exam_id")
+                    if (
+                        other_id
+                        and other_id != exam_id
+                        and _exam_evaluation_type(exams_by_id.get(other_id)) == "official"
+                        and other_id not in conflict_ids
+                    ):
+                        conflict_ids.append(other_id)
+
+            for conflict_id in conflict_ids:
+                current = exam_v2_repo.find_assignment(conflict_id, employee_id)
+                if current is None:
+                    continue
+                cancelled = build_assignment_record(
+                    conflict_id,
+                    current.get("exam_version_id", ""),
+                    employee_id,
+                    actor_id,
+                    assigned_at,
+                    current=current,
+                    status="cancelled",
+                )
+                exam_v2_repo.upsert_assignment(cancelled)
+
+            current = exam_v2_repo.find_assignment(exam_id, employee_id)
+            assigned = build_assignment_record(
+                exam_id,
+                version["exam_version_id"],
+                employee_id,
+                actor_id,
+                assigned_at,
+                current=current,
+                status="assigned",
+            )
+            if current and current.get("status") == "cancelled":
+                assigned["assigned_by"] = actor_id
+                assigned["assigned_at"] = assigned_at
+            if target.get("exam_datetime") and not assigned.get("available_from"):
+                assigned["available_from"] = target["exam_datetime"]
+            exam_v2_repo.upsert_assignment(assigned)
+            normalized_written = True
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logging.exception("normalized exam assignment write failed")
+            raise HTTPException(
+                status_code=503,
+                detail="정규화 시험 배정 저장에 실패했습니다.",
+            ) from exc
+
+    try:
+        for conflict in legacy_conflicts:
+            exam_set_repo.unassign_user(conflict["exam_id"], employee_id)
+        if not exam_set_repo.assign_user(exam_id, employee_id):
+            if normalized_written:
+                raise RuntimeError("legacy exam assignment target disappeared")
+            raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if not normalized_written:
+            raise
+        logging.exception("legacy exam assignment write failed after normalized write")
+        raise HTTPException(
+            status_code=503,
+            detail="기존 시험 배정 저장에 실패했습니다.",
+        ) from exc
+
+    return {"success": True, "employee_id": employee_id, "exam_id": exam_id}
+
+
+def unassign_user_from_exam_set(
+    employee_id: str,
+    exam_id: str,
+    actor: dict | None = None,
+) -> dict:
+    from repositories import exam_set_repo, exam_v2_repo
+    from services.exams.dual_write import (
+        build_assignment_record,
+        get_exam_write_policy,
+    )
+
+    target = exam_set_repo.get_exam(exam_id)
+    if target is None:
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+
+    actor_id = str((actor or {}).get("sub") or "")
+    cancelled_at = datetime.now(timezone.utc).isoformat()
+    policy = get_exam_write_policy()
+    normalized_written = False
+    if policy.assignments:
+        if exam_v2_repo is None:
+            raise HTTPException(
+                status_code=503,
+                detail="정규화 시험 배정 저장소를 사용할 수 없습니다.",
+            )
+        try:
+            current = exam_v2_repo.find_assignment(exam_id, employee_id)
+            if current is not None:
+                cancelled = build_assignment_record(
+                    exam_id,
+                    current.get("exam_version_id", ""),
+                    employee_id,
+                    actor_id,
+                    cancelled_at,
+                    current=current,
+                    status="cancelled",
+                )
+                exam_v2_repo.upsert_assignment(cancelled)
+                normalized_written = True
+        except Exception as exc:
+            logging.exception("normalized exam assignment cancellation failed")
+            raise HTTPException(
+                status_code=503,
+                detail="정규화 시험 배정 취소 저장에 실패했습니다.",
+            ) from exc
+
+    try:
+        if not exam_set_repo.unassign_user(exam_id, employee_id):
+            if normalized_written:
+                raise RuntimeError("legacy exam assignment target disappeared")
+            raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if not normalized_written:
+            raise
+        logging.exception("legacy exam assignment cancellation failed after normalized write")
+        raise HTTPException(
+            status_code=503,
+            detail="기존 시험 배정 취소 저장에 실패했습니다.",
+        ) from exc
+
+    return {"success": True, "employee_id": employee_id, "exam_id": exam_id}
+
+
+def set_exam_datetime(exam_id: str, exam_datetime: str) -> dict:
     from repositories import exam_set_repo
-    if not exam_set_repo.unassign_user(exam_set_id, employee_id):
-        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
-    return {"success": True, "employee_id": employee_id, "exam_set_id": exam_set_id}
+    success = exam_set_repo.update_exam_set(exam_id, {"exam_datetime": exam_datetime})
+    if not success:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    return {"success": True, "exam_id": exam_id, "exam_datetime": exam_datetime}
 
 
-def delete_exam_set(exam_set_id: str) -> dict:
+def set_pass_score(exam_id: str, pass_score: int) -> dict:
     from repositories import exam_set_repo
-    if not exam_set_repo.delete_exam_set(exam_set_id):
-        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
-    return {"deleted": True, "exam_set_id": exam_set_id}
+    success = exam_set_repo.update_exam_set(exam_id, {"pass_score": pass_score})
+    if not success:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    return {"success": True, "exam_id": exam_id, "pass_score": pass_score}
 
 
-def seed_mock_data() -> dict:
-    from repositories import user_repo
-    from repositories.local_json import load_local_admins
+def set_exam_duration(exam_id: str, duration_min: int) -> dict:
+    from repositories import exam_set_repo
+    success = exam_set_repo.update_exam_set(exam_id, {"duration_min": duration_min})
+    if not success:
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    return {"success": True, "exam_id": exam_id, "duration_min": duration_min}
 
-    existing_ids = {u["employee_id"] for u in user_repo.list_users()} | {a["employee_id"] for a in load_local_admins()}
-    seed_users = [
-        {"employee_id": "2024001", "password_hash": "mock_hash", "name": "김테스트", "team": "T1", "role": "examinee", "exam_date": "2026-07-10", "approved": True},
-        {"employee_id": "2024002", "password_hash": "mock_hash", "name": "이테스트", "team": "T2", "role": "examinee", "exam_date": "2026-07-10", "approved": True},
-        {"employee_id": "2024003", "password_hash": "mock_hash", "name": "박테스트", "team": "T3", "role": "examinee", "exam_date": "2026-07-11", "approved": True},
-    ]
-    added = 0
-    for u in seed_users:
-        if u["employee_id"] not in existing_ids:
-            user_repo.add_user(u)
-            existing_ids.add(u["employee_id"])
-            added += 1
-    return {"seeded_users": added, "message": f"더미 사용자 {added}명 추가 완료 (기존 계정 skip)"}
+
+def delete_exam_set(exam_id: str) -> dict:
+    from repositories import exam_set_repo
+    if not exam_set_repo.delete_exam_set(exam_id):
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+    return {"deleted": True, "exam_id": exam_id}
 
 
 def list_teams() -> list:
@@ -676,11 +1706,182 @@ def bulk_upload_users(csv_text: str) -> dict:
     return {"success": success, "skipped": skipped, "errors": errors, "total": success + skipped + errors}
 
 
-def get_exam_set_assignees(exam_set_id: str) -> list:
+def get_exam_set_assignees(exam_id: str) -> list:
     from repositories import exam_set_repo
-    exam_set = exam_set_repo.get_exam_set(exam_set_id)
+    exam_set = exam_set_repo.get_exam(exam_id)
     if not exam_set:
-        raise HTTPException(status_code=404, detail="시험세트를 찾을 수 없습니다.")
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
     assigned_ids = exam_set.get("assigned_users", [])
     all_users = fetch_users().get("users", [])
     return [u for u in all_users if u.get("employee_id") in assigned_ids]
+
+
+def get_exam_set_questions(exam_id: str) -> dict:
+    from repositories import exam_set_repo, question_repo, exam_v2_repo
+    from services.exams.dual_write import get_exam_write_policy
+
+    exam_set = exam_set_repo.get_exam(exam_id)
+    if not exam_set:
+        raise HTTPException(status_code=404, detail="시험을 찾을 수 없습니다.")
+
+    def base_exam_set(**extensions):
+        return {
+            "exam_id": exam_set.get("exam_id"),
+            "exam_set_id": exam_set.get("exam_set_id"),
+            "name": exam_set.get("name"),
+            "team_code": exam_set.get("team_code"),
+            "created_at": exam_set.get("created_at"),
+            **extensions,
+        }
+
+    def snapshot_question(item):
+        value = item.get("question_snapshot_json")
+        if isinstance(value, dict):
+            snapshot = value
+        elif isinstance(value, str):
+            snapshot = json.loads(value)
+        else:
+            raise ValueError("question snapshot must be an object or JSON string")
+        if not isinstance(snapshot, dict):
+            raise ValueError("question snapshot must be an object")
+        required_keys = {
+            "question_id", "category", "question",
+            "option_a", "option_b", "option_c", "option_d",
+            "answer", "explanation",
+        }
+        if not required_keys.issubset(snapshot) or not any(
+            key in snapshot
+            for key in (
+                "admin_override", "difficulty_ai", "difficulty_init", "difficulty"
+            )
+        ):
+            raise ValueError("question snapshot is incomplete")
+        item_question_id = str(item.get("question_id") or "")
+        snapshot_question_id = str(snapshot.get("question_id") or "")
+        if not item_question_id or item_question_id != snapshot_question_id:
+            raise ValueError("question snapshot id does not match item")
+        return {
+            "question_id": item_question_id,
+            "category": snapshot.get("category", ""),
+            "question": snapshot.get("question", ""),
+            "options": {
+                "A": snapshot.get("option_a", ""),
+                "B": snapshot.get("option_b", ""),
+                "C": snapshot.get("option_c", ""),
+                "D": snapshot.get("option_d", ""),
+            },
+            "answer": snapshot.get("answer"),
+            "explanation": snapshot.get("explanation", ""),
+            "difficulty": (
+                snapshot.get("admin_override")
+                or snapshot.get("difficulty_ai")
+                or snapshot.get("difficulty_init")
+                or snapshot.get("difficulty")
+                or "중"
+            ),
+            "question_version": int(item.get("question_version")),
+            "score": int(item.get("score")),
+        }
+
+    def legacy_question_scores():
+        scores = exam_set.get("question_scores") or {}
+        if not scores:
+            blueprint = exam_set.get("blueprint_json") or {}
+            if isinstance(blueprint, str):
+                try:
+                    blueprint = json.loads(blueprint)
+                except json.JSONDecodeError:
+                    blueprint = {}
+            if isinstance(blueprint, dict):
+                scores = blueprint.get("question_scores") or {}
+        if not isinstance(scores, dict):
+            return {}
+        normalized = {}
+        for question_id, score in scores.items():
+            try:
+                normalized[str(question_id)] = int(score)
+            except (TypeError, ValueError):
+                continue
+        return normalized
+
+    policy = get_exam_write_policy()
+    if policy.frozen_exams and exam_v2_repo is None:
+        raise HTTPException(
+            status_code=503,
+            detail="정규화 시험 저장소를 사용할 수 없습니다.",
+        )
+    if policy.frozen_exams:
+        try:
+            version = exam_v2_repo.find_current_version(
+                exam_set.get("exam_set_id", "")
+            )
+            if version is not None:
+                paper_version = int(version.get("version_no") or 0)
+                items = exam_v2_repo.list_version_items(
+                    exam_set.get("exam_set_id", ""), paper_version
+                )
+                if not items:
+                    raise ValueError("frozen exam version has no items")
+                ordered_items = sorted(
+                    items, key=lambda item: int(item.get("order_no") or 0)
+                )
+                questions = [snapshot_question(item) for item in ordered_items]
+                question_scores = {
+                    question["question_id"]: int(question["score"])
+                    for question in questions
+                }
+                return {
+                    "exam_set": base_exam_set(
+                        exam_version_id=version.get("exam_version_id", ""),
+                        paper_version=paper_version,
+                        question_scores=question_scores,
+                        immutable=True,
+                    ),
+                    "questions": questions,
+                }
+        except Exception as exc:
+            logging.exception("normalized frozen exam detail lookup failed")
+            raise HTTPException(
+                status_code=503,
+                detail="정규화 시험 상세 조회에 실패했습니다.",
+            ) from exc
+
+    # question_id 하나마다 개별 get_question() 호출을 하면 문항 수만큼 Sheets 왕복이 발생해
+    # 분당 요청 한도(quota)를 쉽게 넘긴다. exam_service.generate_exam_questions와 동일하게
+    # 전체를 한 번에 불러와 id로 조회한다.
+    all_by_id = {q["question_id"]: q for pool in question_repo.get_all_questions().values() for q in pool}
+    question_scores = legacy_question_scores()
+
+    questions = []
+    for qid in exam_set.get("question_ids", []):
+        q = all_by_id.get(qid)
+        if not q:
+            continue
+        questions.append({
+            "question_id": q["question_id"],
+            "category": q["category"],
+            "question": q["question"],
+            "options": {
+                "A": q["option_a"], "B": q["option_b"],
+                "C": q["option_c"], "D": q["option_d"],
+            },
+            "answer": q.get("answer"),
+            "explanation": q.get("explanation", ""),
+            "difficulty": q.get("admin_override") or q.get("difficulty_ai") or q.get("difficulty_init", "중"),
+            "question_version": q.get("version", 1),
+            "score": question_scores.get(qid, 0),
+        })
+
+    return {
+        "exam_set": base_exam_set(
+            exam_version_id=(
+                exam_set.get("current_exam_version_id")
+                or exam_set.get("exam_version_id")
+                or ""
+            ),
+            paper_version=int(exam_set.get("paper_version") or 0),
+            question_scores=question_scores,
+            immutable=False,
+        ),
+        "questions": questions,
+    }

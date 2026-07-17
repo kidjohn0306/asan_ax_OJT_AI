@@ -2,10 +2,14 @@ node_modules/
 .omc/
 .agents/
 .codex/
+.worktrees/
 __pycache__/
 *.pyc
 .env
+.env.local
+.vercel/
 .DS_Store
+.보고서.md
 backend/credentials/service_account.json
 backend/credentials/oauth_client.json
 backend/credentials/oauth_token.json

@@ -6,7 +6,12 @@ from pathlib import Path
 
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
-from repositories.base import QuestionRepository, ResultRepository, SnapshotRepository
+from repositories.base import (
+    QuestionRepository,
+    ResultConflict,
+    ResultRepository,
+    SnapshotRepository,
+)
 
 _MOCK_DIR = Path(__file__).parent.parent / "mock_data"
 _QUESTIONS_FILENAME = "questions.json"
@@ -174,7 +179,7 @@ class DriveResultRepository(ResultRepository):
     """Google Drive JSONL 기반 ResultRepository.
 
     환경변수 DRIVE_RESULTS_FOLDER_ID에 Drive 폴더 ID를 설정해야 동작.
-    results.jsonl 파일을 append-only로 유지한다.
+    results.jsonl 파일을 result_id 기준 멱등 append-only로 유지한다.
     """
 
     def __init__(self):
@@ -226,14 +231,33 @@ class DriveResultRepository(ResultRepository):
     def append_result(self, result: dict) -> None:
         if not self._folder_id:
             raise RuntimeError("DRIVE_RESULTS_FOLDER_ID 환경변수가 설정되지 않았습니다.")
-        result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
+        result_id = str(result.get("result_id", "")).strip()
+        if not result_id:
+            raise ValueError("result_id is required")
         svc = self._service()
         fid = self._find_file_id(svc)
         lines = self._download_lines(svc, fid) if fid else []
+        for line in lines:
+            existing = json.loads(line)
+            if existing.get("result_id") != result_id:
+                continue
+            comparable_existing = {
+                key: value for key, value in existing.items() if key != "saved_at"
+            }
+            comparable_incoming = {
+                key: value for key, value in result.items() if key != "saved_at"
+            }
+            if comparable_existing != comparable_incoming:
+                raise ResultConflict(
+                    f"immutable result conflict for result_id={result_id}"
+                )
+            return
+        result = dict(result)
+        result.setdefault("saved_at", datetime.now(timezone.utc).isoformat())
         lines.append(json.dumps(result, ensure_ascii=False))
         self._upload(svc, lines, fid)
 
-    def get_result(self, exam_id: str) -> dict | None:
+    def get_result(self, result_id: str) -> dict | None:
         if not self._folder_id:
             return None
         svc = self._service()
@@ -242,7 +266,7 @@ class DriveResultRepository(ResultRepository):
             return None
         for line in self._download_lines(svc, fid):
             r = json.loads(line)
-            if r.get("exam_id") == exam_id:
+            if r.get("result_id") == result_id:
                 return r
         return None
 
@@ -256,7 +280,7 @@ class DriveResultRepository(ResultRepository):
         results = {}
         for line in self._download_lines(svc, fid):
             r = json.loads(line)
-            results[r["exam_id"]] = r
+            results[r["result_id"]] = r
         return results
 
     def count(self) -> int:
@@ -268,7 +292,7 @@ class DriveResultRepository(ResultRepository):
             return 0
         return len(self._download_lines(svc, fid))
 
-    def list_results_by_set(self, exam_set_id: str) -> list:
+    def list_results_by_exam(self, exam_id: str) -> list:
         if not self._folder_id:
             return []
         svc = self._service()
@@ -278,7 +302,7 @@ class DriveResultRepository(ResultRepository):
         results = []
         for line in self._download_lines(svc, fid):
             r = json.loads(line)
-            if r.get("exam_set_id") == exam_set_id:
+            if r.get("exam_id") == exam_id:
                 results.append(r)
         return results
 
@@ -319,7 +343,7 @@ class DriveSnapshotRepository(SnapshotRepository):
             self._snapshots_fid_cache = created["id"]
         return self._snapshots_fid_cache
 
-    def save_snapshot(self, exam_id: str, snapshot: dict) -> None:
+    def save_snapshot(self, result_id: str, snapshot: dict) -> None:
         if not self._folder_id:
             return
         svc = self._service()
@@ -327,19 +351,19 @@ class DriveSnapshotRepository(SnapshotRepository):
         content = json.dumps(snapshot, ensure_ascii=False).encode("utf-8")
         media = MediaIoBaseUpload(io.BytesIO(content), mimetype="application/json", resumable=False)
         svc.files().create(
-            body={"name": f"{exam_id}.json", "parents": [folder_id]},
+            body={"name": f"{result_id}.json", "parents": [folder_id]},
             media_body=media,
             fields="id",
             supportsAllDrives=True,
         ).execute()
 
-    def get_snapshot(self, exam_id: str) -> dict | None:
+    def get_snapshot(self, result_id: str) -> dict | None:
         if not self._folder_id:
             return None
         svc = self._service()
         folder_id = self._get_snapshots_folder_id(svc)
-        # exam_id는 서버 생성 uuid4이므로 쿼리 인젝션 위험 없음
-        query = f"name='{exam_id}.json' and '{folder_id}' in parents and trashed=false"
+        # result_id는 서버 생성 uuid4이므로 쿼리 인젝션 위험 없음
+        query = f"name='{result_id}.json' and '{folder_id}' in parents and trashed=false"
         resp = svc.files().list(
             q=query, fields="files(id)",
             includeItemsFromAllDrives=True, supportsAllDrives=True,
