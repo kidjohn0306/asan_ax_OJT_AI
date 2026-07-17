@@ -1642,7 +1642,7 @@ def fetch_system_status() -> dict:
 
 
 def fetch_dashboard_stats() -> dict:
-    from repositories import question_repo, result_repo, exam_set_repo, user_repo
+    from repositories import question_repo, exam_set_repo, user_repo
     total_users = len(user_repo.list_users())
     sets = exam_set_repo.list_exam_sets()
     active_sets = [s for s in sets if s.get("status") == "active"]
