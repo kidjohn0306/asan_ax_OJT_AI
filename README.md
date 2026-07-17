@@ -24,32 +24,45 @@ asan_ax_OJT_AI/
 ├── backend/
 │   ├── main.py               # FastAPI 앱, frontend/dist/ StaticFiles 마운트
 │   ├── api/
+│   │   ├── deps.py           # 공유 의존성 — require_admin() / require_auth() JWT 검증
 │   │   ├── auth.py           # POST /api/auth/login|logout
-│   │   ├── exam.py           # POST /api/exam/generate|submit, GET /result/{id}
+│   │   ├── exam.py           # POST /api/exam/generate|submit, GET /result/{id} (JWT 신원 강제)
 │   │   ├── admin.py          # GET/PATCH/POST /api/admin/... (JWT 보호)
 │   │   └── drive.py          # GET/POST /api/drive/status|files|download
+│   ├── config/                # Feature flag·저장소 정책 (Phase 1~6A dual-write 스위치)
+│   │   ├── features.py        # OJT_SHEETS_SCHEMA_MODE 등 플래그 파싱
+│   │   └── storage.py         # should_fallback_to_local() — strict/폴백 정책
+│   ├── schema/
+│   │   └── sheets_v2.py       # 55-Sheet(→18/19탭 슬림) canonical manifest
 │   ├── services/
 │   │   ├── auth_service.py   # JWT 발급·검증, bcrypt 비밀번호 확인
-│   │   ├── exam_service.py   # 출제·채점·스냅샷 저장 (Repository 패턴)
-│   │   ├── admin_service.py  # 이력조회, 문제관리, AI 생성·gate 검증, 사용자승인
+│   │   ├── exam_service.py   # 출제·채점·스냅샷 저장 (Repository 패턴), duration_min·출제횟수 트래킹
+│   │   ├── admin_service.py  # 문제관리·사용자승인·AI 생성·팀CRUD·CSV업로드·대시보드·결과분석·시스템상태
 │   │   ├── drive_service.py  # Google Drive 서비스 계정 인증·파일 목록·업로드·다운로드
-│   │   ├── difficulty.py     # 난이도 판정 알고리즘 (정답률·응답시간·백분위)
-│   │   └── generation/
-│   │       └── gates.py      # AI 생성 문제 7-gate 검증 (V-01~V-07)
-│   ├── api/
-│   │   ├── deps.py           # 공유 의존성 — require_admin() JWT 검증
-│   │   ├── auth.py, exam.py, admin.py, drive.py
+│   │   ├── material_service.py # Drive 교육자료(PDF/PPTX) 스캔·텍스트추출·캐싱
+│   │   ├── difficulty.py     # 난이도 판정 알고리즘 (정답률·응답시간·백분위) + AI 자동 확정 피드백 루프
+│   │   ├── schema_service.py # Sheets v2 스키마 검증·마이그레이션 지원
+│   │   ├── generation/       # AI 문제 생성 파이프라인
+│   │   │   ├── gates.py       # 7-gate 검증 (V-01~V-07)
+│   │   │   ├── gate_service.py
+│   │   │   └── dual_write.py  # Phase 3: generation_jobs/question_candidates 정규화 이중 기록
+│   │   ├── exams/
+│   │   │   └── dual_write.py  # Phase 4: exam_versions/exam_set_items/assignments 이중 기록
+│   │   └── results/
+│   │       └── dual_write.py  # Phase 5: result_answers/exam_attempts 이중 기록
 │   ├── repositories/         # 저장소 추상화 레이어
-│   │   ├── base.py           # 추상 인터페이스 (Question/Result/Snapshot/Feedback)
+│   │   ├── base.py           # 추상 인터페이스 (Question/Result/Snapshot/Feedback/ExamSet/Team/QuestionStats)
 │   │   ├── local_json.py     # 로컬 JSON 파일 기반 구현체
 │   │   ├── drive_repo.py     # Google Drive 기반 구현체
-│   │   ├── sheets_repo.py    # Google Sheets 기반 구현체 ✅
-│   │   └── __init__.py       # STORAGE_BACKEND 환경변수로 구현체 선택
+│   │   ├── sheets_repo.py    # Google Sheets 기반 구현체 ✅ (Legacy 탭 8종 + strict-mode 폴백 일원화)
+│   │   ├── schema_sheets.py  # Sheets v2 컬럼명 헬퍼
+│   │   ├── generation_v2.py / exam_v2.py / result_v2.py / audit_v2.py  # Phase 3~5 정규화 저장소 (기본 비활성)
+│   │   └── __init__.py       # STORAGE_BACKEND·EXAM_SET_STORAGE 환경변수로 구현체 선택
+│   ├── scripts/               # Migration 스크립트 (기본 Dry-run, --apply 없이는 Write 없음)
+│   │   ├── migrate_questions_to_sheets.py / migrate_exam_sets_pk.py
+│   │   └── migrate_schema_v2.py / migrate_schema_lean.py / smoke_sheets_live.py
 │   ├── credentials/          # service_account.json (gitignore됨 — 로컬에 직접 생성)
-│   ├── mock_data/
-│   │   ├── questions.json    # 공통5 + 팀별10×3 + 안전5 + 일반5 = 40문항
-│   │   ├── users.json        # 개발용 더미 사용자 (approved_users + admins)
-│   │   └── results.jsonl     # 채점 결과 로컬 저장 (STORAGE_BACKEND=local 시)
+│   ├── mock_data/            # 더미 JSON (questions/users/results/question_stats)
 │   └── requirements.txt
 ├── ai_engine/                # AI 문제 생성 엔진 (루트 위치)
 │   ├── router.py             # AI_PROVIDER 환경변수로 생성기 선택
@@ -57,11 +70,24 @@ asan_ax_OJT_AI/
 │   ├── gemini_generator.py   # Gemini REST API (gemini-2.5-flash) ✅
 │   └── question_generator.py # Claude API (완전 구현) + _mock_generate() ✅
 ├── frontend/
-│   ├── src/              # React 소스 (수정 시 반드시 빌드 후 커밋)
-│   └── dist/             # 빌드 결과물 (git 포함 — Vercel이 이 파일을 서빙)
+│   ├── src/
+│   │   ├── pages/             # Login.jsx, Exam.jsx, Admin.jsx(뷰 스위치·공용 헬퍼)
+│   │   └── admin/             # 관리자 UI 업무 URL 라우트 구조 (Phase 6A)
+│   │       ├── components/    # AdminLayout, AdminHeader, AdminSidebar
+│   │       ├── config/         # navigation.js — 좌측 메뉴 정의
+│   │       └── pages/
+│   │           ├── exam-papers/  # 시험지 생성관리 (목록·상세·Copy-on-Write 수정)
+│   │           ├── exams/        # 시험 생성관리 + 응시 현황(10초 폴링)
+│   │           ├── questions/    # 문제 생성·검토·문제은행 (Planned* — 실제 API 연동 완료)
+│   │           ├── results/      # 결과 분석 대시보드
+│   │           └── system/       # 사용자 승인·팀 관리·설정·감사로그(예정)
+│   └── dist/              # 빌드 결과물 (git 포함 — Vercel이 이 파일을 서빙)
 ├── vercel.json           # 모든 요청 → api/index.py → FastAPI
 └── requirements.txt      # Vercel 빌드 시 실제 설치되는 파일 (가장 중요)
 ```
+
+> Google Sheets 스키마·Dual-Write 운영 계약(Phase 1~6A)의 세부 활성화 순서·롤백 절차는
+> `CLAUDE.md`에 있습니다. 이 문서는 기본값(Legacy-only)이 항상 유지된다는 전제로 개요만 다룹니다.
 
 ---
 
@@ -96,37 +122,44 @@ npm run dev   # http://localhost:5173
 | 파일 | 상태 | 설명 |
 |---|---|---|
 | `src/pages/Login.jsx` | ✅ 완료 | `POST /api/auth/login` 연동, role에 따라 admin/exam 분기 |
-| `src/pages/Exam.jsx` | ✅ 완료 | API로 문제 수신, 제출 후 채점 결과 반영 |
-| `src/pages/Admin.jsx` | ✅ 완료 | SPA 멀티뷰 — 사이드바 8개 뷰 |
+| `src/pages/Exam.jsx` | ✅ 완료 | API로 문제 수신, 제출 후 채점 결과 반영, 서버 지정 `duration_min` 타이머 |
+| `src/pages/Admin.jsx` | ✅ 완료 | 뷰 스위치·공용 헬퍼(`buildExamPdfHtml` 등) + `admin/` 라우트로 위임 |
+| `src/admin/AdminRouteAdapter.jsx` | ✅ 완료 | `/admin/*` 업무 URL ↔ 뷰 상태 어댑터 (Phase 6A) |
 
-**Admin 뷰 목록**
+**관리자 화면 — `/admin/*` 업무 URL 구조 (Phase 6A)**
 
-| 뷰 | 상태 | 설명 |
-|---|---|---|
-| 대시보드 | ✅ | 4개 통계 카드(문제수/시험세트/응시예정/전체인원) |
-| 시험 생성 | ✅ | 팀·난이도 선택 → AI 생성 또는 mock 미리보기 |
-| 검토·수정 | ✅ | 생성된 문항 탭별 검토, gate 오류 표시 |
-| 응시 이력 | ⚠️ 더미 데이터 | 실 응시 데이터 없으면 하드코딩 5건 반환 |
-| 문제 관리 | ✅ | 난이도 드롭다운 즉시 반영 (`PATCH /api/admin/difficulty`) |
-| 사용자 승인 | ✅ | 신입사원 등록 폼 + CSV 대량 업로드 카드 |
-| 결과 분석 | ⚠️ 더미 데이터 | 통계·차트 하드코딩 (실데이터 부족) |
-| 설정 | ✅ | 외부 연동 현황 실시간 표시 |
-| 팀 관리 | ✅ | 팀 추가·팀명 수정·삭제 (Sheets `teams` 탭 연동) |
+좌측 `시험 관리` 메뉴는 아래 3개로 단순화되어 있습니다.
+
+| 메뉴/뷰 | 경로 | 상태 | 설명 |
+|---|---|---|---|
+| 시험지 생성관리 | `/admin/exam-papers?tab=setup\|list` | ✅ | 목록(검색·팀·사용현황 필터)·상세, 확정 시험지는 Copy-on-Write로만 수정 |
+| 시험 생성관리 | `/admin/exams`, `/admin/exams/:examId` | ✅ | 정식 시험(사용자당 활성 1개)·연습 시험(다중 배정) 관리 |
+| 응시 현황 | `/admin/exams/live`, `/admin/exams/:examId/live` | ✅ | 10초 폴링, 배정자/제출자/미제출/오류 상태 구분 집계 |
+| 문제 생성·검토·문제은행 | `/admin/questions/*` | ✅ | AI 생성 → 7-gate 검증 → 검토·승인, 문제은행 클릭 시 우측 패널 즉시 표시 |
+| 결과 분석 | `/admin/results` | ✅ | 시험별 점수 분포(평균·중앙값·박스플롯)·정오표, CSV/Excel/PDF 내보내기 |
+| 사용자 승인·팀 관리·설정 | `/admin/system/*` | ✅ | 신입사원 승인·CSV 업로드, 팀 CRUD, 운영 모드·연동 상태 실시간 표시 |
+| 감사 로그 | `/admin/system` 내 예정 항목 | ⏳ 준비 중 | API·화면 미도입 — 가짜 데이터 없이 "준비 중" 표시 |
+
+실 API가 없는 정보(입장·이탈 시각, 잔여시간, 불명확한 일정)는 각각 "정보 없음"·"집계 준비 중"·"일정 미정"으로
+정직하게 표시하며, 강제 종료·시간 연장 등 미구현 기능은 만들지 않습니다. 자세한 계약은 `CLAUDE.md`의
+"Phase 6A 관리자 UI 전환 운영 계약" 참고.
 
 ### 백엔드
 
 | 파일 | 상태 | 설명 |
 |---|---|---|
-| `auth_service.py` | ✅ 완료 | JWT 발급·검증, bcrypt 비밀번호 확인 |
-| `exam_service.py` | ✅ 완료 | 출제·채점·스냅샷 저장 (Repository 패턴). 스냅샷 없으면 HTTP 410 |
-| `admin_service.py` | ✅ 완료 | 이력 조회·사용자 승인·난이도 override·AI 생성·팀CRUD·CSV업로드·대시보드통계 |
+| `auth_service.py` | ✅ 완료 | JWT 발급·검증, bcrypt 비밀번호 확인, jti 블록리스트 기반 서버 로그아웃 |
+| `exam_service.py` | ✅ 완료 | 출제·채점·스냅샷 저장 (Repository 패턴), 출제횟수 트래킹, `duration_min` 응시 시간제한. 스냅샷 없으면 HTTP 410 |
+| `admin_service.py` | ✅ 완료 | 문제관리·사용자승인·AI 생성·팀CRUD·CSV업로드·대시보드·결과분석·시스템상태 조회 |
 | `drive_service.py` | ✅ 완료 | 서비스 계정 인증, 파일 목록·다운로드·업로드 구현 |
 | `material_service.py` | ✅ 완료 | Drive 교육자료(PDF/PPTX) 스캔·텍스트추출·캐싱, AI 문제 생성에 자동 반영 |
-| `difficulty.py` | ✅ 완료 | 정답률(50%)·응답시간(30%)·백분위(20%) 규칙 기반, admin override 연결 |
+| `difficulty.py` | ✅ 완료 | 정답률(50%)·응답시간(30%)·백분위(20%) 규칙 기반 + 관리자 3회 연속 override 시 AI 자동 확정 피드백 루프 |
 | `api/admin.py` | ✅ 완료 | 모든 라우트 `require_admin` JWT 의존성으로 보호 |
-| `repositories/` | ✅ 완료 | Repository 패턴. `STORAGE_BACKEND=local\|sheets\|drive` 선택 |
-| `repositories/sheets_repo.py` | ✅ 완료 | Sheets 백엔드 — results/snapshots/exam_sets/teams/question_stats 탭 |
-| `api/deps.py` | ✅ 완료 | `require_admin()` 공유 의존성 — admin/drive 중복 제거 |
+| `api/exam.py` | ✅ 완료 | 응시자 API 전체 `require_auth` 필수화, body/query의 employee_id 신뢰하지 않고 JWT `sub`만 사용 |
+| `repositories/` | ✅ 완료 | Repository 패턴. `STORAGE_BACKEND=local\|sheets\|drive` 선택, 8종 Sheets 저장소가 `_fallback_or_raise()`로 폴백 정책 일원화 |
+| `repositories/sheets_repo.py` | ✅ 완료 | Sheets 백엔드 — results/snapshots/exam_sets/teams/question_stats/question_bank/difficulty_feedback/material_cache 탭 |
+| `repositories/*_v2.py` | ✅ 구현 (기본 비활성) | Phase 3~5 정규화 저장소 — `OJT_SHEETS_SCHEMA_MODE`·`OJT_USE_*` 플래그로 명시적 활성화 전까지 Legacy-only |
+| `api/deps.py` | ✅ 완료 | `require_admin()`/`require_auth()` 공유 의존성 |
 | `ai_engine/gemini_generator.py` | ✅ 완료 | Gemini REST API 문제 생성, 함수 분리 + 예외처리 강화 |
 | `services/generation/gates.py` | ✅ 완료 | AI 생성 문제 7-gate 검증 후 reviewing 상태 저장 |
 | `ai_engine/question_generator.py` | ✅ 완료 | Claude API (anthropic SDK) 문제 생성 + mock 생성기 |
@@ -168,10 +201,19 @@ npm run dev   # http://localhost:5173
 | GET  | `/api/admin/system-status` | Admin JWT | 실제 운영 모드(AI_PROVIDER 등)·API 키 설정 여부 조회 |
 | GET  | `/api/admin/materials/status` | Admin JWT | 교육자료 폴더의 신규/변경 파일 감지 (team_code 쿼리) |
 | POST | `/api/admin/materials/scan` | Admin JWT | 감지된 신규 파일 다운로드·텍스트추출·캐싱 실행 |
+| GET  | `/api/admin/exam-sets/papers` | Admin JWT | 시험지 목록 (검색·팀·사용현황 필터, 시험지 생성관리 화면) |
+| POST | `/api/admin/exam-sets/from-paper` | Admin JWT | 확정 시험지를 원본으로 Copy-on-Write 수정본 저장 |
+| PATCH| `/api/admin/exam-sets/{exam_id}/duration\|schedule\|pass-score` | Admin JWT | 시험 시간·일시·커트라인 개별 변경 |
+| POST | `/api/admin/exam-sets/{exam_id}/assign` | Admin JWT | 사용자 배정 (`official`은 활성 1개, `practice`는 다중 허용) |
+| GET  | `/api/admin/results-analysis` | Admin JWT | 결과 분석 대시보드 원본 데이터 (통계는 프론트에서 계산) |
+| GET  | `/api/admin/generation-jobs` | Admin JWT | Phase 3 정규화 문제 생성 Job 목록 (기능 비활성 시 빈 목록) |
 | GET  | `/api/drive/status` | 없음 | Google Drive 연결 상태 확인 |
 | GET  | `/api/drive/files?folder_id={id}` | 없음 | 폴더 내 파일 목록 조회 |
 | POST | `/api/drive/download` | 없음 | Drive 파일 다운로드 |
 | POST | `/api/drive/upload-test-result` | 없음 | JSON 결과 파일 업로드 테스트 |
+
+> 위 표는 대표 엔드포인트만 정리한 것입니다. 전체 API 목록·요청/응답 스키마는 로컬 실행 후
+> `http://localhost:8000/docs` (Swagger UI)에서 항상 최신 상태로 확인할 수 있습니다.
 
 ---
 
@@ -229,7 +271,7 @@ npm run dev   # http://localhost:5173
 | 전체 등록 인원 | ✅ 실시간 | `GET /api/admin/stats` |
 | Google Drive 상태 | ✅ 실시간 | `GET /api/drive/status` |
 | 합격률 | ⚠️ 하드코딩 60% | 실응시 데이터 쌓인 후 연동 예정 |
-| 결과 분석 뷰 | ⚠️ 하드코딩 | 실 응시 데이터 부족 |
+| 결과 분석 뷰 | ✅ 실시간 | `/api/admin/results-analysis` 원본 데이터로 박스플롯·정오표·CSV/Excel/PDF 내보내기 (프론트에서 통계 계산) |
 
 ### 알려진 한계
 
@@ -239,6 +281,7 @@ npm run dev   # http://localhost:5173
 | Vercel 스냅샷 휘발 | `STORAGE_BACKEND=local` 시 스냅샷이 `/tmp`에 저장되어 신규 인스턴스에서 손실 가능 → HTTP 410. `sheets` 모드에서는 영구 저장 |
 | `questions.json` 읽기 전용 | Vercel 파일시스템은 읽기 전용. AI 생성 문제 저장 시 `STORAGE_BACKEND=local`이면 런타임 오류 발생 |
 | 응시 이력 | 실 결과 없으면 `fetch_logs()`가 더미 5건 반환 |
+| 감사 로그 화면 | `/admin/system`의 `PlannedAuditLog`는 API·화면 미도입 상태로 "준비 중" 표시만 함 |
 
 ### 미구현 항목
 
@@ -248,8 +291,12 @@ npm run dev   # http://localhost:5173
 | ~~Google Sheets 저장 백엔드~~ | ~~`repositories/`~~ | ✅ 구현 완료 (`sheets_repo.py`) |
 | ~~응시자 JWT 검증~~ | ~~`api/exam.py`~~ | ✅ 구현 완료 — `/api/exam/*` 전체 `require_auth` 필수화 |
 | ~~서버 측 로그아웃~~ | ~~`api/auth.py`~~ | ✅ 구현 완료 — jti 블록리스트 기반 토큰 무효화 |
-| 결과 리포트 PDF 내보내기 | — | 백엔드 데이터(문제 텍스트·카테고리·보기) 보강 완료, 실제 PDF 렌더링은 프론트 담당 |
+| ~~결과 리포트 내보내기~~ | ~~`Admin.jsx` Results~~ | ✅ 구현 완료 — CSV(BOM)/Excel(SpreadsheetML)/PDF(`window.print()`) |
 | ~~비밀번호 초기화~~ | ~~`api/admin.py`~~ | ✅ 구현 완료 — 관리자가 임시 비밀번호 발급 |
+| ~~난이도 AI 자동 확정 피드백 루프~~ | ~~`difficulty.py`~~ | ✅ 구현 완료 — 3회 연속 override 시 자동 확정 + Sheets 영구 저장 |
+| ~~관리자 UI Phase 6A 전환~~ | ~~`frontend/src/admin/`~~ | ✅ 구현 완료 — `/admin/*` 업무 URL, Copy-on-Write 시험지 수정, 응시 현황 폴링 |
+| 감사 로그 화면 | `frontend/src/admin/pages/system/PlannedAuditLog.jsx` | ⏳ API·화면 미도입, "준비 중" 상태만 표시 |
+| Sheets v2 정규화 저장·V2 Read 전환 | `repositories/*_v2.py`, `OJT_SHEETS_SCHEMA_MODE` | ⏳ Phase 3~5 구현 완료·기본 비활성, 운영 전환은 별도 Canary 승인 필요 (`CLAUDE.md` 참고) |
 
 ### 난이도 auto_confirmed 로직
 관리자가 특정 문항을 **3회 연속 동일 난이도**로 override하면 `auto_confirmed: true` 반환.
@@ -277,8 +324,15 @@ npm run dev   # http://localhost:5173
 - [x] 응시자 전용 JWT 검증 (`/api/exam/*`)
 - [x] 서버 측 로그아웃 (jti 블록리스트)
 - [x] 비밀번호 초기화 기능 (관리자 임시 비밀번호 발급)
-- [ ] 난이도 AI 자동 확정 피드백 루프
-- [ ] 결과 리포트 PDF 내보내기 (백엔드 데이터 보강 완료, 프론트 렌더링 남음)
+- [x] 난이도 AI 자동 확정 피드백 루프 (3회 연속 override 시 자동 확정 + Sheets 영구 저장)
+- [x] 결과 분석 대시보드 (박스플롯·정오표·CSV/Excel/PDF 내보내기)
+- [x] 시험 시간제한 (`duration_min`) + 문제 출제 횟수 초과 문제 자동 제외
+- [x] 팝업 차단 시 안내 문구 표시 (시험지 PDF·결과 PDF)
+- [x] 관리자 UI Phase 6A 전환 — `/admin/*` 업무 URL, 시험지 Copy-on-Write 수정, 응시 현황 10초 폴링
+- [x] Sheets v2 슬림 스키마 + Phase 1~5 Dual-Write 기반 (기본 Legacy-only, 명시적 플래그로만 활성화)
+- [x] XT 신규 브랜딩 아이콘 세트 적용 (favicon·앱 아이콘·로그인/응시 화면)
+- [ ] 감사 로그 화면 (API·화면 미도입, 현재 "준비 중" 표시)
+- [ ] Sheets v2 정규화 데이터 기반 V2 Read/UI 전환 (별도 Canary 승인 필요)
 
 ---
 

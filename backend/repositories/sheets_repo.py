@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from config.storage import should_fallback_to_local
 from repositories.base import (
     ExamSetRepository,
+    FeedbackRepository,
     ResultConflict,
     ResultRepository,
     SnapshotRepository,
@@ -17,6 +18,7 @@ from repositories.local_json import (
     LocalExamSetRepository,
     LocalResultRepository,
     LocalSnapshotRepository,
+    LocalFeedbackRepository,
     LocalTeamRepository,
     LocalQuestionStatsRepository,
     LocalQuestionRepository,
@@ -73,6 +75,12 @@ SNAPSHOTS_SHEET_TAB = "snapshots"
 SNAPSHOTS_HEADERS = ["result_id", "created_at", "data_json"]
 
 _HTTP_TIMEOUT_SECONDS = 15
+
+FEEDBACK_TAB = "difficulty_feedback"
+FEEDBACK_HEADERS = [
+    "question_id", "question_text", "ai_difficulty", "admin_difficulty",
+    "reason_code", "auto_confirmed", "recorded_at",
+]
 
 TEAMS_TAB = "teams"
 TEAMS_HEADERS = ["team_id", "team_name", "team_code", "created_at", "updated_at"]
@@ -706,6 +714,91 @@ class SheetsSnapshotRepository(SnapshotRepository):
                 _, _, snapshot = _parse_snapshot_row(row)
                 return snapshot
         return None
+
+
+class SheetsFeedbackRepository(FeedbackRepository):
+    def __init__(self):
+        self._spreadsheet_id = _default_sheet_id()
+        self._tab_ready = False
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
+
+    def _values(self):
+        return self._svc.spreadsheets().values()
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            self._ensure_tab()
+            self._tab_ready = True
+
+    def _ensure_tab(self):
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        existing = [s["properties"]["title"] for s in meta.get("sheets", [])]
+        if FEEDBACK_TAB not in existing:
+            self._svc.spreadsheets().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": FEEDBACK_TAB}}}]},
+            ).execute()
+        res = self._values().get(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{FEEDBACK_TAB}!A1:G1",
+        ).execute()
+        if not res.get("values"):
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{FEEDBACK_TAB}!A1",
+                valueInputOption="RAW",
+                body={"values": [FEEDBACK_HEADERS]},
+            ).execute()
+
+    @_fallback_on_error(LocalFeedbackRepository)
+    def append_feedback(self, record: dict) -> None:
+        self._maybe_ensure_tab()
+        record = dict(record)
+        record.setdefault("recorded_at", datetime.now(timezone.utc).isoformat())
+        self._values().append(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{FEEDBACK_TAB}!A:G",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [[
+                record.get("question_id", ""),
+                record.get("question_text", ""),
+                record.get("ai_difficulty", ""),
+                record.get("admin_difficulty", ""),
+                record.get("reason_code", ""),
+                str(bool(record.get("auto_confirmed", False))),
+                record["recorded_at"],
+            ]]},
+        ).execute()
+
+    @_fallback_on_error(LocalFeedbackRepository)
+    def list_recent_feedback(self, limit: int = 20) -> list:
+        self._maybe_ensure_tab()
+        res = self._values().get(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{FEEDBACK_TAB}!A:G",
+        ).execute()
+        rows = res.get("values", [])[1:]  # 헤더 제외
+
+        def _get(row, i):
+            return row[i] if len(row) > i else ""
+
+        records = [
+            {
+                "question_id": _get(row, 0),
+                "question_text": _get(row, 1),
+                "ai_difficulty": _get(row, 2),
+                "admin_difficulty": _get(row, 3),
+                "reason_code": _get(row, 4),
+                "auto_confirmed": _get(row, 5) == "True",
+                "recorded_at": _get(row, 6),
+            }
+            for row in rows if row
+        ]
+        return list(reversed(records[-limit:]))
 
 
 class SheetsTeamRepository:

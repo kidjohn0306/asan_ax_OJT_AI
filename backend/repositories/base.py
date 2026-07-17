@@ -57,6 +57,9 @@ class FeedbackRepository(ABC):
     @abstractmethod
     def append_feedback(self, record: dict) -> None: ...
 
+    @abstractmethod
+    def list_recent_feedback(self, limit: int = 20) -> list: ...
+
 
 class ExamSetRepository(ABC):
     """exam_set_id는 더 이상 유일하지 않다 — 같은 문제 구성(시험지)을 공유하는 여러

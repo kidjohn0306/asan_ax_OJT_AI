@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 
@@ -21,8 +21,7 @@ class LoginResponse(BaseModel):
 
 @router.post("/login", response_model=LoginResponse)
 def login(body: LoginRequest):
-    # TODO: 실제 사내 인사 DB 연동
-    # 현재는 mock_data/users.json 기반으로 동작
+    # 과제 특성상 실제 사내 인사 DB 연동은 불가 — mock_data/users.json 기반으로 동작
     from services.auth_service import authenticate_user
     return authenticate_user(body.employee_id, body.password)
 

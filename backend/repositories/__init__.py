@@ -44,8 +44,7 @@ else:
     exam_set_repo = LocalExamSetRepository()
 
 if _backend == "sheets":
-    # 문제은행은 로컬 유지 — results·snapshots만 Sheets로
-    question_repo = LocalQuestionRepository()
+    # results·snapshots를 Sheets로. question_repo는 아래 공통 블록에서 _use_sheets에 따라 결정한다.
     try:
         from repositories.sheets_repo import SheetsResultRepository, SheetsSnapshotRepository
         result_repo = SheetsResultRepository()
@@ -57,19 +56,26 @@ if _backend == "sheets":
         snapshot_repo = _fallback_or_raise(
             _sheets_rs_err, LocalSnapshotRepository, "SheetsSnapshotRepository"
         )
-    feedback_repo = LocalFeedbackRepository()
 elif _backend == "local":
     result_repo = LocalResultRepository()
     snapshot_repo = LocalSnapshotRepository()
-    feedback_repo = LocalFeedbackRepository()
 elif _backend == "drive":
     from repositories.drive_repo import DriveQuestionRepository, DriveResultRepository, DriveSnapshotRepository
     question_repo = DriveQuestionRepository()
     result_repo = DriveResultRepository()
     snapshot_repo = DriveSnapshotRepository()
-    feedback_repo = LocalFeedbackRepository()
 else:
     raise NotImplementedError(f"STORAGE_BACKEND={_backend} 미구현.")
+
+# 난이도 판정 피드백 저장소 — Sheets 우선, 실패 시 Local 폴백
+if _use_sheets:
+    try:
+        from repositories.sheets_repo import SheetsFeedbackRepository
+        feedback_repo = SheetsFeedbackRepository()
+    except Exception as _e:
+        feedback_repo = _fallback_or_raise(_e, LocalFeedbackRepository, "SheetsFeedbackRepository")
+else:
+    feedback_repo = LocalFeedbackRepository()
 
 # 팀 저장소 — Sheets 우선, 실패 시 Local 폴백
 if _use_sheets:

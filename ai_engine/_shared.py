@@ -7,6 +7,7 @@ import re
 
 MAX_REJECTED_EXAMPLES = 5
 MAX_OVERUSED_EXAMPLES = 5
+MAX_DIFFICULTY_EXAMPLES = 5
 MAX_MATERIAL_CHARS = 4000  # 약 1000 토큰 — 토큰 절약을 위한 자료 절단 한도
 
 
@@ -24,6 +25,7 @@ def truncate_material(text: str) -> str:
 def build_prompt(
     material_text: str, category: str, count: int, difficulty_hint: str,
     rejected_examples: list, overused_questions: list = None,
+    difficulty_corrections: list = None,
 ) -> str:
     rejection_block = ""
     if rejected_examples:
@@ -39,9 +41,17 @@ def build_prompt(
         lines = "\n".join(f'  - "{q}"' for q in overused_questions[:MAX_OVERUSED_EXAMPLES])
         overused_block = f"\n[이미 자주 출제되어 새로운 문제가 필요한 항목 (과다 출제됨)]\n{lines}\n위 문제들과 동일하거나 매우 유사한 문제는 생성하지 마세요.\n"
 
+    difficulty_block = ""
+    if difficulty_corrections:
+        lines = "\n".join(
+            f'  - 문제: "{c["question_text"]}" → AI 예측: {c["ai_difficulty"]}, 관리자 확정: {c["admin_difficulty"]}'
+            for c in difficulty_corrections[:MAX_DIFFICULTY_EXAMPLES]
+        )
+        difficulty_block = f"\n[난이도 판정 보정 이력 (관리자가 재조정한 최근 사례)]\n{lines}\n위 사례를 참고하여 이번 문제들의 난이도 판정을 더 정확히 하세요.\n"
+
     return f"""다음 OJT 교육자료를 바탕으로 {category} 분야 객관식 문제 {count}개를 생성하세요.
 난이도는 '{difficulty_hint}'을 기준으로 합니다.
-{rejection_block}{overused_block}
+{rejection_block}{overused_block}{difficulty_block}
 [교육자료]
 {material_text}
 
