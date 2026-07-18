@@ -3,12 +3,28 @@ gemini_generator.py / question_generator.py 공통 로직 (자료 절단, 프롬
 두 모듈이 byte-for-byte 동일하게 구현하고 있던 부분을 통합했다.
 """
 import json
+import random
 import re
 
 MAX_REJECTED_EXAMPLES = 5
 MAX_OVERUSED_EXAMPLES = 5
 MAX_DIFFICULTY_EXAMPLES = 5
 MAX_MATERIAL_CHARS = 4000  # 약 1000 토큰 — 토큰 절약을 위한 자료 절단 한도
+
+# 한 번의 호출에 너무 많은 문제를 요청하면 모델의 출력 토큰 한도 안에서 JSON이 도중에
+# 잘려("Unterminated string") 파싱이 실패한다. count가 이 값보다 크면 여러 번 나눠 호출해 합친다.
+MAX_QUESTIONS_PER_CALL = 10
+
+
+def generate_in_batches(count: int, generate_batch) -> list:
+    """count개를 MAX_QUESTIONS_PER_CALL 단위로 나눠 generate_batch(batch_count)를 반복 호출해 합친다."""
+    results = []
+    remaining = count
+    while remaining > 0:
+        batch_count = min(MAX_QUESTIONS_PER_CALL, remaining)
+        results.extend(generate_batch(batch_count))
+        remaining -= batch_count
+    return results
 
 
 def truncate_material(text: str) -> str:
@@ -82,3 +98,25 @@ def parse_response(raw: str, provider_label: str) -> list:
         return json.loads(raw)
     except json.JSONDecodeError as e:
         raise ValueError(f"{provider_label} 응답 JSON 파싱 실패: {e}")
+
+
+_OPTION_KEYS = ["option_a", "option_b", "option_c", "option_d"]
+_ANSWER_LETTERS = ["A", "B", "C", "D"]
+
+
+def shuffle_answer_position(question: dict) -> dict:
+    """모델이 정답을 특정 보기(주로 B)에 편중해서 배치하는 경향이 있어, 보기 순서를
+    무작위로 섞고 정답 문자를 그 위치에 맞게 다시 계산한다. 문제 내용 자체는 바꾸지 않는다."""
+    options = [question.get(key, "") for key in _OPTION_KEYS]
+    answer_letter = str(question.get("answer", "A")).strip().upper()
+    answer_idx = _ANSWER_LETTERS.index(answer_letter) if answer_letter in _ANSWER_LETTERS else 0
+
+    order = list(range(4))
+    random.shuffle(order)
+    new_answer_idx = order.index(answer_idx)
+
+    shuffled = dict(question)
+    for new_pos, old_pos in enumerate(order):
+        shuffled[_OPTION_KEYS[new_pos]] = options[old_pos]
+    shuffled["answer"] = _ANSWER_LETTERS[new_answer_idx]
+    return shuffled

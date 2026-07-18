@@ -7,7 +7,9 @@ import os
 
 import requests
 
-from ai_engine._shared import truncate_material, build_prompt, parse_response
+from ai_engine._shared import (
+    truncate_material, build_prompt, parse_response, generate_in_batches, shuffle_answer_position,
+)
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent"
 
@@ -38,12 +40,17 @@ def generate_questions_from_material(
     if not api_key:
         raise ValueError("GEMINI_API_KEY 환경변수가 설정되지 않았습니다.")
 
-    prompt = build_prompt(
-        truncate_material(material_text), category, count, difficulty_hint,
-        rejected_examples or [], overused_questions or [], difficulty_corrections or [],
-    )
-    raw = _call_api(prompt, api_key)
-    questions_raw = parse_response(raw, "Gemini")
+    truncated_material = truncate_material(material_text)
+
+    def _generate_batch(batch_count: int) -> list[dict]:
+        prompt = build_prompt(
+            truncated_material, category, batch_count, difficulty_hint,
+            rejected_examples or [], overused_questions or [], difficulty_corrections or [],
+        )
+        raw = _call_api(prompt, api_key)
+        return parse_response(raw, "Gemini")
+
+    questions_raw = [shuffle_answer_position(q) for q in generate_in_batches(count, _generate_batch)]
 
     return [
         {

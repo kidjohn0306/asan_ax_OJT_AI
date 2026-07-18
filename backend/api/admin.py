@@ -29,7 +29,7 @@ class PreviewExamRequest(BaseModel):
 class GenerateAIRequest(BaseModel):
     team_code: TeamCode
     material_text: str = ""
-    count: int = 10
+    count: int = Field(10, ge=1, le=50)
     difficulty_hint: str = "중"
     idempotency_key: str = ""
 
@@ -403,6 +403,14 @@ def _material_categories_for_team(team_code: str) -> list[str]:
     if not all(_CATEGORY_PATTERN.match(c) for c in categories):
         raise HTTPException(status_code=400, detail="잘못된 team_code입니다.")
     return categories
+
+
+@router.get("/materials/list")
+def list_materials(team_code: Optional[TeamCode] = None, _: dict = Depends(require_admin)):
+    from services.material_service import list_cached_materials
+    if team_code:
+        _material_categories_for_team(team_code)  # team_code 형식 검증
+    return list_cached_materials(team_code)
 
 
 @router.get("/materials/status")

@@ -4,17 +4,27 @@ AI_PROVIDER=claude 일 때 router.py에서 호출
 """
 import os
 
-from ai_engine._shared import truncate_material, build_prompt, parse_response
+from ai_engine._shared import (
+    truncate_material, build_prompt, parse_response, generate_in_batches, shuffle_answer_position,
+)
 
 CLAUDE_MODEL = "claude-sonnet-5"
 
+# 고정 max_tokens(4096)로는 한 배치(최대 MAX_QUESTIONS_PER_CALL문항)의 해설이 길 때도
+# JSON 응답이 도중에 잘려("Unterminated string") 파싱이 실패했다 — 배치 문항 수에 비례해
+# 여유 있게 늘리되 베타 헤더 없이 안전한 상한(8192) 안에서 맞춘다.
+_BASE_OUTPUT_TOKENS = 500
+_TOKENS_PER_QUESTION = 500
+_MAX_OUTPUT_TOKENS = 8192
 
-def _call_api(prompt: str, api_key: str) -> str:
+
+def _call_api(prompt: str, api_key: str, count: int = 10) -> str:
     import anthropic
     client = anthropic.Anthropic(api_key=api_key)
+    max_tokens = min(_MAX_OUTPUT_TOKENS, _BASE_OUTPUT_TOKENS + _TOKENS_PER_QUESTION * count)
     message = client.messages.create(
         model=CLAUDE_MODEL,
-        max_tokens=4096,
+        max_tokens=max_tokens,
         messages=[{"role": "user", "content": prompt}],
     )
     # content[0]이 항상 텍스트 블록이라고 단정할 수 없음 — thinking 등 다른 블록이 먼저 올 수 있어
@@ -39,12 +49,17 @@ def generate_questions_from_material(
     if not api_key:
         raise ValueError("CLAUDE_API_KEY 환경변수가 설정되지 않았습니다.")
 
-    prompt = build_prompt(
-        truncate_material(material_text), category, count, difficulty_hint,
-        rejected_examples or [], overused_questions or [], difficulty_corrections or [],
-    )
-    raw = _call_api(prompt, api_key)
-    questions_raw = parse_response(raw, "Claude")
+    truncated_material = truncate_material(material_text)
+
+    def _generate_batch(batch_count: int) -> list[dict]:
+        prompt = build_prompt(
+            truncated_material, category, batch_count, difficulty_hint,
+            rejected_examples or [], overused_questions or [], difficulty_corrections or [],
+        )
+        raw = _call_api(prompt, api_key, batch_count)
+        return parse_response(raw, "Claude")
+
+    questions_raw = [shuffle_answer_position(q) for q in generate_in_batches(count, _generate_batch)]
 
     return [
         {
