@@ -29,7 +29,7 @@ class PreviewExamRequest(BaseModel):
 class GenerateAIRequest(BaseModel):
     team_code: TeamCode
     material_text: str = ""
-    count: int = 10
+    count: int = Field(10, ge=1, le=50)
     difficulty_hint: str = "중"
     idempotency_key: str = ""
 
