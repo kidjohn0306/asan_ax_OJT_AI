@@ -1625,8 +1625,9 @@ function Results({ filters, onFiltersChange }) {
 
 function MaterialsPanel({ toast }) {
   const [teams, setTeams] = useState([])
-  const [team, setTeam] = useState('T1')
+  const [team, setTeam] = useState('')
   const [status, setStatus] = useState(null)
+  const [materials, setMaterials] = useState(null)
   const [loading, setLoading] = useState(false)
 
   useEffect(() => {
@@ -1636,8 +1637,15 @@ function MaterialsPanel({ toast }) {
   async function load() {
     setLoading(true)
     try {
-      const data = await apiFetch('GET', `/api/admin/materials/status?team_code=${encodeURIComponent(team)}`)
-      setStatus(data)
+      const query = team ? `?team_code=${encodeURIComponent(team)}` : ''
+      const materialsData = await apiFetch('GET', `/api/admin/materials/list${query}`)
+      setMaterials(materialsData)
+      if (team) {
+        const statusData = await apiFetch('GET', `/api/admin/materials/status${query}`)
+        setStatus(statusData)
+      } else {
+        setStatus(null)
+      }
     } catch (error) {
       toast?.(`자료 상태 조회 실패: ${error.message}`, 'error')
     } finally {
@@ -1648,6 +1656,7 @@ function MaterialsPanel({ toast }) {
   useEffect(() => { load() }, [team])
 
   async function scan() {
+    if (!team) return
     setLoading(true)
     try {
       await apiFetch('POST', '/api/admin/materials/scan', { team_code: team })
@@ -1664,27 +1673,56 @@ function MaterialsPanel({ toast }) {
     { team_code:'T2', team_name:'2팀' },
     { team_code:'T3', team_name:'3팀' },
   ]
-  const files = status
+  const newFiles = status
     ? Object.values(status.categories || {}).flatMap(category => category.new_files || [])
+    : []
+  const connectedFiles = materials
+    ? Object.values(materials.categories || {}).flatMap(category =>
+        (category.files || []).map(file => ({ ...file, categoryLabel: category.label, scannedAt: category.scanned_at })))
     : []
 
   return (
-    <Card title="자료 · 연동" action={
+    <Card title="자료 · 연동" noPad action={
       <div style={{ display:'flex', gap:8 }}>
         <FilterSelect value={team} onChange={setTeam}>
+          <option value="">전체</option>
           {teamOptions.map(item => <option key={item.team_code} value={item.team_code}>{item.team_name}</option>)}
         </FilterSelect>
         <BtnOutlineSm onClick={load} disabled={loading}>새로고침</BtnOutlineSm>
       </div>
     }>
-      <div style={{ padding:16, border:'1px solid var(--border)', borderRadius:8, background:'var(--bg)', marginBottom:14 }}>
-        <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', marginBottom:6 }}>교육자료 상태</div>
-        <div style={{ fontSize:12, color:'var(--text-muted)' }}>
-          {loading && !status ? '확인 중...' : status?.has_new_any ? `새 자료 ${files.length}개가 있습니다.` : '새로 반영할 교육자료가 없습니다.'}
+      <div style={{ padding:20 }}>
+        {team && (
+          <div style={{ padding:16, border:'1px solid var(--border)', borderRadius:8, background:'var(--bg)', marginBottom:14 }}>
+            <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', marginBottom:6 }}>교육자료 상태</div>
+            <div style={{ fontSize:12, color:'var(--text-muted)' }}>
+              {loading && !status ? '확인 중...' : status?.has_new_any ? `새 자료 ${newFiles.length}개가 있습니다.` : '새로 반영할 교육자료가 없습니다.'}
+            </div>
+            {newFiles.length > 0 && <div style={{ marginTop:8, fontSize:12, color:'var(--text)' }}>{newFiles.map(file => file.name).join(', ')}</div>}
+            <div style={{ marginTop:12 }}>
+              <BtnPrimary onClick={scan} disabled={loading}>{loading ? '처리 중...' : '새 자료 스캔'}</BtnPrimary>
+            </div>
+          </div>
+        )}
+        <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', marginBottom:10 }}>
+          연결된 교육자료 ({connectedFiles.length}개)
         </div>
-        {files.length > 0 && <div style={{ marginTop:8, fontSize:12, color:'var(--text)' }}>{files.map(file => file.name).join(', ')}</div>}
       </div>
-      <BtnPrimary onClick={scan} disabled={loading}>{loading ? '처리 중...' : '새 자료 스캔'}</BtnPrimary>
+      <DataTable headers={['자료명', '구분', '형식', '스캔 일시', '상태']}>
+        {connectedFiles.length === 0 ? (
+          <tr><td colSpan={5} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>연결된 교육자료가 없습니다.</td></tr>
+        ) : connectedFiles.map(file => (
+          <tr key={`${file.categoryLabel}-${file.id || file.name}`}>
+            <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{file.name}</td>
+            <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{file.categoryLabel}</td>
+            <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)' }}>{file.mimeType.includes('pdf') ? 'PDF' : file.mimeType.includes('presentation') ? 'PPTX' : '-'}</td>
+            <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{file.scannedAt ? new Date(file.scannedAt).toLocaleString('ko-KR') : '-'}</td>
+            <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>
+              {file.extracted ? <Badge type="success">연동됨</Badge> : <Badge type="danger">추출 실패</Badge>}
+            </td>
+          </tr>
+        ))}
+      </DataTable>
     </Card>
   )
 }

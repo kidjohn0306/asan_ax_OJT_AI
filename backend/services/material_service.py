@@ -171,6 +171,55 @@ def scan_materials(category: str) -> dict:
     return {**new_manifest, "skipped": skipped}
 
 
+def list_cached_materials(team_code: str | None = None) -> dict:
+    """캐시된 교육자료 전체 목록을 category별로 반환한다 (텍스트 본문은 응답 크기 때문에 제외).
+    team_code가 없으면 등록된 모든 팀 + 공통 카테고리를 합쳐서 보여준다."""
+    from repositories import material_repo, team_repo
+
+    if team_code:
+        categories = categories_for_team(team_code)
+        labels = {"common": "공통"}
+        if len(categories) > 1:
+            team_name = next(
+                (t.get("team_name", team_code) for t in team_repo.list_teams() if t.get("team_code") == team_code),
+                team_code,
+            )
+            labels[categories[-1]] = team_name
+    else:
+        team_rows = team_repo.list_teams()
+        categories = ["common"]
+        labels = {"common": "공통"}
+        for t in team_rows:
+            code = t.get("team_code", "")
+            if not code:
+                continue
+            cat = categories_for_team(code)[-1]
+            if cat not in categories:
+                categories.append(cat)
+            labels.setdefault(cat, t.get("team_name", cat))
+
+    result = {}
+    for cat in categories:
+        manifest = material_repo.get_manifest(cat) or {}
+        files = [
+            {
+                "id": f.get("id", ""),
+                "name": f.get("name", ""),
+                "mimeType": f.get("mimeType", ""),
+                "modifiedTime": f.get("modifiedTime", ""),
+                "extracted": f.get("extracted", True),
+            }
+            for f in manifest.get("files", [])
+        ]
+        result[cat] = {
+            "category": cat,
+            "label": labels.get(cat, cat),
+            "files": files,
+            "scanned_at": manifest.get("scanned_at", ""),
+        }
+    return {"categories": result}
+
+
 def get_cached_text(category: str) -> str:
     """캐시된 파일별 텍스트를 결합해 반환. combined_text를 별도 저장하지 않고
     매번 files[]에서 계산해 중복 저장을 피한다 (비용 미미한 문자열 결합일 뿐)."""

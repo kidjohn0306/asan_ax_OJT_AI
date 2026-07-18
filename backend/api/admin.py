@@ -405,6 +405,14 @@ def _material_categories_for_team(team_code: str) -> list[str]:
     return categories
 
 
+@router.get("/materials/list")
+def list_materials(team_code: Optional[TeamCode] = None, _: dict = Depends(require_admin)):
+    from services.material_service import list_cached_materials
+    if team_code:
+        _material_categories_for_team(team_code)  # team_code 형식 검증
+    return list_cached_materials(team_code)
+
+
 @router.get("/materials/status")
 def get_materials_status(team_code: TeamCode, _: dict = Depends(require_admin)):
     from services.material_service import check_new_materials
