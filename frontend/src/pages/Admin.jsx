@@ -1626,7 +1626,6 @@ function Results({ filters, onFiltersChange }) {
 function MaterialsPanel({ toast }) {
   const [teams, setTeams] = useState([])
   const [team, setTeam] = useState('')
-  const [status, setStatus] = useState(null)
   const [materials, setMaterials] = useState(null)
   const [loading, setLoading] = useState(false)
 
@@ -1638,14 +1637,8 @@ function MaterialsPanel({ toast }) {
     setLoading(true)
     try {
       const query = team ? `?team_code=${encodeURIComponent(team)}` : ''
-      const materialsData = await apiFetch('GET', `/api/admin/materials/list${query}`)
-      setMaterials(materialsData)
-      if (team) {
-        const statusData = await apiFetch('GET', `/api/admin/materials/status${query}`)
-        setStatus(statusData)
-      } else {
-        setStatus(null)
-      }
+      const data = await apiFetch('GET', `/api/admin/materials/list${query}`)
+      setMaterials(data)
     } catch (error) {
       toast?.(`자료 상태 조회 실패: ${error.message}`, 'error')
     } finally {
@@ -1673,13 +1666,17 @@ function MaterialsPanel({ toast }) {
     { team_code:'T2', team_name:'2팀' },
     { team_code:'T3', team_name:'3팀' },
   ]
-  const newFiles = status
-    ? Object.values(status.categories || {}).flatMap(category => category.new_files || [])
-    : []
-  const connectedFiles = materials
-    ? Object.values(materials.categories || {}).flatMap(category =>
-        (category.files || []).map(file => ({ ...file, categoryLabel: category.label, scannedAt: category.scanned_at })))
-    : []
+  const categories = materials ? Object.values(materials.categories || {}) : []
+  const connectedFiles = categories.flatMap(category =>
+    (category.files || []).map(file => ({ ...file, categoryLabel: category.label, scannedAt: category.scanned_at })))
+  const hasNewAny = categories.some(category => category.has_new)
+  const newFiles = connectedFiles.filter(file => file.status === 'new')
+
+  const statusBadge = status => {
+    if (status === 'new') return <Badge type="warning">신규 반영 대기</Badge>
+    if (status === 'failed') return <Badge type="danger">추출 실패</Badge>
+    return <Badge type="success">연동됨</Badge>
+  }
 
   return (
     <Card title="자료 · 연동" noPad action={
@@ -1696,7 +1693,7 @@ function MaterialsPanel({ toast }) {
           <div style={{ padding:16, border:'1px solid var(--border)', borderRadius:8, background:'var(--bg)', marginBottom:14 }}>
             <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', marginBottom:6 }}>교육자료 상태</div>
             <div style={{ fontSize:12, color:'var(--text-muted)' }}>
-              {loading && !status ? '확인 중...' : status?.has_new_any ? `새 자료 ${newFiles.length}개가 있습니다.` : '새로 반영할 교육자료가 없습니다.'}
+              {loading && !materials ? '확인 중...' : hasNewAny ? `새 자료 ${newFiles.length}개가 있습니다.` : '새로 반영할 교육자료가 없습니다.'}
             </div>
             {newFiles.length > 0 && <div style={{ marginTop:8, fontSize:12, color:'var(--text)' }}>{newFiles.map(file => file.name).join(', ')}</div>}
             <div style={{ marginTop:12 }}>
@@ -1705,7 +1702,7 @@ function MaterialsPanel({ toast }) {
           </div>
         )}
         <div style={{ fontSize:13, fontWeight:700, color:'var(--text)', marginBottom:10 }}>
-          연결된 교육자료 ({connectedFiles.length}개)
+          연결된 교육자료 ({connectedFiles.length}개{newFiles.length > 0 ? ` · 신규 ${newFiles.length}개` : ''})
         </div>
       </div>
       <DataTable headers={['자료명', '구분', '형식', '스캔 일시', '상태']}>
@@ -1716,10 +1713,8 @@ function MaterialsPanel({ toast }) {
             <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{file.name}</td>
             <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{file.categoryLabel}</td>
             <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)' }}>{file.mimeType.includes('pdf') ? 'PDF' : file.mimeType.includes('presentation') ? 'PPTX' : '-'}</td>
-            <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{file.scannedAt ? new Date(file.scannedAt).toLocaleString('ko-KR') : '-'}</td>
-            <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>
-              {file.extracted ? <Badge type="success">연동됨</Badge> : <Badge type="danger">추출 실패</Badge>}
-            </td>
+            <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{file.status === 'new' ? '미반영' : (file.scannedAt ? new Date(file.scannedAt).toLocaleString('ko-KR') : '-')}</td>
+            <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{statusBadge(file.status)}</td>
           </tr>
         ))}
       </DataTable>

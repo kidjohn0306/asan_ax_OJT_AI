@@ -82,10 +82,11 @@ def list_remote_files(category: str) -> list:
     return [f for f in files if f.get("mimeType") in _SUPPORTED_MIME_TYPES]
 
 
-def check_new_materials(category: str) -> dict:
+def check_new_materials(category: str, manifest: dict | None = None) -> dict:
     """캐시된 매니페스트와 Drive 목록을 비교해 새로 추가되었거나 변경된 파일을 찾는다.
     Drive 조회 실패 시(미연동·권한 없음 등) 예외를 삼키고 '새 파일 없음'으로 취급해
-    문제 생성/관리자 화면이 이 기능 때문에 깨지지 않도록 한다."""
+    문제 생성/관리자 화면이 이 기능 때문에 깨지지 않도록 한다.
+    manifest를 이미 조회해둔 호출자는 그대로 넘겨서 Sheets 재조회(쿼터 소모)를 피한다."""
     from repositories import material_repo
 
     try:
@@ -94,7 +95,8 @@ def check_new_materials(category: str) -> dict:
         logging.warning(f"교육자료 목록 조회 실패 (category={category}): {e}")
         return {"category": category, "has_new": False, "new_files": [], "cached_file_count": 0, "scanned_at": ""}
 
-    manifest = material_repo.get_manifest(category) or {}
+    if manifest is None:
+        manifest = material_repo.get_manifest(category) or {}
     cached_modified = {f["id"]: f.get("modifiedTime") for f in manifest.get("files", [])}
 
     new_files = [f for f in remote_files if cached_modified.get(f["id"]) != f.get("modifiedTime")]
@@ -201,21 +203,34 @@ def list_cached_materials(team_code: str | None = None) -> dict:
     result = {}
     for cat in categories:
         manifest = material_repo.get_manifest(cat) or {}
+        cached = manifest.get("files", [])
+        cached_ids = {f.get("id") for f in cached}
+        # Drive에 새로 올라왔거나 변경된 파일을 함께 표시 — 아직 스캔 전이라 캐시에는 없거나 구버전으로 남아있다.
+        new_check = check_new_materials(cat, manifest=manifest)
+        new_ids = {f["id"] for f in new_check.get("new_files", [])}
+
         files = [
             {
                 "id": f.get("id", ""),
                 "name": f.get("name", ""),
                 "mimeType": f.get("mimeType", ""),
                 "modifiedTime": f.get("modifiedTime", ""),
-                "extracted": f.get("extracted", True),
+                "status": "new" if f.get("id") in new_ids else ("synced" if f.get("extracted", True) else "failed"),
             }
-            for f in manifest.get("files", [])
+            for f in cached
         ]
+        files += [
+            {"id": nf["id"], "name": nf.get("name", ""), "mimeType": "", "modifiedTime": "", "status": "new"}
+            for nf in new_check.get("new_files", [])
+            if nf["id"] not in cached_ids
+        ]
+
         result[cat] = {
             "category": cat,
             "label": labels.get(cat, cat),
             "files": files,
             "scanned_at": manifest.get("scanned_at", ""),
+            "has_new": bool(new_check.get("new_files")),
         }
     return {"categories": result}
 
