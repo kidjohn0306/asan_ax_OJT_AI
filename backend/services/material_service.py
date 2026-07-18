@@ -235,17 +235,22 @@ def list_cached_materials(team_code: str | None = None) -> dict:
     return {"categories": result}
 
 
-def get_cached_text(category: str) -> str:
+def get_cached_text(category: str, selected_ids: set | None = None) -> str:
     """캐시된 파일별 텍스트를 결합해 반환. combined_text를 별도 저장하지 않고
-    매번 files[]에서 계산해 중복 저장을 피한다 (비용 미미한 문자열 결합일 뿐)."""
+    매번 files[]에서 계산해 중복 저장을 피한다 (비용 미미한 문자열 결합일 뿐).
+    selected_ids가 주어지면 관리자가 화면에서 선택 해제한 파일은 제외한다."""
     from repositories import material_repo
     manifest = material_repo.get_manifest(category)
     if not manifest:
         return ""
-    return "\n\n".join(f"[{f['name']}]\n{f['text']}" for f in manifest.get("files", []) if f.get("text"))
+    files = manifest.get("files", [])
+    if selected_ids is not None:
+        files = [f for f in files if f.get("id") in selected_ids]
+    return "\n\n".join(f"[{f['name']}]\n{f['text']}" for f in files if f.get("text"))
 
 
-def get_material_text_for_team(team_code: str) -> str:
-    """공통(common) + 팀별 캐시 텍스트를 합쳐 반환 — AI 문제 생성 시 자동 소스로 사용된다."""
-    parts = [text for cat in categories_for_team(team_code) if (text := get_cached_text(cat))]
+def get_material_text_for_team(team_code: str, selected_ids: set | None = None) -> str:
+    """공통(common) + 팀별 캐시 텍스트를 합쳐 반환 — AI 문제 생성 시 자동 소스로 사용된다.
+    selected_ids가 None이면(기본값) 캐시된 파일 전체를 포함한다."""
+    parts = [text for cat in categories_for_team(team_code) if (text := get_cached_text(cat, selected_ids))]
     return "\n\n".join(parts)

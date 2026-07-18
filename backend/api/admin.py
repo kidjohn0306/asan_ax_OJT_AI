@@ -32,6 +32,7 @@ class GenerateAIRequest(BaseModel):
     count: int = Field(10, ge=1, le=50)
     difficulty_hint: str = "중"
     idempotency_key: str = ""
+    material_ids: Optional[list[str]] = None
 
 
 class ApproveUserRequest(BaseModel):
@@ -216,6 +217,7 @@ def generate_ai_questions(body: GenerateAIRequest, actor: dict = Depends(require
         body.difficulty_hint,
         requested_by=actor.get("sub", ""),
         idempotency_key=body.idempotency_key,
+        material_ids=body.material_ids,
     )
 
 
