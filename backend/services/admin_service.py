@@ -419,6 +419,7 @@ def generate_ai_questions(
     difficulty_hint: str,
     requested_by: str = "",
     idempotency_key: str = "",
+    material_ids: list | None = None,
 ) -> dict:
     from ai_engine.router import generate_questions_from_material
     from services.generation.gates import run_gates
@@ -487,8 +488,9 @@ def generate_ai_questions(
     # Drive에서 스캔해둔 교육자료(공통+팀별)를 기본 자료로 사용하고,
     # 관리자가 직접 붙여넣은 텍스트는 이번 출제에 한해 보충하는 내용으로 뒤에 덧붙인다.
     # (수동 입력으로 자동 스캔 자료가 사라지지 않도록 둘 다 살리는 방식)
+    selected_ids = set(material_ids) if material_ids is not None else None
     try:
-        drive_material = get_material_text_for_team(team_code)
+        drive_material = get_material_text_for_team(team_code, selected_ids)
     except Exception:
         drive_material = ""
     material_text = "\n\n".join(t for t in (drive_material, material_text) if t)
