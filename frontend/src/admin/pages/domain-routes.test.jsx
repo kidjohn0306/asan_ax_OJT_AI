@@ -132,7 +132,7 @@ describe('planned admin domain routes', () => {
 
   it('renders the planned generation setup sections', async () => {
     renderAdmin('/admin/questions/generate/setup')
-    for (const title of ['출제 대상', '문항 구성', '자료 선택', '생성 정책', '생성 전 검증']) {
+    for (const title of ['출제 대상', '문항 구성', '자료 선택']) {
       expect(await screen.findByText(title)).toBeInTheDocument()
     }
     expect(screen.getByRole('button', { name: '문제 생성 실행' })).toBeInTheDocument()

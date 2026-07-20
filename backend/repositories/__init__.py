@@ -11,7 +11,9 @@ from repositories.local_json import (
     LocalQuestionStatsRepository,
     LocalMaterialRepository,
     LocalUserRepository,
+    LocalAuditRepository,
 )
+from repositories.audit_queue import QueuedAuditRepository
 
 
 def _fallback_or_raise(error: Exception, local_factory, label: str):
@@ -153,10 +155,20 @@ from repositories.result_v2 import build_result_v2_repository
 
 result_v2_repo = build_result_v2_repository(use_sheets=_use_sheets)
 
-# 관리자 행동 감사 로그. OJT_USE_AUDIT_LOG=true일 때만 audit_logs 탭에 기록하며
-# 기본값은 비활성(None) — Local 폴백은 두지 않는다(감사 기록은 Sheets 전용).
+# 관리자 행동 감사 로그.
+# - Sheets 사용 + OJT_USE_AUDIT_LOG=true: audit_logs 탭에 기록. Sheets 쓰기 API는 분당 호출
+#   한도가 있으므로 이벤트마다 즉시 append하지 않고 QueuedAuditRepository로 모았다가
+#   주기적으로 배치 기록한다(OJT_AUDIT_FLUSH_INTERVAL_SECONDS·OJT_AUDIT_MAX_QUEUE_SIZE로 조절).
+# - 그 외(로컬 개발): 파일 기반 LocalAuditRepository로 항상 즉시 기록한다 — 쓰기 한도가
+#   없으므로 큐잉이 필요 없고, Sheets 없이도 승인·반려·수정·상태변경 감사 로그가 바로 보인다.
 from repositories.audit_v2 import build_audit_v2_repository
 
-audit_repo = build_audit_v2_repository(
-    enabled=_use_sheets and os.getenv("OJT_USE_AUDIT_LOG", "false").strip().lower() == "true",
-)
+if _use_sheets and os.getenv("OJT_USE_AUDIT_LOG", "false").strip().lower() == "true":
+    _audit_sink = build_audit_v2_repository(enabled=True)
+    audit_repo = QueuedAuditRepository(
+        _audit_sink,
+        flush_interval=float(os.getenv("OJT_AUDIT_FLUSH_INTERVAL_SECONDS", "20")),
+        max_queue_size=int(os.getenv("OJT_AUDIT_MAX_QUEUE_SIZE", "25")),
+    ) if _audit_sink else None
+else:
+    audit_repo = LocalAuditRepository()

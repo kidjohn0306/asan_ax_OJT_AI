@@ -2,6 +2,7 @@ node_modules/
 .omc/
 .agents/
 .codex/
+.claude/
 .worktrees/
 __pycache__/
 *.pyc
