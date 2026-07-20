@@ -40,6 +40,23 @@ class SheetsAuditV2Repository:
     def _values(self):
         return self._svc.spreadsheets().values()
 
+    def record_batch(self, rows: list[Mapping]) -> None:
+        """여러 감사 로그 행을 한 번의 append 호출로 기록한다.
+        Sheets 쓰기 API는 분당 호출 횟수 한도가 있어, 이벤트마다 즉시 기록하는 대신
+        QueuedAuditRepository가 모아둔 여러 건을 배치로 내보내 호출 수를 줄인다."""
+        if not rows:
+            return
+        headers = SHEET_HEADERS["audit_logs"]
+        values = [[_cell_value(row.get(header, "")) for header in headers] for row in rows]
+        end = column_name(len(headers))
+        self._values().append(
+            spreadsheetId=self.spreadsheet_id,
+            range=f"{quote_sheet_name('audit_logs')}!A:{end}",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": values},
+        ).execute()
+
     def record(
         self,
         actor_id: str,
@@ -51,8 +68,7 @@ class SheetsAuditV2Repository:
         after: Mapping | None = None,
         reason: str = "",
     ) -> None:
-        headers = SHEET_HEADERS["audit_logs"]
-        row_dict = {
+        self.record_batch([{
             "audit_id": "audit-" + uuid.uuid4().hex,
             "actor_id": actor_id or "",
             "actor_role": actor_role or "",
@@ -66,16 +82,7 @@ class SheetsAuditV2Repository:
             "ip_address": "",
             "user_agent": "",
             "created_at": datetime.now(timezone.utc).isoformat(),
-        }
-        row = [_cell_value(row_dict.get(header, "")) for header in headers]
-        end = column_name(len(headers))
-        self._values().append(
-            spreadsheetId=self.spreadsheet_id,
-            range=f"{quote_sheet_name('audit_logs')}!A:{end}",
-            valueInputOption="RAW",
-            insertDataOption="INSERT_ROWS",
-            body={"values": [row]},
-        ).execute()
+        }])
 
     def list_logs(self, limit: int = 200) -> list[dict]:
         headers = SHEET_HEADERS["audit_logs"]
