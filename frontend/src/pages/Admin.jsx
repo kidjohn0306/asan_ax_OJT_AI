@@ -606,7 +606,7 @@ function Dashboard({ onNavigate }) {
   const [activityModalOpen, setActivityModalOpen] = useState(false)
 
   function loadActivityFeed() {
-    apiFetch('GET', '/api/admin/activity-log?limit=8').then(d => setActivityItems(d.items || [])).catch(() => setActivityItems([]))
+    apiFetch('GET', '/api/admin/activity-log?limit=3').then(d => setActivityItems(d.items || [])).catch(() => setActivityItems([]))
   }
 
   useEffect(() => {
