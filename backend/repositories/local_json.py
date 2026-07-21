@@ -1,5 +1,6 @@
 import json
 import os
+import uuid
 from pathlib import Path
 from datetime import datetime, timezone
 from repositories.base import (
@@ -532,3 +533,50 @@ class LocalUserRepository(UserRepository):
                 self._save_all(data)
                 return True
         return False
+
+
+class LocalAuditRepository:
+    """Sheets 없이도 감사 로그가 실제로 남고 보이도록 하는 로컬 개발용 저장소.
+    쓰기 API 한도가 없는 파일 기반이라 큐잉 없이 즉시 append한다."""
+
+    _file = MOCK_DIR / "audit_logs.jsonl"
+    _tmp_file = Path("/tmp/audit_logs.jsonl")
+
+    def _active_file(self) -> Path:
+        return self._tmp_file if self._tmp_file.exists() else self._file
+
+    def record_batch(self, rows: list) -> None:
+        if not rows:
+            return
+        lines = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+        try:
+            with open(self._file, "a", encoding="utf-8") as f:
+                f.write(lines)
+        except OSError:
+            with open(self._tmp_file, "a", encoding="utf-8") as f:
+                f.write(lines)
+
+    def record(self, actor_id: str, actor_role: str, action_type: str, target_type: str,
+               target_id: str, before: dict | None = None, after: dict | None = None,
+               reason: str = "") -> None:
+        self.record_batch([{
+            "audit_id": "audit-" + uuid.uuid4().hex,
+            "actor_id": actor_id or "",
+            "actor_role": actor_role or "",
+            "action_type": action_type,
+            "target_type": target_type,
+            "target_id": target_id,
+            "before_json": before or {},
+            "after_json": after or {},
+            "reason": reason or "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }])
+
+    def list_logs(self, limit: int = 200) -> list:
+        target = self._active_file()
+        if not target.exists():
+            return []
+        with open(target, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        records.sort(key=lambda r: r.get("created_at") or "", reverse=True)
+        return records[:limit]

@@ -39,11 +39,34 @@ class ApproveUserRequest(BaseModel):
     employee_id: str
     name: str
     team: TeamCode
-    exam_date: str
 
 
 class RejectQuestionRequest(BaseModel):
     reason: str
+
+
+class BulkApproveRequest(BaseModel):
+    question_ids: list[str]
+
+
+class BulkRejectRequest(BaseModel):
+    question_ids: list[str]
+    reason: str
+
+
+class SetQuestionStatusRequest(BaseModel):
+    status: Literal["approved", "rejected", "reviewing", "archived"]
+    reason: str = ""
+
+
+class EditQuestionRequest(BaseModel):
+    question: Optional[str] = None
+    option_a: Optional[str] = None
+    option_b: Optional[str] = None
+    option_c: Optional[str] = None
+    option_d: Optional[str] = None
+    answer: Optional[str] = None
+    explanation: Optional[str] = None
 
 
 class ApproveQuestionRequest(BaseModel):
@@ -147,6 +170,12 @@ def get_generation_jobs(_: dict = Depends(require_admin)):
     return fetch_generation_jobs()
 
 
+@router.get("/generation-jobs/{job_id}")
+def get_generation_job_detail(job_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import fetch_generation_job_detail
+    return fetch_generation_job_detail(job_id)
+
+
 @router.get("/audit-logs")
 def get_audit_logs(_: dict = Depends(require_admin)):
     from services.admin_service import fetch_audit_logs
@@ -197,6 +226,31 @@ def reject_question(question_id: str, body: RejectQuestionRequest, actor: dict =
     return reject_question(question_id, body.reason, actor=actor)
 
 
+@router.patch("/questions/{question_id}")
+def patch_question(question_id: str, body: EditQuestionRequest, actor: dict = Depends(require_admin)):
+    from services.admin_service import edit_question
+    fields = {key: value for key, value in body.model_dump().items() if value is not None}
+    return edit_question(question_id, fields, actor=actor)
+
+
+@router.patch("/questions/{question_id}/status")
+def patch_question_status(question_id: str, body: SetQuestionStatusRequest, actor: dict = Depends(require_admin)):
+    from services.admin_service import set_question_status
+    return set_question_status(question_id, body.status, body.reason, actor=actor)
+
+
+@router.post("/questions/bulk-approve")
+def bulk_approve_questions_route(body: BulkApproveRequest, actor: dict = Depends(require_admin)):
+    from services.admin_service import bulk_approve_questions
+    return bulk_approve_questions(body.question_ids, actor=actor)
+
+
+@router.post("/questions/bulk-reject")
+def bulk_reject_questions_route(body: BulkRejectRequest, actor: dict = Depends(require_admin)):
+    from services.admin_service import bulk_reject_questions
+    return bulk_reject_questions(body.question_ids, body.reason, actor=actor)
+
+
 @router.post("/preview-exam")
 def preview_exam(body: PreviewExamRequest, _: dict = Depends(require_admin)):
     from services.exam_service import generate_exam_questions
@@ -224,7 +278,7 @@ def generate_ai_questions(body: GenerateAIRequest, actor: dict = Depends(require
 @router.post("/approve-user")
 def approve_user(body: ApproveUserRequest, _: dict = Depends(require_admin)):
     from services.admin_service import approve_new_user
-    return approve_new_user(body.employee_id, body.name, body.team, body.exam_date)
+    return approve_new_user(body.employee_id, body.name, body.team)
 
 
 @router.get("/exam-sets")
