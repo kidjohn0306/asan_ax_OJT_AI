@@ -965,11 +965,11 @@ function Dashboard({ onNavigate }) {
         )}
       </Card>
 
-      <div style={{ display:'flex', gap:16, alignItems:'stretch' }}>
-        <div style={{ flex:'0 0 40%', minWidth:0, display:'flex', flexDirection:'column', gap:16 }}>
+      <div style={{ display:'flex', gap:16, height:360 }}>
+        <div style={{ flex:'0 0 40%', minWidth:0, display:'flex', flexDirection:'column', gap:16, height:'100%' }}>
           <Card
             title="즐겨찾기"
-            style={{ marginBottom:0 }}
+            style={{ marginBottom:0, flexShrink:0 }}
             action={
               <button onClick={() => setFavoritesModalOpen(true)} aria-label="즐겨찾기 메뉴 관리"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex', alignItems:'center' }}>
@@ -983,7 +983,7 @@ function Dashboard({ onNavigate }) {
             <ActivityFeed items={activityItems} onViewAll={() => setActivityModalOpen(true)} />
           </div>
         </div>
-        <div style={{ flex:'0 0 60%', minWidth:0 }}>
+        <div style={{ flex:'0 0 60%', minWidth:0, height:'100%' }}>
           <UpcomingExamsCalendar examSets={examSets} />
         </div>
       </div>
