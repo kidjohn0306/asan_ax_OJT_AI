@@ -39,7 +39,6 @@ class ApproveUserRequest(BaseModel):
     employee_id: str
     name: str
     team: TeamCode
-    exam_date: str
 
 
 class RejectQuestionRequest(BaseModel):
@@ -279,7 +278,7 @@ def generate_ai_questions(body: GenerateAIRequest, actor: dict = Depends(require
 @router.post("/approve-user")
 def approve_user(body: ApproveUserRequest, _: dict = Depends(require_admin)):
     from services.admin_service import approve_new_user
-    return approve_new_user(body.employee_id, body.name, body.team, body.exam_date)
+    return approve_new_user(body.employee_id, body.name, body.team)
 
 
 @router.get("/exam-sets")

@@ -136,7 +136,7 @@ MATERIAL_CACHE_TAB = "material_cache"
 MATERIAL_CACHE_HEADERS = ["category", "files_json", "scanned_at"]
 
 USERS_TAB = "users"
-USERS_HEADERS = ["employee_id", "password_hash", "name", "team", "role", "exam_date", "approved"]
+USERS_HEADERS = ["employee_id", "password_hash", "name", "team", "role", "approved_date", "approved"]
 
 
 def _default_sheet_id():
@@ -646,7 +646,8 @@ class SheetsResultRepository(ResultRepository):
         if not result_id:
             raise ValueError("result_id is required")
         incoming_row = self._dict_to_row(result)
-        for row_number, row in enumerate(self._read_all_rows(), start=2):
+        existing_rows = self._read_all_rows()
+        for row_number, row in enumerate(existing_rows, start=2):
             if not row or str(row[0]) != result_id:
                 continue
             existing_row = self._dict_to_row(self._row_to_dict(row))
@@ -661,11 +662,14 @@ class SheetsResultRepository(ResultRepository):
                 body={"values": [incoming_row]},
             ).execute()
             return
-        self._values().append(
+        # .append()의 자동 테이블 인식은 A:Z 범위에 헤더보다 적은 컬럼만 채워진 행이
+        # 섞여 있으면 엉뚱한 열(예: Y열)부터 삽입하는 경우가 있어, 다음 빈 행 번호를
+        # 직접 계산해 update()로 명시적 위치에 쓴다.
+        next_row = len(existing_rows) + 2
+        self._values().update(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{RESULTS_TAB}!A:Z",
+            range=f"{RESULTS_TAB}!A{next_row}:Z{next_row}",
             valueInputOption="RAW",
-            insertDataOption="INSERT_ROWS",
             body={"values": [incoming_row]},
         ).execute()
 
@@ -1445,7 +1449,7 @@ class SheetsUserRepository:
             "name": _get(2),
             "team": _get(3),
             "role": _get(4) or "examinee",
-            "exam_date": _get(5),
+            "approved_date": _get(5),
             "approved": _get(6) in ("TRUE", "True", True),
         }
 
@@ -1457,7 +1461,7 @@ class SheetsUserRepository:
             data.get("name", ""),
             data.get("team", ""),
             data.get("role", "examinee"),
-            data.get("exam_date", ""),
+            data.get("approved_date", ""),
             "TRUE" if data.get("approved") else "FALSE",
         ]
 
