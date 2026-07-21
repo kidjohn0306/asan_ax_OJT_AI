@@ -45,11 +45,11 @@ describe('administrator shell', () => {
       />
     ))
 
-    const activeLink = screen.getByRole('link', { name: '시험 생성관리' })
+    const activeLink = screen.getByRole('link', { name: '시험 생성·관리' })
     expect(activeLink).toHaveAttribute('href', '/admin/exams')
     expect(activeLink).toHaveAttribute('aria-current', 'page')
 
-    const paperLink = screen.getByRole('link', { name: '시험지 생성관리' })
+    const paperLink = screen.getByRole('link', { name: '시험지 생성·관리' })
     expect(paperLink).toHaveAttribute('href', '/admin/exam-papers?tab=setup')
     fireEvent.click(paperLink)
     expect(onNavigate).toHaveBeenCalledWith('/admin/exam-papers?tab=setup')
@@ -58,8 +58,8 @@ describe('administrator shell', () => {
   it.each([
     ['/admin/exams/live', '응시 현황'],
     ['/admin/exams/EX-1/live', '응시 현황'],
-    ['/admin/exams/EX-1/edit', '시험 생성관리'],
-    ['/admin/exams/EX-1/assign', '시험 생성관리'],
+    ['/admin/exams/EX-1/edit', '시험 생성·관리'],
+    ['/admin/exams/EX-1/assign', '시험 생성·관리'],
     ['/admin/questions/review', '검수 대기'],
     ['/admin/questions/Q-1', '문제은행'],
     ['/admin/questions/Q-1/history', '문제은행'],
@@ -84,7 +84,7 @@ describe('administrator shell', () => {
     renderAt('/admin/exams', (
       <AdminSidebar navigation={ADMIN_NAVIGATION} pathname="/admin/exams" onNavigate={onNavigate} />
     ))
-    const paperLink = screen.getByRole('link', { name:'시험지 생성관리' })
+    const paperLink = screen.getByRole('link', { name:'시험지 생성·관리' })
     const click = new MouseEvent('click', { bubbles:true, cancelable:true, ...eventInit })
     let preventedByComponent
     document.addEventListener('click', event => {

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Fragment } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch, apiUpload, logout as apiLogout } from '../api'
 import AdminLayout from '../admin/components/AdminLayout'
-import { ADMIN_ROUTE_META } from '../admin/config/navigation'
+import { ADMIN_ROUTE_META, ADMIN_NAVIGATION } from '../admin/config/navigation'
 import ExamPaperPage from '../admin/pages/exam-papers/ExamPaperPage'
 import QuestionRoutePage from '../admin/pages/questions/QuestionRoutePage'
 import ResultRoutePage from '../admin/pages/results/ResultRoutePage'
@@ -310,29 +310,65 @@ function ExamPagination({ page, totalPages, onChange }) {
 const TEAM_LABELS = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }
 const TEAM_DOT_COLORS = { T1:'#3b82f6', T2:'#8b5cf6', T3:'#0d9488' }
 
-// 업무 흐름 순서대로: 문제 생성 → 검토·검증 → 시험지 생성 → 시험 생성·관리 → 사용자 승인 → 응시 현황 → 결과 분석
-const DEFAULT_QUICK_ACTIONS = [
-  ['ai',    '문제 생성',      'q-generate'],
-  ['check', '검토·검증',      'q-review'],
-  ['file',  '시험지 생성·관리', 'exam-sheet'],
-  ['users', '시험 생성·관리', 'exam-assign'],
-  ['user',  '사용자 승인',    'users'],
-  ['clock', '응시 현황',      'exam-status'],
-  ['chart', '결과 분석',      'results'],
-]
-const QUICK_ACTIONS_ORDER_KEY = 'ojt_admin_quick_actions_order'
+// 사이드바 전체 메뉴(대시보드 제외)를 즐겨찾기 후보 목록으로 사용한다.
+// path가 실제로 유일한 값이라 즐겨찾기 식별자로 쓴다 — view는 "생성 작업"·"문제 생성"처럼
+// 여러 메뉴가 공유할 수 있어 식별자로 부적합하다.
+const NAV_ITEM_ICONS = {
+  '/admin/questions/generate/setup': 'ai',
+  '/admin/questions/generate/runs':  'refresh',
+  '/admin/questions/review':         'check',
+  '/admin/questions/bank':           'book',
+  '/admin/exam-papers?tab=setup':    'file',
+  '/admin/exams':                    'users',
+  '/admin/exams/live':               'clock',
+  '/admin/results':                  'grid',
+  '/admin/analytics':                'chart',
+  '/admin/employees':                'user',
+  '/admin/teams':                    'users',
+  '/admin/materials':                'swap',
+  '/admin/system/status':            'settings',
+  '/admin/system/audit-logs':        'search',
+}
 
-function loadQuickActionsOrder() {
-  const defaultOrder = DEFAULT_QUICK_ACTIONS.map(a => a[2])
+const ALL_NAV_ITEMS = ADMIN_NAVIGATION
+  .filter(group => group.label !== '대시보드')
+  .flatMap(group => group.items.map(item => ({
+    ...item,
+    group: group.label,
+    icon: NAV_ITEM_ICONS[item.path] || 'file',
+  })))
+
+// 업무 흐름 순서대로: 문제 생성 → 검수 대기 → 시험지 생성·관리 → 시험 생성·관리 → 응시자 관리 → 응시 현황 → 결과 분석
+const DEFAULT_FAVORITE_PATHS = [
+  '/admin/questions/generate/setup',
+  '/admin/questions/review',
+  '/admin/exam-papers?tab=setup',
+  '/admin/exams',
+  '/admin/employees',
+  '/admin/exams/live',
+  '/admin/analytics',
+]
+const FAVORITES_STORAGE_KEY = 'ojt_admin_favorite_menu'
+const LEGACY_QUICK_ACTIONS_ORDER_KEY = 'ojt_admin_quick_actions_order'
+
+function loadFavoritePaths() {
+  const validPaths = new Set(ALL_NAV_ITEMS.map(i => i.path))
   try {
-    const saved = JSON.parse(localStorage.getItem(QUICK_ACTIONS_ORDER_KEY) || 'null')
+    const saved = JSON.parse(localStorage.getItem(FAVORITES_STORAGE_KEY) || 'null')
     if (Array.isArray(saved) && saved.every(v => typeof v === 'string')) {
-      const valid = saved.filter(v => defaultOrder.includes(v))
-      const missing = defaultOrder.filter(v => !valid.includes(v))
-      return [...valid, ...missing]
+      const valid = saved.filter(p => validPaths.has(p))
+      if (valid.length) return valid
     }
   } catch {}
-  return defaultOrder
+  // 이전 "빠른 실행 순서 편집" 기능에서 저장한 값이 있으면 최선노력으로 이관한다.
+  try {
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_QUICK_ACTIONS_ORDER_KEY) || 'null')
+    if (Array.isArray(legacy) && legacy.every(v => typeof v === 'string')) {
+      const mapped = legacy.map(view => ALL_NAV_ITEMS.find(i => i.view === view)?.path).filter(Boolean)
+      if (mapped.length) return mapped
+    }
+  } catch {}
+  return DEFAULT_FAVORITE_PATHS
 }
 
 const DEFAULT_EXAM_DURATION_MIN = 60
@@ -473,7 +509,7 @@ function ActivityLogModal({ onClose }) {
   )
 }
 
-function QuickActionsRow({ quickActions, onNavigate }) {
+function QuickActionsRow({ items, onNavigate }) {
   const scrollRef = useRef(null)
 
   function scrollByPage(dir) {
@@ -482,16 +518,24 @@ function QuickActionsRow({ quickActions, onNavigate }) {
 
   const navBtnStyle = { width:28, height:28, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid var(--border)', borderRadius:8, background:'white', color:'var(--text-muted)', cursor:'pointer', padding:0 }
 
+  if (items.length === 0) {
+    return (
+      <p style={{ fontSize:12.5, color:'var(--text-muted)', textAlign:'center', padding:'9px 0', margin:0 }}>
+        즐겨찾기한 메뉴가 없습니다. 오른쪽 위 <Icon name="menu" size={11} style={{ verticalAlign:'-1px', margin:'0 2px' }} /> 버튼으로 추가해보세요.
+      </p>
+    )
+  }
+
   return (
     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
       <button onClick={() => scrollByPage(-1)} style={navBtnStyle} aria-label="이전">
         <Icon name="chevronLeft" size={14} />
       </button>
       <div ref={scrollRef} style={{ display:'flex', gap:10, overflowX:'auto', flex:1, minWidth:0, scrollbarWidth:'none' }}>
-        {quickActions.map(([icon, label, view]) => (
-          <button key={view} onClick={() => onNavigate(view)}
+        {items.map(item => (
+          <button key={item.path} onClick={() => onNavigate(item.view, { path: item.path })}
             style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1px solid var(--border)', borderRadius:8, background:'white', fontFamily:'var(--font)', fontSize:13, fontWeight:600, color:'var(--text)', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
-            <Icon name={icon} size={14} style={{ opacity:0.55 }} />{label}
+            <Icon name={item.icon} size={14} style={{ opacity:0.55 }} />{item.label}
           </button>
         ))}
       </div>
@@ -502,8 +546,8 @@ function QuickActionsRow({ quickActions, onNavigate }) {
   )
 }
 
-function QuickActionsOrderModal({ actions, onSave, onClose }) {
-  const [order, setOrder] = useState(actions)
+function FavoritesMenuModal({ favorites, onSave, onClose }) {
+  const [order, setOrder] = useState(favorites)
 
   function move(index, dir) {
     setOrder(prev => {
@@ -515,28 +559,69 @@ function QuickActionsOrderModal({ actions, onSave, onClose }) {
     })
   }
 
+  function remove(index) {
+    setOrder(prev => prev.filter((_, i) => i !== index))
+  }
+
+  function add(item) {
+    setOrder(prev => [...prev, item])
+  }
+
   const moveBtnStyle = disabled => ({
     width:26, height:26, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center',
     border:'1px solid var(--border)', borderRadius:6, background:'white', padding:0,
     color:'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.35 : 1,
   })
 
+  const favoritePaths = new Set(order.map(i => i.path))
+  const availableByGroup = {}
+  ALL_NAV_ITEMS.forEach(item => {
+    if (favoritePaths.has(item.path)) return
+    ;(availableByGroup[item.group] ||= []).push(item)
+  })
+
   return (
-    <Modal title="빠른 실행 순서 편집" onClose={onClose}>
-      <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20 }}>
-        {order.map((action, i) => (
-          <div key={action[2]} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', border:'1px solid var(--border)', borderRadius:8 }}>
-            <Icon name={action[0]} size={14} style={{ opacity:0.55, flexShrink:0 }} />
-            <span style={{ flex:1, fontSize:13, fontWeight:600, color:'var(--text)' }}>{action[1]}</span>
+    <Modal title="즐겨찾기 메뉴 관리" onClose={onClose} wide>
+      <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>즐겨찾기 순서</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:24 }}>
+        {order.length === 0 ? (
+          <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>즐겨찾기한 메뉴가 없습니다. 아래에서 추가해보세요.</p>
+        ) : order.map((item, i) => (
+          <div key={item.path} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', border:'1px solid var(--border)', borderRadius:8 }}>
+            <Icon name={item.icon} size={14} style={{ opacity:0.55, flexShrink:0 }} />
+            <span style={{ flex:1, fontSize:13, fontWeight:600, color:'var(--text)' }}>{item.label}</span>
             <button onClick={() => move(i, -1)} disabled={i === 0} style={moveBtnStyle(i === 0)} aria-label="위로">
               <Icon name="up" size={12} />
             </button>
             <button onClick={() => move(i, 1)} disabled={i === order.length - 1} style={moveBtnStyle(i === order.length - 1)} aria-label="아래로">
               <Icon name="down" size={12} />
             </button>
+            <BtnOutlineSm danger onClick={() => remove(i)}>제외</BtnOutlineSm>
           </div>
         ))}
       </div>
+
+      <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>메뉴 추가</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:14, marginBottom:20, maxHeight:260, overflowY:'auto' }}>
+        {Object.keys(availableByGroup).length === 0 ? (
+          <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>추가할 수 있는 메뉴가 없습니다.</p>
+        ) : Object.entries(availableByGroup).map(([group, groupItems]) => (
+          <div key={group}>
+            <div style={{ fontSize:11.5, fontWeight:700, color:'var(--text-muted)', marginBottom:6 }}>{group}</div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+              {groupItems.map(item => (
+                <button key={item.path} onClick={() => add(item)}
+                  style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 12px', border:'1px dashed var(--border)', borderRadius:8, background:'white', fontFamily:'var(--font)', fontSize:12.5, fontWeight:600, color:'var(--text)', cursor:'pointer' }}>
+                  <Icon name="plus" size={11} style={{ opacity:0.6 }} />
+                  <Icon name={item.icon} size={13} style={{ opacity:0.55 }} />
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div style={{ display:'flex', gap:10 }}>
         <button onClick={onClose} style={{ flex:1, height:44, border:'2px solid var(--border)', background:'white', color:'var(--text)', borderRadius:8, fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)' }}>취소</button>
         <BtnPrimary onClick={() => onSave(order)} style={{ flex:1, justifyContent:'center' }}>저장</BtnPrimary>
@@ -673,14 +758,14 @@ function Dashboard({ onNavigate }) {
   const [resultsSummary, setResultsSummary] = useState(null)
   const [activityItems, setActivityItems] = useState(null)
   const [activityModalOpen, setActivityModalOpen] = useState(false)
-  const [quickActionsOrder, setQuickActionsOrder] = useState(() => loadQuickActionsOrder())
-  const [quickActionsModalOpen, setQuickActionsModalOpen] = useState(false)
+  const [favoritePaths, setFavoritePaths] = useState(() => loadFavoritePaths())
+  const [favoritesModalOpen, setFavoritesModalOpen] = useState(false)
 
-  function saveQuickActionsOrder(actionsInOrder) {
-    const viewOrder = actionsInOrder.map(a => a[2])
-    setQuickActionsOrder(viewOrder)
-    localStorage.setItem(QUICK_ACTIONS_ORDER_KEY, JSON.stringify(viewOrder))
-    setQuickActionsModalOpen(false)
+  function saveFavorites(itemsInOrder) {
+    const paths = itemsInOrder.map(i => i.path)
+    setFavoritePaths(paths)
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(paths))
+    setFavoritesModalOpen(false)
   }
 
   function loadActivityFeed() {
@@ -745,8 +830,8 @@ function Dashboard({ onNavigate }) {
     ],
   }
 
-  const orderedQuickActions = quickActionsOrder
-    .map(view => DEFAULT_QUICK_ACTIONS.find(a => a[2] === view))
+  const favoriteItems = favoritePaths
+    .map(path => ALL_NAV_ITEMS.find(i => i.path === path))
     .filter(Boolean)
 
   const scheduledCount = examSets.filter(s => getExamStatus(s.exam_datetime, s.duration_min) === 'scheduled').length
@@ -882,16 +967,16 @@ function Dashboard({ onNavigate }) {
       <div style={{ display:'flex', gap:16, alignItems:'stretch' }}>
         <div style={{ flex:'0 0 40%', minWidth:0, display:'flex', flexDirection:'column', gap:16 }}>
           <Card
-            title="빠른 실행"
+            title="즐겨찾기"
             style={{ marginBottom:0 }}
             action={
-              <button onClick={() => setQuickActionsModalOpen(true)} aria-label="빠른 실행 순서 편집"
+              <button onClick={() => setFavoritesModalOpen(true)} aria-label="즐겨찾기 메뉴 관리"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex', alignItems:'center' }}>
                 <Icon name="menu" size={16} />
               </button>
             }
           >
-            <QuickActionsRow quickActions={orderedQuickActions} onNavigate={onNavigate} />
+            <QuickActionsRow items={favoriteItems} onNavigate={onNavigate} />
           </Card>
           <div style={{ flex:1, minHeight:0 }}>
             <ActivityFeed items={activityItems} onViewAll={() => setActivityModalOpen(true)} />
@@ -904,11 +989,11 @@ function Dashboard({ onNavigate }) {
 
       {activityModalOpen && <ActivityLogModal onClose={() => setActivityModalOpen(false)} />}
 
-      {quickActionsModalOpen && (
-        <QuickActionsOrderModal
-          actions={orderedQuickActions}
-          onSave={saveQuickActionsOrder}
-          onClose={() => setQuickActionsModalOpen(false)}
+      {favoritesModalOpen && (
+        <FavoritesMenuModal
+          favorites={favoriteItems}
+          onSave={saveFavorites}
+          onClose={() => setFavoritesModalOpen(false)}
         />
       )}
 

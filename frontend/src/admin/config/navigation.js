@@ -19,8 +19,8 @@ export const ADMIN_NAVIGATION = [
   {
     label: '시험 관리',
     items: [
-      { label: '시험지 생성관리', path: '/admin/exam-papers?tab=setup', view: 'exam-sheet' },
-      { label: '시험 생성관리', path: '/admin/exams', view: 'exam-assign' },
+      { label: '시험지 생성·관리', path: '/admin/exam-papers?tab=setup', view: 'exam-sheet' },
+      { label: '시험 생성·관리', path: '/admin/exams', view: 'exam-assign' },
       { label: '응시 현황', path: '/admin/exams/live', view: 'exam-status' },
     ],
   },
