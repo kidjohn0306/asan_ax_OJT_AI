@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { apiFetch } from '../../../api'
 import './PlannedQuestionPages.css'
@@ -25,8 +25,8 @@ function Badge({ children, tone='' }) { return <span className={`qplan-badge ${t
 
 export function PlannedQuestionGeneration({ toast }) {
   const [teams,setTeams]=useState([]), [team,setTeam]=useState('T1'), [counts,setCounts]=useState({ common:5,team:10,safety:5,general:5 })
-  const [evaluationType,setEvaluationType]=useState('기초고사')
   const [materials,setMaterials]=useState([]), [selectedMaterials,setSelectedMaterials]=useState([]), [loading,setLoading]=useState(false)
+  const [generatedQuestions,setGeneratedQuestions]=useState([])
   const total=Object.values(counts).reduce((sum,value)=>sum+Number(value||0),0)
   const [diffCounts,setDiffCounts]=useState({ 하:8,중:12,상:5 })
   const diffTouched=useRef(false)
@@ -37,33 +37,13 @@ export function PlannedQuestionGeneration({ toast }) {
   useEffect(()=>{ apiFetch('GET',`/api/admin/materials/list?team_code=${encodeURIComponent(team)}`).then(data=>{ const rows=Object.entries(data.categories||{}).flatMap(([category,value])=>(value.files||[]).map(file=>({ ...file, category, categoryLabel:value.label }))); setMaterials(rows); setSelectedMaterials(rows.filter(file=>file.status==='synced').map(file=>file.id)) }).catch(()=>{setMaterials([]);setSelectedMaterials([])}) },[team])
   const teamOptions=teams.length?teams:[{team_code:'T1',team_name:'1팀'},{team_code:'T2',team_name:'2팀'},{team_code:'T3',team_name:'3팀'}]
   const updateCount=(key,value)=>setCounts(current=>({...current,[key]:value}))
-  async function generate(){ if(total<=0)return toast('총 문항 수를 확인하세요.','error'); setLoading(true); try{ const data=await apiFetch('POST','/api/admin/generate-ai-questions',{team_code:team,material_text:`평가유형:${evaluationType}; 카테고리분포:${JSON.stringify(counts)}; 난이도분포:${JSON.stringify(diffCounts)}`,material_ids:selectedMaterials,count:total,difficulty_hint:'중'}); toast(`${data.questions?.length||0}문항을 생성해 검수 대기에 저장했습니다.`) }catch(error){toast(`문제 생성 실패: ${error.message}`,'error')}finally{setLoading(false)} }
+  async function generate(){ if(total<=0)return toast('총 문항 수를 확인하세요.','error'); setLoading(true); try{ const data=await apiFetch('POST','/api/admin/generate-ai-questions',{team_code:team,material_text:`카테고리분포:${JSON.stringify(counts)}; 난이도분포:${JSON.stringify(diffCounts)}`,material_ids:selectedMaterials,count:total,difficulty_hint:'중'}); toast(`${data.questions?.length||0}문항을 생성해 검수 대기에 저장했습니다.`); setGeneratedQuestions(data.questions||[]) }catch(error){toast(`문제 생성 실패: ${error.message}`,'error')}finally{setLoading(false)} }
   const materialStatusLabel=status=>status==='new'?'신규 반영 대기':status==='failed'?'추출 실패':'색인 완료'
-  return <section className="qplan"><Header title="문제 생성" description="출제 조건과 사용할 교육자료를 한 화면에서 구성합니다."><Link className="qplan-btn" to="/admin/questions/generate/runs">생성 작업 이력</Link><button className="qplan-btn primary" disabled={loading} onClick={generate}>{loading?'생성 중…':'문제 생성 실행'}</button></Header><div className="qplan-grid">
-    <Card><div className="qplan-subsection"><h3>출제 대상</h3><div className="qplan-toggle-block"><span className="qplan-toggle-label">평가 유형</span><div className="qplan-toggle-group">{['기초고사','업무능력평가'].map(value=><button type="button" key={value} className={`qplan-toggle${evaluationType===value?' active':''}`} onClick={()=>setEvaluationType(value)}>{value}</button>)}</div></div><div className="qplan-toggle-block"><span className="qplan-toggle-label">대상 팀</span><div className="qplan-toggle-group">{teamOptions.map(item=><button type="button" key={item.team_code} className={`qplan-toggle${team===item.team_code?' active':''}`} onClick={()=>setTeam(item.team_code)}>{item.team_name}</button>)}</div></div></div><div className="qplan-subsection"><h3>문항 구성</h3><div className="qplan-count-grid">{[['common','공통'],['team','팀'],['safety','환경안전'],['general','일반상식']].map(([key,label])=><label key={key}>{label}<input type="number" min="0" value={counts[key]} onChange={e=>updateCount(key,e.target.value)}/></label>)}</div><div className="qplan-total"><span>총 문항 수</span><strong>{total}문항</strong></div><div className="qplan-diff-edit"><span>난이도 구성</span><div className="qplan-count-grid qplan-count-grid-3">{[['하','하'],['중','중'],['상','상']].map(([key,label])=><label key={key}>{label}<input type="number" min="0" value={diffCounts[key]} onChange={e=>updateDiffCount(key,e.target.value)}/></label>)}</div>{diffTotal!==total&&<p className="qplan-diff-warning">난이도 합계 {diffTotal}문항이 총 문항 수 {total}문항과 다릅니다.</p>}</div></div></Card>
+  return <section className="qplan"><Header title="문제 생성" description="출제 조건과 사용할 교육자료를 한 화면에서 구성합니다."><button className="qplan-btn primary" disabled={loading} onClick={generate}>{loading?'생성 중…':'문제 생성 실행'}</button></Header><div className="qplan-grid">
+    <Card><div className="qplan-subsection"><h3>출제 대상</h3><div className="qplan-toggle-block"><span className="qplan-toggle-label">대상 팀</span><div className="qplan-toggle-group">{teamOptions.map(item=><button type="button" key={item.team_code} className={`qplan-toggle${team===item.team_code?' active':''}`} onClick={()=>setTeam(item.team_code)}>{item.team_name}</button>)}</div></div></div><div className="qplan-subsection"><h3>문항 구성</h3><div className="qplan-count-grid">{[['common','공통'],['team','팀'],['safety','환경안전'],['general','일반상식']].map(([key,label])=><label key={key}>{label}<input type="number" min="0" value={counts[key]} onChange={e=>updateCount(key,e.target.value)}/></label>)}</div><div className="qplan-total"><span>총 문항 수</span><strong>{total}문항</strong></div><div className="qplan-diff-edit"><span>난이도 구성</span><div className="qplan-count-grid qplan-count-grid-3">{[['하','하'],['중','중'],['상','상']].map(([key,label])=><label key={key}>{label}<input type="number" min="0" value={diffCounts[key]} onChange={e=>updateDiffCount(key,e.target.value)}/></label>)}</div>{diffTotal!==total&&<p className="qplan-diff-warning">난이도 합계 {diffTotal}문항이 총 문항 수 {total}문항과 다릅니다.</p>}</div></div></Card>
     <Card title="자료 선택">{materials.length===0?<p className="qplan-empty">연결된 교육자료가 없습니다. 자료·연동 화면에서 먼저 스캔해주세요.</p>:materials.map(file=><label className="qplan-source" key={file.id}><input type="checkbox" checked={selectedMaterials.includes(file.id)} onChange={()=>setSelectedMaterials(current=>current.includes(file.id)?current.filter(value=>value!==file.id):[...current,file.id])}/><span>{file.name} · {file.categoryLabel}</span><Badge tone={file.status==='synced'?'ok':'warn'}>{materialStatusLabel(file.status)}</Badge></label>)}</Card>
-  </div></section>
-}
-
-export function PlannedGenerationRuns({ toast }){
-  const [data,setData]=useState({jobs:[],enabled:true}),[loading,setLoading]=useState(true)
-  const [openJobId,setOpenJobId]=useState(null),[detail,setDetail]=useState(null),[detailLoading,setDetailLoading]=useState(false)
-  useEffect(()=>{let active=true;setLoading(true);apiFetch('GET','/api/admin/generation-jobs').then(result=>{if(active)setData(result||{jobs:[],enabled:true})}).catch(error=>toast(`생성 작업 이력 조회 실패: ${error.message}`,'error')).finally(()=>active&&setLoading(false));return()=>{active=false}},[])
-  const jobs=data.jobs||[]
-  async function toggleJob(jobId){
-    if(openJobId===jobId){setOpenJobId(null);setDetail(null);return}
-    setOpenJobId(jobId);setDetail(null);setDetailLoading(true)
-    try{const result=await apiFetch('GET',`/api/admin/generation-jobs/${encodeURIComponent(jobId)}`);setDetail(result)}
-    catch(error){toast(`작업 상세 조회 실패: ${error.message}`,'error');setOpenJobId(null)}
-    finally{setDetailLoading(false)}
-  }
-  return <section className="qplan"><Header title="생성 작업 이력" description="AI 문제 생성 요청과 진행 상태를 확인합니다."><Link className="qplan-btn primary" to="/admin/questions/generate/setup">문제 생성으로</Link></Header>
-    <Card>{loading?<div className="qplan-empty">불러오는 중…</div>:!data.enabled?<div className="qplan-empty">생성 작업 이력 저장소가 비활성화되어 있습니다.</div>:jobs.length===0?<div className="qplan-empty">아직 생성 작업이 없습니다.</div>:<div className="qplan-table-wrap"><table><thead><tr><th>작업 ID</th><th>요청자</th><th>상태</th><th>요청 수</th><th>완료</th><th>실패</th><th>시작 시각</th></tr></thead><tbody>{jobs.map(job=><Fragment key={job.generation_job_id}>
-      <tr data-clickable="true" className={openJobId===job.generation_job_id?'selected':''} onClick={()=>toggleJob(job.generation_job_id)}><td>{job.generation_job_id}</td><td>{job.requested_by||'-'}</td><td><Badge tone={job.status==='COMPLETED'?'ok':job.status==='FAILED'?'':'warn'}>{job.status||'-'}</Badge></td><td>{job.requested_count||'-'}</td><td>{job.completed_count||0}</td><td>{job.failed_count||0}</td><td>{job.started_at||'-'}</td></tr>
-      {openJobId===job.generation_job_id && <tr><td colSpan={7}><div className="qplan-job-detail">
-        {detailLoading?'불러오는 중…':!detail?.enabled?'이 작업의 문제 상세를 조회할 수 없습니다.':!detail.candidates?.length?'이 작업에서 생성된 문제가 없습니다.':<table><thead><tr><th>문제</th><th>카테고리</th><th>난이도</th><th>Gate 상태</th><th>검수 상태</th></tr></thead><tbody>{detail.candidates.map(c=><tr key={c.candidate_id}><td>{c.question_text}</td><td>{c.category||'-'}</td><td>{c.difficulty_designed||'-'}</td><td><Badge tone={c.overall_gate_status==='PASS'?'ok':'warn'}>{c.overall_gate_status||'-'}</Badge></td><td>{c.review_status||c.status||'-'}</td></tr>)}</tbody></table>}
-      </div></td></tr>}
-    </Fragment>)}</tbody></table></div>}</Card>
+  </div>
+  <Card title="생성된 문제">{generatedQuestions.length===0?<div className="qplan-empty">아직 생성된 문제가 없습니다.</div>:<div className="qplan-table-wrap"><table><thead><tr><th>문제</th><th>분류</th><th>난이도</th><th>상태</th></tr></thead><tbody>{generatedQuestions.map(q=><tr key={q.id}><td>{q.question}</td><td>{q.category||'-'}</td><td><Badge tone="warn">{q.difficulty||'미정'}</Badge></td><td><Badge tone={q.gate_errors?.length?'':'ok'}>{q.gate_errors?.length?`검토 필요 (${q.gate_errors.length})`:'검수 대기'}</Badge></td></tr>)}</tbody></table></div>}</Card>
   </section>
 }
 

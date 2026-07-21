@@ -35,7 +35,7 @@ class SheetsV2ManifestTests(unittest.TestCase):
 
     def test_representative_actual_header_widths(self):
         self.assertEqual(len(SHEET_HEADERS["results"]), 26)
-        self.assertEqual(len(SHEET_HEADERS["exam_sets"]), 34)
+        self.assertEqual(len(SHEET_HEADERS["exam_sets"]), 35)
         self.assertEqual(len(SHEET_HEADERS["question_bank"]), 43)
         self.assertEqual(len(SHEET_HEADERS["materials"]), 31)
 
