@@ -1229,6 +1229,9 @@ function Users({ toast }) {
   const [teams, setTeams] = useState([])
   const [csvResult, setCsvResult] = useState(null)
   const [csvLoading, setCsvLoading] = useState(false)
+  const [csvPreviewRows, setCsvPreviewRows] = useState(null)
+  const [csvApproving, setCsvApproving] = useState(false)
+  const [showCsvCancelConfirm, setShowCsvCancelConfirm] = useState(false)
   const [filterTeam, setFilterTeam] = useState('all')
   const [filterDateFrom, setFilterDateFrom] = useState('')
   const [filterDateTo, setFilterDateTo] = useState('')
@@ -1277,23 +1280,68 @@ function Users({ toast }) {
     try { await apiFetch('DELETE', `/api/admin/users/${id}`); loadUsers() } catch (e) { toast(`삭제 실패: ${e.message}`, 'error') }
   }
 
-  async function handleCsvUpload(e) {
+  function parseCsvRows(text) {
+    const cleaned = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text
+    const lines = cleaned.split(/\r\n|\n/).filter(l => l.trim() !== '')
+    if (lines.length === 0) return []
+    const headers = lines[0].split(',').map(h => h.trim())
+    return lines.slice(1).map(line => {
+      const cells = line.split(',').map(c => c.trim())
+      const row = {}
+      headers.forEach((h, i) => { row[h] = cells[i] ?? '' })
+      return {
+        employee_id: row.employee_id || '',
+        name: row.name || '',
+        team: row.team_code || row.team || '',
+      }
+    })
+  }
+
+  function handleCsvUpload(e) {
     const file = e.target.files[0]
     if (!file) return
     setCsvLoading(true); setCsvResult(null)
+    const reader = new FileReader()
+    reader.onload = () => {
+      setCsvLoading(false)
+      const parsed = parseCsvRows(String(reader.result))
+      if (parsed.length === 0) {
+        toast('CSV에서 읽을 수 있는 데이터가 없습니다.', 'error')
+        return
+      }
+      setCsvPreviewRows(parsed.map(r => ({ ...r, excluded:false })))
+    }
+    reader.onerror = () => { setCsvLoading(false); toast('CSV 파일을 읽을 수 없습니다.', 'error') }
+    reader.readAsText(file, 'utf-8')
+    e.target.value = ''
+  }
+
+  function toggleExcludeCsvRow(idx) {
+    setCsvPreviewRows(prev => prev.map((r, i) => i === idx ? { ...r, excluded:!r.excluded } : r))
+  }
+
+  function cancelCsvUpload() {
+    setShowCsvCancelConfirm(false)
+    setCsvPreviewRows(null)
+  }
+
+  async function approveCsvUpload() {
+    const included = csvPreviewRows.filter(r => !r.excluded)
+    if (included.length === 0) { toast('승인할 인원이 없습니다.', 'error'); return }
+    setCsvApproving(true)
     try {
+      const csvBody = ['employee_id,name,team_code', ...included.map(r => `${r.employee_id},${r.name},${r.team}`)].join('\n')
       const fd = new FormData()
-      fd.append('file', file)
+      fd.append('file', new Blob([csvBody], { type:'text/csv' }), 'users.csv')
       const r = await apiUpload('/api/admin/upload-users', fd)
       setCsvResult(r)
       toast(`CSV 업로드 완료: 성공 ${r.success}건`, 'success')
+      setCsvPreviewRows(null)
       loadUsers()
     } catch (err) {
-      setCsvResult({ error: err.message })
       toast(`CSV 업로드 실패: ${err.message}`, 'error')
     } finally {
-      setCsvLoading(false)
-      e.target.value = ''
+      setCsvApproving(false)
     }
   }
 
@@ -1323,7 +1371,7 @@ function Users({ toast }) {
           <p style={{ fontSize:12, color:'var(--text-muted)', marginBottom:10 }}>컬럼: <code>employee_id, name, team_code</code> (첫 행 헤더)</p>
           <label style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1.5px dashed var(--border)', borderRadius:8, cursor:'pointer', fontSize:13, color:'var(--text)', background:'#FAFAFA', width:'100%', justifyContent:'center', boxSizing:'border-box' }}>
             <Icon name="up" size={14} />
-            {csvLoading ? '업로드 중...' : 'CSV 파일 선택'}
+            {csvLoading ? '읽는 중...' : 'CSV 파일 선택'}
             <input type="file" accept=".csv" style={{ display:'none' }} onChange={handleCsvUpload} disabled={csvLoading} />
           </label>
           {csvResult && !csvResult.error && (
@@ -1382,6 +1430,68 @@ function Users({ toast }) {
         </DataTable>
         </div>
       </Card>
+
+      {csvPreviewRows && (() => {
+        const indexedRows = csvPreviewRows.map((r, idx) => ({ ...r, idx }))
+        const includedRows = indexedRows.filter(r => !r.excluded)
+        const excludedRows = indexedRows.filter(r => r.excluded)
+        return (
+          <Modal title="CSV 업로드 확인" wide onClose={() => setShowCsvCancelConfirm(true)}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:16, flexWrap:'wrap' }}>
+              <span style={{ fontSize:13, color:'var(--text-muted)' }}>
+                총 {csvPreviewRows.length}명 · 승인 예정 <strong style={{ color:'var(--text)' }}>{includedRows.length}명</strong> · 제외 {excludedRows.length}명
+              </span>
+              <div style={{ display:'flex', gap:8 }}>
+                <BtnPrimary onClick={approveCsvUpload} disabled={csvApproving}>
+                  <Icon name="check" size={14} style={{ color:'white' }} /> {csvApproving ? '승인 중...' : '승인'}
+                </BtnPrimary>
+                <BtnOutlineSm danger onClick={() => setShowCsvCancelConfirm(true)}>취소</BtnOutlineSm>
+              </div>
+            </div>
+
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>업로드된 사원 목록</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:0, maxHeight:280, overflowY:'auto', border:'1px solid var(--border)', borderRadius:8, marginBottom:20 }}>
+              {includedRows.length === 0 ? (
+                <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>승인 예정 인원이 없습니다.</p>
+              ) : includedRows.map(r => (
+                <div key={r.idx} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
+                  <span style={{ width:100, fontSize:13, fontVariantNumeric:'tabular-nums' }}>{r.employee_id || '-'}</span>
+                  <span style={{ width:100, fontSize:13 }}>{r.name || '-'}</span>
+                  <span style={{ width:60, fontSize:13, color:'var(--text-muted)' }}>{r.team || '-'}</span>
+                  <span style={{ marginLeft:'auto' }}><BtnOutlineSm danger onClick={() => toggleExcludeCsvRow(r.idx)}>제외</BtnOutlineSm></span>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)', marginBottom:8 }}>제외된 사원 목록 ({excludedRows.length})</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:0, maxHeight:200, overflowY:'auto', border:'1px solid var(--border)', borderRadius:8, background:'#FAFAFA' }}>
+              {excludedRows.length === 0 ? (
+                <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>제외된 인원이 없습니다.</p>
+              ) : excludedRows.map(r => (
+                <div key={r.idx} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderBottom:'1px solid var(--border)', opacity:0.65 }}>
+                  <span style={{ width:100, fontSize:13, fontVariantNumeric:'tabular-nums' }}>{r.employee_id || '-'}</span>
+                  <span style={{ width:100, fontSize:13 }}>{r.name || '-'}</span>
+                  <span style={{ width:60, fontSize:13, color:'var(--text-muted)' }}>{r.team || '-'}</span>
+                  <span style={{ marginLeft:'auto' }}><BtnOutlineSm onClick={() => toggleExcludeCsvRow(r.idx)}>포함</BtnOutlineSm></span>
+                </div>
+              ))}
+            </div>
+          </Modal>
+        )
+      })()}
+
+      {showCsvCancelConfirm && (
+        <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:300 }}>
+          <div style={{ background:'white', borderRadius:20, padding:'36px 32px', width:'90%', maxWidth:400, boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}>
+            <h2 style={{ fontSize:17, fontWeight:800, color:'var(--text)', marginBottom:12, letterSpacing:'-0.4px' }}>승인 작업 취소</h2>
+            <p style={{ fontSize:14, color:'var(--text-muted)', marginBottom:26, lineHeight:1.6 }}>지금 진행중인 승인 작업을 정말 취소하시겠습니까?</p>
+            <div style={{ display:'flex', gap:12 }}>
+              <button onClick={() => setShowCsvCancelConfirm(false)} style={{ flex:1, height:48, fontSize:15, fontWeight:700, cursor:'pointer', border:'2px solid var(--border)', background:'white', color:'var(--text)', borderRadius:10, fontFamily:'var(--font)' }}>아니오</button>
+              <button onClick={cancelCsvUpload} style={{ flex:1, height:48, fontSize:15, fontWeight:700, cursor:'pointer', border:'none', background:'var(--danger)', color:'white', borderRadius:10, fontFamily:'var(--font)' }}>예</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
