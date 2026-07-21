@@ -326,6 +326,116 @@ const EXAM_PAGE_SIZE = 4
 const EXAM_LIST_CAP = 12
 const EXAM_MANAGE_PAGE_SIZE = 8
 
+function UpcomingExamsCalendar({ examSets }) {
+  const [displayMonth, setDisplayMonth] = useState(new Date())
+
+  const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+  const getFirstDayOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1).getDay()
+
+  const upcomingExams = examSets.filter(s => {
+    const status = getExamStatus(s.exam_datetime, s.duration_min)
+    return status === 'scheduled' || status === 'ongoing'
+  })
+
+  const examsByDate = {}
+  upcomingExams.forEach(exam => {
+    if (exam.exam_datetime) {
+      const dateStr = exam.exam_datetime.split('T')[0]
+      if (!examsByDate[dateStr]) examsByDate[dateStr] = []
+      examsByDate[dateStr].push(exam)
+    }
+  })
+
+  const year = displayMonth.getFullYear()
+  const month = displayMonth.getMonth()
+  const daysInMonth = getDaysInMonth(displayMonth)
+  const firstDay = getFirstDayOfMonth(displayMonth)
+  const days = []
+
+  for (let i = 0; i < firstDay; i++) days.push(null)
+  for (let i = 1; i <= daysInMonth; i++) days.push(i)
+
+  const monthName = new Intl.DateTimeFormat('ko-KR', { month:'long' }).format(displayMonth)
+  const today = new Date()
+  const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month
+
+  return (
+    <Card title="다가오는 시험">
+      <div style={{ padding:'0 20px 20px' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
+          <button onClick={() => setDisplayMonth(new Date(year, month - 1))}
+            style={{ width:30, height:30, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:6 }}
+            onMouseOver={e => e.currentTarget.style.background='#F1F5F9'}
+            onMouseOut={e => e.currentTarget.style.background='none'}>
+            <Icon name="chevronLeft" size={16} />
+          </button>
+          <span style={{ fontSize:15, fontWeight:700, color:'var(--text)' }}>{year}년 {monthName}</span>
+          <button onClick={() => setDisplayMonth(new Date(year, month + 1))}
+            style={{ width:30, height:30, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:6 }}
+            onMouseOver={e => e.currentTarget.style.background='#F1F5F9'}
+            onMouseOut={e => e.currentTarget.style.background='none'}>
+            <Icon name="chevronRight" size={16} />
+          </button>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:2, marginBottom:12 }}>
+          {['일','월','화','수','목','금','토'].map(d => (
+            <div key={d} style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textAlign:'center', padding:'8px 0' }}>{d}</div>
+          ))}
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:2 }}>
+          {days.map((day, i) => {
+            const dateStr = day ? `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
+            const examsOnDay = dateStr ? examsByDate[dateStr] || [] : []
+            const isToday = day && isCurrentMonth && day === today.getDate()
+
+            return (
+              <div key={i} style={{
+                aspectRatio:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                borderRadius:8, border: examsOnDay.length > 0 ? '1.5px solid var(--accent)' : isToday ? '1.5px solid var(--warning)' : '1px solid var(--border)',
+                background: examsOnDay.length > 0 ? 'var(--accent-light)' : isToday ? 'var(--warning-light)' : day ? 'white' : 'transparent',
+                cursor: examsOnDay.length > 0 ? 'pointer' : 'default', position:'relative', fontSize:12, fontWeight:600, color:'var(--text)',
+                transition:'border-color .15s, background .15s'
+              }}
+              onMouseOver={e => { if (examsOnDay.length > 0) { e.currentTarget.style.borderColor='var(--accent-dark)'; e.currentTarget.style.background='var(--accent)'; e.currentTarget.style.color='white' } }}
+              onMouseOut={e => { if (examsOnDay.length > 0) { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.background='var(--accent-light)'; e.currentTarget.style.color='var(--text)' } }}>
+                {day}
+                {examsOnDay.length > 0 && (
+                  <span style={{ fontSize:10, fontWeight:700, color:'var(--accent)', marginTop:2, display:'block' }}>{examsOnDay.length}</span>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        {upcomingExams.length > 0 && (
+          <div style={{ marginTop:16, paddingTop:16, borderTop:'1px solid var(--border)' }}>
+            <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>예정된 시험</div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:200, overflowY:'auto' }}>
+              {upcomingExams.slice(0, 5).map(exam => {
+                const status = getExamStatus(exam.exam_datetime, exam.duration_min)
+                return (
+                  <div key={exam.exam_id} style={{ fontSize:12, color:'var(--text)', background:'var(--bg)', borderRadius:6, padding:'8px 10px', display:'flex', alignItems:'center', gap:8, justifyContent:'space-between' }}>
+                    <div style={{ flex:1, minWidth:0 }}>
+                      <div style={{ fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{exam.name}</div>
+                      <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>{exam.exam_datetime?.slice(0,16).replace('T',' ')}</div>
+                    </div>
+                    <Badge type={EXAM_STATUS_META[status].badge}>{EXAM_STATUS_META[status].label}</Badge>
+                  </div>
+                )
+              })}
+              {upcomingExams.length > 5 && (
+                <div style={{ fontSize:11, color:'var(--text-muted)', textAlign:'center', padding:'6px 0' }}>외 {upcomingExams.length - 5}개</div>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 function Dashboard({ onNavigate }) {
   const [examSets, setExamSets] = useState([])
   const [examStatusFilter, setExamStatusFilter] = useState('all')
@@ -491,6 +601,8 @@ function Dashboard({ onNavigate }) {
           ))}
         </div>
       </Card>
+
+      <UpcomingExamsCalendar examSets={examSets} />
 
       {modal && (
         <Modal
