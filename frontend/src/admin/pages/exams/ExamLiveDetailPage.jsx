@@ -1,7 +1,13 @@
 import { useCallback } from 'react'
+import { Link } from 'react-router-dom'
 
 import { apiFetch } from '../../../api'
 import { isErroredResult, useLivePolling } from './ExamLivePage'
+
+const BACK_LINK_STYLE = { border:'1.5px solid var(--border)', color:'var(--text)', borderRadius:7, padding:'7px 12px', fontSize:12, fontWeight:700, textDecoration:'none', whiteSpace:'nowrap' }
+function BackToListLink() {
+  return <Link to="/admin/exams/live" style={BACK_LINK_STYLE}>← 응시 현황 목록으로</Link>
+}
 
 function latestResultsByEmployee(results) {
   const latest = new Map()
@@ -51,21 +57,22 @@ export default function ExamLiveDetailPage({ examId, CardComponent, BadgeCompone
   const { snapshot, initialError, pollFailed, lastUpdatedAt } = useLivePolling(loadSnapshot, examId)
 
   if (initialError) {
-    return <CardComponent><p style={{ color:'var(--danger)', textAlign:'center', padding:28 }}>응시 현황을 불러오지 못했습니다.</p></CardComponent>
+    return <CardComponent title="시험별 응시 현황" action={<BackToListLink />}><p style={{ color:'var(--danger)', textAlign:'center', padding:28 }}>응시 현황을 불러오지 못했습니다.</p></CardComponent>
   }
   if (!snapshot) {
-    return <CardComponent><p style={{ color:'var(--text-muted)', textAlign:'center', padding:28 }}>불러오는 중...</p></CardComponent>
+    return <CardComponent title="시험별 응시 현황" action={<BackToListLink />}><p style={{ color:'var(--text-muted)', textAlign:'center', padding:28 }}>불러오는 중...</p></CardComponent>
   }
   if (!snapshot.exam) {
-    return <CardComponent><p style={{ color:'var(--text-muted)', textAlign:'center', padding:28 }}>시험을 찾을 수 없습니다.</p></CardComponent>
+    return <CardComponent title="시험별 응시 현황" action={<BackToListLink />}><p style={{ color:'var(--text-muted)', textAlign:'center', padding:28 }}>시험을 찾을 수 없습니다.</p></CardComponent>
   }
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
       <CardComponent title={snapshot.exam.name} action={
-        <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+        <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
           {pollFailed && <BadgeComponent type="danger">마지막 갱신 실패</BadgeComponent>}
           {lastUpdatedAt && <span style={{ fontSize:11, color:'var(--text-muted)' }}>최근 갱신 {lastUpdatedAt.toLocaleTimeString('ko-KR')}</span>}
+          <BackToListLink />
         </div>
       }>
         <div style={{ display:'flex', gap:18, flexWrap:'wrap', fontSize:12, color:'var(--text-muted)' }}>
