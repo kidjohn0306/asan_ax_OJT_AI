@@ -521,7 +521,7 @@ function QuickActionsRow({ items, onNavigate }) {
   if (items.length === 0) {
     return (
       <p style={{ fontSize:12.5, color:'var(--text-muted)', textAlign:'center', padding:'9px 0', margin:0 }}>
-        즐겨찾기한 메뉴가 없습니다. 오른쪽 위 <Icon name="menu" size={11} style={{ verticalAlign:'-1px', margin:'0 2px' }} /> 버튼으로 추가해보세요.
+        즐겨찾기한 메뉴가 없습니다. 오른쪽 위 <Icon name="settings" size={11} style={{ verticalAlign:'-1px', margin:'0 2px' }} /> 버튼으로 추가해보세요.
       </p>
     )
   }
@@ -972,7 +972,7 @@ function Dashboard({ onNavigate }) {
             action={
               <button onClick={() => setFavoritesModalOpen(true)} aria-label="즐겨찾기 메뉴 관리"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex', alignItems:'center' }}>
-                <Icon name="menu" size={16} />
+                <Icon name="settings" size={16} />
               </button>
             }
           >
