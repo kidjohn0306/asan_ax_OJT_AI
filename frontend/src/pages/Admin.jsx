@@ -322,7 +322,6 @@ const NAV_ITEM_ICONS = {
   '/admin/exam-papers?tab=setup':    'file',
   '/admin/exams':                    'users',
   '/admin/exams/live':               'clock',
-  '/admin/results':                  'grid',
   '/admin/analytics':                'chart',
   '/admin/employees':                'user',
   '/admin/teams':                    'users',
@@ -1590,70 +1589,6 @@ export function ExamSheet({ toast, onNavigate, sourceExamId = null, onSaved }) {
   )
 }
 
-/* ── 응시 이력 ───────────────────────────────────────────────── */
-function History({ toast, filters, onFiltersChange }) {
-  const [rows, setRows] = useState(null)
-  const [filterTeam, setFilterTeam] = useState(() => filters?.team ?? '')
-  const [filterFrom, setFilterFrom] = useState(() => filters?.from ?? '')
-  const [filterTo, setFilterTo] = useState(() => filters?.to ?? '')
-  const [search, setSearch] = useState(() => filters?.q ?? '')
-
-  useEffect(() => { setFilterTeam(filters?.team ?? '') }, [filters?.team])
-  useEffect(() => { setFilterFrom(filters?.from ?? '') }, [filters?.from])
-  useEffect(() => { setFilterTo(filters?.to ?? '') }, [filters?.to])
-  useEffect(() => { setSearch(filters?.q ?? '') }, [filters?.q])
-
-  function changeFilter(key, value, setter) {
-    setter(value)
-    onFiltersChange?.({ [key]: value })
-  }
-
-  async function load() {
-    try {
-      let path = '/api/admin/logs?'
-      if (filterTeam) path += `team=${filterTeam}&`
-      if (filterFrom) path += `date_from=${filterFrom}&`
-      if (filterTo)   path += `date_to=${filterTo}&`
-      const data = await apiFetch('GET', path)
-      setRows(data.logs)
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
-  }
-
-  const filtered = rows ? rows.filter(r => !search || r.name.includes(search)) : null
-
-  return (
-    <Card title="응시 이력" noPad action={
-      <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
-        <FilterSelect value={filterTeam} onChange={value => changeFilter('team', value, setFilterTeam)}><option value="">전체 팀</option><option value="T1">1팀</option><option value="T2">2팀</option><option value="T3">3팀</option></FilterSelect>
-        <input type="date" value={filterFrom} onChange={e => changeFilter('from', e.target.value, setFilterFrom)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }} />
-        <span style={{ color:'var(--text-muted)', fontSize:13 }}>~</span>
-        <input type="date" value={filterTo} onChange={e => changeFilter('to', e.target.value, setFilterTo)} style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }} />
-        <BtnOutlineSm onClick={load}>조회</BtnOutlineSm>
-      </div>
-    }>
-      <div style={{ padding:'10px 20px', borderBottom:'1px solid var(--border)' }}>
-        <input value={search} onChange={e => changeFilter('q', e.target.value, setSearch)} placeholder="이름 검색" style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', maxWidth:240, width:'100%', outline:'none' }} />
-      </div>
-      <DataTable headers={['이름','팀','점수','결과','응시일','난이도 분포']}>
-        {!filtered ? (
-          <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--text-muted)', padding:28, fontSize:13 }}>조회 버튼을 눌러 이력을 불러오세요.</td></tr>
-        ) : filtered.length === 0 ? (
-          <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--text-muted)', padding:28, fontSize:13 }}>해당 조건의 이력이 없습니다.</td></tr>
-        ) : filtered.map((l, i) => (
-          <tr key={i}>
-            <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:500 }}>{l.name}</td>
-            <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{l.team}</td>
-            <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontWeight:700, fontVariantNumeric:'tabular-nums' }}>{l.score}점</td>
-            <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><Badge type={l.pass ? 'success' : 'danger'}>{l.pass ? '합격' : '재교육'}</Badge></td>
-            <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{l.date}</td>
-            <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)' }}>상{l.difficulty_dist?.상||0}/중{l.difficulty_dist?.중||0}/하{l.difficulty_dist?.하||0}</td>
-          </tr>
-        ))}
-      </DataTable>
-    </Card>
-  )
-}
-
 /* ── 사용자 승인 ─────────────────────────────────────────────── */
 function Users({ toast }) {
   const [users, setUsers] = useState([])
@@ -2155,67 +2090,130 @@ function exportTakersPdf(exam, rankedTakers, toast) {
   setTimeout(() => { win.print() }, 300)
 }
 
-function StatTile({ label, value, accent }) {
+function StatTile({ label, value, sub, emphasize }) {
   return (
-    <div style={{ background:'var(--bg)', border:'1px solid var(--border)', borderRadius:8, padding:'14px 16px' }}>
+    <div style={{
+      background: emphasize ? 'var(--accent-light)' : 'var(--bg)',
+      border: `1px solid ${emphasize ? 'var(--accent)' : 'var(--border)'}`,
+      borderRadius:8, padding:'14px 16px',
+    }}>
       <div style={{ fontSize:11, color:'var(--text-muted)', fontWeight:600, marginBottom:6 }}>{label}</div>
-      <div style={{ fontSize:22, fontWeight:800, color: accent || 'var(--text)' }}>{value}</div>
+      <div style={{ fontSize:22, fontWeight:800, color: emphasize ? 'var(--accent-dark)' : 'var(--text)' }}>{value}</div>
+      {sub && <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:3 }}>{sub}</div>}
+    </div>
+  )
+}
+
+function MiniBarRow({ label, value, unit, max, danger }) {
+  const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+      <div style={{ width:56, fontSize:12, color:'var(--text-muted)', fontWeight:600, flexShrink:0 }}>{label}</div>
+      <div style={{ flex:1, height:18, background:'var(--bg)', borderRadius:4, overflow:'hidden' }}>
+        <div style={{ height:'100%', width:`${pct}%`, background: danger ? '#F3AFAE' : 'var(--accent)', borderRadius:'0 4px 4px 0', transition:'width 0.2s' }} />
+      </div>
+      <div style={{ width:52, textAlign:'right', fontSize:12.5, fontWeight:700, color:'var(--text)', fontVariantNumeric:'tabular-nums', flexShrink:0 }}>{value}{unit}</div>
     </div>
   )
 }
 
 /* ── 점수 분포 박스플롯 (5수 요약 + 개별 응시자 점) ─────────────── */
 function ScoreBoxPlot({ takers, stats, passScore }) {
-  const W = 800, H = 150
+  const containerRef = useRef(null)
+  const [hovered, setHovered] = useState(null)
+  const [tooltip, setTooltip] = useState(null)
+
+  const W = 800, H = 132
   const padL = 34, padR = 34
   const plotW = W - padL - padR
   const domainMax = niceUpperBound(Math.max(stats.max, passScore || 0))
   const x = v => padL + (v / domainMax) * plotW
-  const boxTop = 46, boxBottom = 86, boxMid = (boxTop + boxBottom) / 2
-  const ticks = [0, 0.25, 0.5, 0.75, 1].map(f => Math.round(domainMax * f))
+  const baselineY = H - 24
+  const boxTop = 44, boxBottom = 84, boxMid = (boxTop + boxBottom) / 2
   const jitterFor = i => [0, -12, 12, -6, 6, -18, 18][i % 7]
 
+  function showTooltip(e, i, t) {
+    const containerBox = containerRef.current.getBoundingClientRect()
+    const dotBox = e.currentTarget.getBoundingClientRect()
+    setHovered(i)
+    setTooltip({
+      left: dotBox.left + dotBox.width / 2 - containerBox.left,
+      top: dotBox.top - containerBox.top,
+      name: t.name,
+      score: t.score,
+    })
+  }
+  function hideTooltip() {
+    setHovered(null)
+    setTooltip(null)
+  }
+
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block' }}>
-      {/* 축 */}
-      <line x1={padL} y1={H - 24} x2={padL + plotW} y2={H - 24} stroke="var(--border)" strokeWidth={1} />
-      {ticks.map((t, i) => (
-        <text key={i} x={x(t)} y={H - 8} fontSize={10} fill="var(--text-muted)" textAnchor="middle">{t}</text>
-      ))}
+    <div ref={containerRef} style={{ position:'relative' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', display:'block', overflow:'visible' }}>
+        {/* 기준선 */}
+        <line x1={padL} y1={baselineY} x2={padL + plotW} y2={baselineY} stroke="var(--border)" strokeWidth={1} />
 
-      {/* 합격 커트라인 */}
-      {passScore > 0 && (
-        <>
-          <line x1={x(passScore)} y1={16} x2={x(passScore)} y2={H - 24} stroke="var(--danger)" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.6} />
-          <text x={x(passScore)} y={12} fontSize={10} fill="var(--danger)" textAnchor="middle">커트라인 {passScore}</text>
-        </>
+        {/* 합격 커트라인 */}
+        {passScore > 0 && (
+          <>
+            <line x1={x(passScore)} y1={18} x2={x(passScore)} y2={baselineY} stroke="var(--danger)" strokeWidth={1.5} strokeDasharray="4 3" opacity={0.55} />
+            <text x={x(passScore)} y={12} fontSize={10.5} fontWeight={700} fill="var(--danger)" textAnchor="middle">커트라인 {passScore}점</text>
+          </>
+        )}
+
+        {/* 위스커 */}
+        <line x1={x(stats.min)} y1={boxMid} x2={x(stats.q1)} y2={boxMid} stroke="var(--text-muted)" strokeWidth={2} />
+        <line x1={x(stats.q3)} y1={boxMid} x2={x(stats.max)} y2={boxMid} stroke="var(--text-muted)" strokeWidth={2} />
+        <line x1={x(stats.min)} y1={boxTop + 6} x2={x(stats.min)} y2={boxBottom - 6} stroke="var(--text-muted)" strokeWidth={2} />
+        <line x1={x(stats.max)} y1={boxTop + 6} x2={x(stats.max)} y2={boxBottom - 6} stroke="var(--text-muted)" strokeWidth={2} />
+
+        {/* 박스 (Q1~Q3) + 중앙값 */}
+        <rect x={x(stats.q1)} y={boxTop} width={Math.max(1, x(stats.q3) - x(stats.q1))} height={boxBottom - boxTop}
+          fill="var(--accent)" fillOpacity={0.12} stroke="var(--accent)" strokeWidth={2} rx={3} />
+        <line x1={x(stats.median)} y1={boxTop} x2={x(stats.median)} y2={boxBottom} stroke="var(--accent-dark)" strokeWidth={2} />
+
+        {/* 직접 라벨 — 최저/중앙값/최고, 축 눈금 없이 필요한 값만 */}
+        <text x={x(stats.median)} y={boxTop - 9} fontSize={11} fontWeight={700} fill="var(--accent-dark)" textAnchor="middle">중앙값 {stats.median}점</text>
+        <text x={x(stats.min)} y={baselineY + 16} fontSize={10.5} fontWeight={600} fill="var(--text-muted)" textAnchor="middle">
+          {stats.min === stats.max ? `최저·최고 ${stats.min}` : `최저 ${stats.min}`}
+        </text>
+        {stats.min !== stats.max && (
+          <text x={x(stats.max)} y={baselineY + 16} fontSize={10.5} fontWeight={600} fill="var(--text-muted)" textAnchor="middle">최고 {stats.max}</text>
+        )}
+
+        {/* 개별 응시자 점 (지터) — 시각 마크는 그대로, 히트 영역은 더 크게 */}
+        {takers.map((t, i) => {
+          const cy = boxMid + jitterFor(i)
+          const cx = x(t.score)
+          return (
+            <g key={i}>
+              <circle cx={cx} cy={cy} r={hovered === i ? 6 : 5} fill="var(--accent)" stroke="var(--card)" strokeWidth={2} style={{ transition:'r 0.1s' }} />
+              <circle cx={cx} cy={cy} r={12} fill="transparent"
+                onMouseEnter={e => showTooltip(e, i, t)}
+                onMouseMove={e => showTooltip(e, i, t)}
+                onMouseLeave={hideTooltip}
+                onFocus={e => showTooltip(e, i, t)}
+                onBlur={hideTooltip}
+                tabIndex={0}
+                style={{ cursor:'pointer', outline:'none' }} />
+            </g>
+          )
+        })}
+      </svg>
+
+      {tooltip && (
+        <div style={{
+          position:'absolute', left: tooltip.left, top: tooltip.top, transform:'translate(-50%, -100%) translateY(-8px)',
+          background:'var(--primary)', color:'white', fontSize:12, fontWeight:600, lineHeight:1.4,
+          padding:'6px 10px', borderRadius:6, whiteSpace:'nowrap', pointerEvents:'none',
+          boxShadow:'0 4px 12px rgba(0,0,0,0.18)', zIndex:10,
+        }}>
+          <span style={{ fontWeight:800 }}>{tooltip.score}점</span>
+          <span style={{ opacity:0.75, marginLeft:6 }}>{tooltip.name}</span>
+        </div>
       )}
-
-      {/* 위스커 */}
-      <line x1={x(stats.min)} y1={boxMid} x2={x(stats.q1)} y2={boxMid} stroke="var(--text-muted)" strokeWidth={2} />
-      <line x1={x(stats.q3)} y1={boxMid} x2={x(stats.max)} y2={boxMid} stroke="var(--text-muted)" strokeWidth={2} />
-      <line x1={x(stats.min)} y1={boxTop + 8} x2={x(stats.min)} y2={boxBottom - 8} stroke="var(--text-muted)" strokeWidth={2} />
-      <line x1={x(stats.max)} y1={boxTop + 8} x2={x(stats.max)} y2={boxBottom - 8} stroke="var(--text-muted)" strokeWidth={2} />
-      <text x={x(stats.min)} y={boxBottom + 20} fontSize={10} fill="var(--text-muted)" textAnchor="middle">
-        {stats.min === stats.max ? `최저·최고 ${stats.min}` : `최저 ${stats.min}`}
-      </text>
-      {stats.min !== stats.max && (
-        <text x={x(stats.max)} y={boxBottom + 20} fontSize={10} fill="var(--text-muted)" textAnchor="middle">최고 {stats.max}</text>
-      )}
-
-      {/* 박스 (Q1~Q3) + 중앙값 */}
-      <rect x={x(stats.q1)} y={boxTop} width={Math.max(1, x(stats.q3) - x(stats.q1))} height={boxBottom - boxTop}
-        fill="var(--accent)" fillOpacity={0.15} stroke="var(--accent)" strokeWidth={2} rx={3} />
-      <line x1={x(stats.median)} y1={boxTop} x2={x(stats.median)} y2={boxBottom} stroke="var(--accent-dark)" strokeWidth={2.5} />
-      <text x={x(stats.median)} y={boxTop - 8} fontSize={11} fontWeight={700} fill="var(--accent-dark)" textAnchor="middle">중앙값 {stats.median}</text>
-
-      {/* 개별 응시자 점 (지터) */}
-      {takers.map((t, i) => (
-        <circle key={i} cx={x(t.score)} cy={boxMid + jitterFor(i)} r={5} fill="var(--accent)" stroke="var(--card)" strokeWidth={2}>
-          <title>{t.name}: {t.score}점</title>
-        </circle>
-      ))}
-    </svg>
+    </div>
   )
 }
 
@@ -2277,25 +2275,23 @@ function Results({ filters, onFiltersChange }) {
       <ToastContainer />
       {selectedExam ? (
         <>
-          <Card title={selectedExam.name} noPad action={<BtnOutlineSm onClick={() => setSelectedExamId(null)}>← 시험 목록으로</BtnOutlineSm>}>
-            <div style={{ padding:'12px 20px', display:'flex', gap:22, fontSize:12, color:'var(--text-muted)', flexWrap:'wrap' }}>
-              <span>팀 <b style={{ color:'var(--text)' }}>{selectedExam.team_name}</b></span>
-              <span>응시 인원 <b style={{ color:'var(--text)' }}>{selectedExam.taker_count}명</b></span>
-              <span>평균 점수 <b style={{ color:'var(--text)' }}>{selectedExam.avg_score}점</b></span>
-              <span>중앙값 <b style={{ color:'var(--text)' }}>{scoreStats.median}점</b></span>
-              <span>정답률 <b style={{ color:'var(--text)' }}>{selectedExam.accuracy_pct}%</b></span>
-              <span>합격자 <b style={{ color:'var(--text)' }}>{selectedExam.pass_count}명</b></span>
+          <Card title={selectedExam.name} action={<BtnOutlineSm onClick={() => setSelectedExamId(null)}>← 시험 목록으로</BtnOutlineSm>}>
+            <div style={{ fontSize:12.5, color:'var(--text-muted)', marginBottom:16 }}>
+              {selectedExam.team_name} · 응시 <b style={{ color:'var(--text)' }}>{selectedExam.taker_count}명</b>
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(110px, 1fr))', gap:12 }}>
+              <StatTile label="평균" value={`${scoreStats.avg}점`} />
+              <StatTile label="중앙값" value={`${scoreStats.median}점`} />
+              <StatTile label="최고점" value={`${scoreStats.max}점`} />
+              <StatTile label="최저점" value={`${scoreStats.min}점`} />
+              <StatTile label="정답률" value={`${selectedExam.accuracy_pct}%`} />
+              <StatTile label="합격률" emphasize
+                value={`${selectedExam.taker_count ? Math.round(selectedExam.pass_count / selectedExam.taker_count * 100) : 0}%`}
+                sub={`${selectedExam.pass_count}/${selectedExam.taker_count}명 합격`} />
             </div>
           </Card>
 
           <Card title="점수 분포">
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(110px, 1fr))', gap:12, marginBottom:22 }}>
-              <StatTile label="평균" value={`${scoreStats.avg}점`} />
-              <StatTile label="중앙값" value={`${scoreStats.median}점`} />
-              <StatTile label="최고점" value={`${scoreStats.max}점`} accent="var(--success)" />
-              <StatTile label="최저점" value={`${scoreStats.min}점`} accent="var(--danger)" />
-              <StatTile label="합격률" value={`${selectedExam.taker_count ? Math.round(selectedExam.pass_count / selectedExam.taker_count * 100) : 0}%`} />
-            </div>
             <ScoreBoxPlot takers={selectedExam.takers} stats={scoreStats} passScore={selectedExam.pass_score} />
           </Card>
 
@@ -2374,9 +2370,66 @@ function Results({ filters, onFiltersChange }) {
           </Card>
         </>
       ) : (
-        <Card
-          title="시험 목록"
-          noPad
+        <>
+          <Card title="전체 현황">
+            {data.insights.length > 0 && (
+              <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, padding:16, marginBottom:20 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                  <div style={{ width:28, height:28, background:'var(--accent)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <Icon name="chart" size={14} style={{ color:'white' }} />
+                  </div>
+                  <span style={{ fontSize:13, fontWeight:700, color:'#1E3A8A' }}>분석 인사이트</span>
+                </div>
+                {data.insights.map((t, i) => (
+                  <div key={i} style={{ display:'flex', gap:8, fontSize:12, color:'#1E40AF', lineHeight:1.5, marginBottom: i < data.insights.length - 1 ? 6 : 0 }}>
+                    <span style={{ width:4, height:4, borderRadius:'50%', background:'var(--accent)', flexShrink:0, marginTop:6 }} />
+                    {t}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px, 1fr))', gap:12, marginBottom:24 }}>
+              <StatTile label="전체 응시" value={`${data.summary.count}건`} />
+              <StatTile label="전체 평균" value={`${data.summary.avg_score}점`} />
+              <StatTile label="전체 정답률" value={`${data.summary.accuracy_pct}%`} />
+              <StatTile label="전체 합격률" emphasize
+                value={`${data.summary.count ? Math.round(data.summary.pass_count / data.summary.count * 100) : 0}%`}
+                sub={`${data.summary.pass_count}/${data.summary.count}건 합격`} />
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(240px, 1fr))', gap:32 }}>
+              <div>
+                <div style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)', marginBottom:12 }}>팀별 평균 점수</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                  {data.team_averages.map((t, i) => (
+                    <MiniBarRow key={t.team_code} label={t.team_name} value={t.avg_score} unit="점" max={100} danger={i === 0} />
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)', marginBottom:12 }}>난이도별 정답률</div>
+                <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+                  {(() => {
+                    const scored = ['상', '중', '하']
+                      .map(d => ({ d, ...data.difficulty_accuracy[d] }))
+                      .filter(v => v.total > 0)
+                    if (scored.length === 0) {
+                      return <p style={{ fontSize:12, color:'var(--text-muted)' }}>난이도별 데이터가 없습니다.</p>
+                    }
+                    const weakest = scored.reduce((a, b) => a.pct < b.pct ? a : b)
+                    return scored.map(v => (
+                      <MiniBarRow key={v.d} label={v.d} value={v.pct} unit="%" max={100} danger={v.d === weakest.d} />
+                    ))
+                  })()}
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          <Card
+            title="시험 목록"
+            noPad
           action={
             <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
               {teamOptions.map(([code, name]) => (
@@ -2403,24 +2456,8 @@ function Results({ filters, onFiltersChange }) {
               </tr>
             ))}
           </DataTable>
-        </Card>
-      )}
-
-      {!selectedExam && data.insights.length > 0 && (
-        <div style={{ background:'#EFF6FF', border:'1px solid #BFDBFE', borderRadius:8, padding:16, marginBottom:14 }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-            <div style={{ width:28, height:28, background:'var(--accent)', borderRadius:6, display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <Icon name="chart" size={14} style={{ color:'white' }} />
-            </div>
-            <span style={{ fontSize:13, fontWeight:700, color:'#1E3A8A' }}>분석 인사이트</span>
-          </div>
-          {data.insights.map((t,i) => (
-            <div key={i} style={{ display:'flex', gap:8, fontSize:12, color:'#1E40AF', lineHeight:1.5, marginBottom: i < data.insights.length-1 ? 6 : 0 }}>
-              <span style={{ width:4, height:4, borderRadius:'50%', background:'var(--accent)', flexShrink:0, marginTop:6 }} />
-              {t}
-            </div>
-          ))}
-        </div>
+          </Card>
+        </>
       )}
     </div>
   )
@@ -3206,7 +3243,6 @@ const NAV_META = {
   'exam-sheet':   { bc:['홈','시험 관리','시험지 생성·관리'],      title:'시험지 생성·관리' },
   'exam-assign':  { bc:['홈','시험 관리','시험 생성·관리'],         title:'시험 생성·관리' },
   'exam-status':  { bc:['홈','시험 관리','응시 현황'],             title:'응시 현황' },
-  history:        { bc:['홈','응시 이력'],                         title:'응시 이력' },
   users:          { bc:['홈','사용자 승인'],                       title:'사용자 승인' },
   results:        { bc:['홈','결과 분석'],                         title:'결과 분석' },
   settings:       { bc:['홈','설정'],                              title:'시스템 설정' },
@@ -3216,7 +3252,7 @@ const NAV_META = {
 const ADMIN_VIEW_KEY = 'admin_view'
 const Q_VIEWS    = ['q-generate','q-review','q-bank']
 const EXAM_VIEWS = ['exam-sheet','exam-assign','exam-status']
-const ADMIN_VIEWS = ['dashboard', ...Q_VIEWS, ...EXAM_VIEWS, 'history', 'users', 'results', 'settings', 'teams']
+const ADMIN_VIEWS = ['dashboard', ...Q_VIEWS, ...EXAM_VIEWS, 'users', 'results', 'settings', 'teams']
 
 function initialAdminView(initialView) {
   if (ADMIN_VIEWS.includes(initialView)) return initialView
@@ -3230,7 +3266,6 @@ function adminMetaForPath(pathname, fallback) {
   if (/^\/admin\/questions\/generate\/runs\/[^/]+$/.test(pathname)) return { title:'생성 결과', bc:['홈','문제 관리','생성 작업','생성 결과'] }
   if (/^\/admin\/questions\/[^/]+\/history$/.test(pathname)) return { title:'변경 이력', bc:['홈','문제 관리','문제은행','변경 이력'] }
   if (/^\/admin\/questions\/[^/]+$/.test(pathname)) return { title:'문제 상세', bc:['홈','문제 관리','문제은행','문제 상세'] }
-  if (/^\/admin\/results\/[^/]+$/.test(pathname)) return { title:'결과 상세', bc:['홈','결과 관리','응시 결과','결과 상세'] }
   if (/^\/admin\/exams\/[^/]+\/live$/.test(pathname)) return { title:'시험별 응시 현황', bc:['홈','시험 관리','응시 현황','시험별 상세'] }
   return fallback
 }
@@ -3309,10 +3344,8 @@ export default function Admin({ initialView, onRouteNavigate }) {
         ) : (
           <ExamLivePage CardComponent={Card} BadgeComponent={Badge} />
         ))}
-        {(view === 'history' || view === 'results') && <ResultRoutePage
-          HistoryComponent={History}
+        {view === 'results' && <ResultRoutePage
           AnalyticsComponent={Results}
-          toast={toast}
         />}
         {(view === 'users' || view === 'settings' || view === 'teams') && <SystemRoutePage
           UsersComponent={Users}

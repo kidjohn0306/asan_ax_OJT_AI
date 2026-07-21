@@ -9,7 +9,6 @@ const ICON_BY_VIEW = {
   'exam-sheet': 'file',
   'exam-assign': 'users',
   'exam-status': 'chart',
-  history: 'clock',
   results: 'chart',
   users: 'users',
   teams: 'users',

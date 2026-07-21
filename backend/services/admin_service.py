@@ -299,6 +299,7 @@ def fetch_results_analysis() -> dict:
             "summary": {"count": 0, "avg_score": 0, "accuracy_pct": 0, "pass_count": 0},
             "team_averages": [],
             "difficulty_accuracy": {},
+            "category_accuracy": {},
             "exams": [],
             "insights": [],
         }
@@ -307,37 +308,52 @@ def fetch_results_analysis() -> dict:
     avg_score = round(sum(r.get("score", 0) for r in all_results) / count, 1)
     pass_count = sum(1 for r in all_results if r.get("pass"))
 
+    from services.generation.gates import VALID_CATEGORIES
+
     total_correct = total_answered = 0
     diff_totals = {"상": {"correct": 0, "total": 0}, "중": {"correct": 0, "total": 0}, "하": {"correct": 0, "total": 0}}
+    cat_totals = {c: {"correct": 0, "total": 0} for c in VALID_CATEGORIES}
     for r in all_results:
         for q in r.get("results", []):
             total_answered += 1
-            if q.get("correct"):
+            is_correct = bool(q.get("correct"))
+            if is_correct:
                 total_correct += 1
             d = q.get("difficulty")
             if d in diff_totals:
                 diff_totals[d]["total"] += 1
-                if q.get("correct"):
+                if is_correct:
                     diff_totals[d]["correct"] += 1
+            c = q.get("category")
+            if c in cat_totals:
+                cat_totals[c]["total"] += 1
+                if is_correct:
+                    cat_totals[c]["correct"] += 1
     accuracy_pct = round(total_correct / total_answered * 100, 1) if total_answered else 0
 
     difficulty_accuracy = {
         d: {**v, "pct": round(v["correct"] / v["total"] * 100, 1) if v["total"] else 0}
         for d, v in diff_totals.items()
     }
+    category_accuracy = {
+        c: {**v, "pct": round(v["correct"] / v["total"] * 100, 1) if v["total"] else 0}
+        for c, v in cat_totals.items()
+    }
 
-    team_scores: dict = {}
+    team_results: dict = {}
     for r in all_results:
-        team_scores.setdefault(r.get("team_code", "-"), []).append(r.get("score", 0))
+        team_results.setdefault(r.get("team_code", "-"), []).append(r)
     team_averages = sorted(
         [
             {
                 "team_code": code,
                 "team_name": team_names.get(code, code),
-                "avg_score": round(sum(scores) / len(scores), 1),
-                "count": len(scores),
+                "avg_score": round(sum(r.get("score", 0) for r in recs) / len(recs), 1),
+                "count": len(recs),
+                "pass_count": sum(1 for r in recs if r.get("pass")),
+                "pass_pct": round(sum(1 for r in recs if r.get("pass")) / len(recs) * 100, 1),
             }
-            for code, scores in team_scores.items()
+            for code, recs in team_results.items()
         ],
         key=lambda x: x["avg_score"],
     )
@@ -346,10 +362,20 @@ def fetch_results_analysis() -> dict:
     if team_averages:
         weakest_team = team_averages[0]
         insights.append(f"{weakest_team['team_name']} 평균 점수가 {weakest_team['avg_score']}점으로 가장 낮습니다.")
+        weakest_pass_team = min(team_averages, key=lambda t: t["pass_pct"])
+        insights.append(f"{weakest_pass_team['team_name']} 합격률이 {weakest_pass_team['pass_pct']}%로 가장 낮습니다.")
     scored_diffs = {d: v for d, v in difficulty_accuracy.items() if v["total"] > 0}
     if scored_diffs:
         weakest_diff = min(scored_diffs.items(), key=lambda kv: kv[1]["pct"])
         insights.append(f"난이도 '{weakest_diff[0]}' 문항의 정답률이 {weakest_diff[1]['pct']}%로 가장 낮습니다.")
+    scored_cats = {c: v for c, v in category_accuracy.items() if v["total"] > 0}
+    if scored_cats:
+        weakest_cat = min(scored_cats.items(), key=lambda kv: kv[1]["pct"])
+        insights.append(f"'{weakest_cat[0]}' 영역 문항의 정답률이 {weakest_cat[1]['pct']}%로 가장 낮습니다.")
+    ranked_exams = [e for e in exams if e["taker_count"] >= 2]
+    if ranked_exams:
+        weakest_exam = min(ranked_exams, key=lambda e: e["avg_score"])
+        insights.append(f"'{weakest_exam['name']}' 시험 평균 점수가 {weakest_exam['avg_score']}점으로 가장 낮습니다.")
     insights.append(
         f"전체 정답률은 {accuracy_pct}%, 합격률은 {round(pass_count / count * 100, 1)}%입니다."
     )
@@ -358,6 +384,7 @@ def fetch_results_analysis() -> dict:
         "summary": {"count": count, "avg_score": avg_score, "accuracy_pct": accuracy_pct, "pass_count": pass_count},
         "team_averages": team_averages,
         "difficulty_accuracy": difficulty_accuracy,
+        "category_accuracy": category_accuracy,
         "exams": exams,
         "insights": insights,
     }
