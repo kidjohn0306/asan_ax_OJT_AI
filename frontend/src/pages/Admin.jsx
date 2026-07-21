@@ -1250,6 +1250,13 @@ function Users({ toast }) {
   async function loadUsers() {
     try { const d = await apiFetch('GET', '/api/admin/users'); setUsers(d.users) } catch {}
   }
+  function refreshUsers() {
+    setFilterTeam('all')
+    setFilterDateFrom('')
+    setFilterDateTo('')
+    setFilterSearch('')
+    loadUsers()
+  }
   useEffect(() => {
     loadUsers()
     apiFetch('GET', '/api/admin/teams').then(d => setTeams(d.teams)).catch(() => {})
@@ -1329,7 +1336,7 @@ function Users({ toast }) {
           )}
         </Card>
       </div>
-      <Card title="승인된 응시자 목록" noPad action={<BtnOutlineSm onClick={loadUsers}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
+      <Card title="승인된 응시자 목록" noPad action={<BtnOutlineSm onClick={refreshUsers}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
         <div style={{ display:'flex', gap:10, flexWrap:'wrap', padding:'14px 20px', borderBottom:'1px solid var(--border)' }}>
           <FilterSelect value={filterTeam} onChange={setFilterTeam}>
             <option value="all">전체 팀</option>
