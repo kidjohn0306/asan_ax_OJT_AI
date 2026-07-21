@@ -137,7 +137,7 @@ function useToast() {
           <div key={t.id} style={{
             padding:'10px 18px', borderRadius:8, fontSize:12, fontWeight:700,
             boxShadow:'0 4px 12px rgba(0,0,0,0.15)', animation:'fadeIn .2s ease',
-            background: t.type === 'success' ? 'var(--success)' : 'var(--danger)', color:'white',
+            background: t.type === 'success' ? 'var(--success)' : t.type === 'warning' ? 'var(--warning)' : 'var(--danger)', color:'white',
           }}>{t.msg}</div>
         ))}
       </div>
@@ -1180,7 +1180,11 @@ export function ExamSheet({ toast, onNavigate, sourceExamId = null, onSaved }) {
       const qs = data.questions
       setQuestions(qs.map((q, i) => ({ ...q, _order: i + 1 })))
       setSelectedIdx(0)
-      toast(`${qs.length}문항 ${manualMode ? '수동' : '자동'} 배분 완료. 순서 변경·문제 교체가 가능합니다.`)
+      if (qs.length < totalCount) {
+        toast(`승인된 문제가 부족해 ${totalCount}문항 중 ${qs.length}문항만 배분됐습니다. 문제은행에서 해당 팀의 승인된 문제를 늘려주세요.`, 'warning')
+      } else {
+        toast(`${qs.length}문항 ${manualMode ? '수동' : '자동'} 배분 완료. 순서 변경·문제 교체가 가능합니다.`)
+      }
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
     finally { setLoading(false) }
   }
@@ -1340,7 +1344,7 @@ export function ExamSheet({ toast, onNavigate, sourceExamId = null, onSaved }) {
           <div style={{ flex:'0 0 220px' }}>
             <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험 유형</label>
             <div style={{ display:'flex', gap:6 }}>
-              {[['exam_study', '기초고사'], ['exam_test', '업무능력평가']].map(([value, label]) => (
+              {[['exam_study', '평가'], ['exam_test', '연습문제']].map(([value, label]) => (
                 <button
                   key={value}
                   type="button"
