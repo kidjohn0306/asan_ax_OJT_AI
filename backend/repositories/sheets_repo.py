@@ -414,7 +414,13 @@ class SheetsExamSetRepository(ExamSetRepository):
     @_fallback_on_error(LocalExamSetRepository)
     def list_exam_sets(self) -> list:
         self._maybe_ensure_tab()
-        return [self._row_to_dict(r) for r in self._read_all_rows()]
+        # 시트에서 행 전체가 아니라 셀 내용만 지워진 경우 exam_id가 빈 값인 레코드가 남는데,
+        # teams/questions/materials 저장소와 달리 여기만 걸러내지 않아 관리자 화면에 exam_id
+        # 없는(클릭 시 API가 빈 경로가 되어 404/405로 깨지는) "유령 시험" 항목이 노출되던 버그가 있었다.
+        return [
+            d for r in self._read_all_rows()
+            if (d := self._row_to_dict(r)).get("exam_id")
+        ]
 
     @_fallback_on_error(LocalExamSetRepository)
     def get_exam(self, exam_id: str) -> dict | None:

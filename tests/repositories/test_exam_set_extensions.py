@@ -110,6 +110,38 @@ class ExamSetExtensionTests(unittest.TestCase):
         self.assertTrue(hasattr(repositories, "exam_v2_repo"))
         self.assertIsNone(repositories.exam_v2_repo)
 
+    def test_list_exam_sets_filters_out_blank_rows_with_no_exam_id(self):
+        # Sheets에서 행 전체가 아니라 셀 내용만 지워지면 모든 컬럼이 빈 문자열인 행이 남는데,
+        # 이런 유령 레코드(exam_id="")가 관리자 화면에 클릭 가능한 항목으로 노출되면
+        # 문제 목록 보기/삭제가 exam_id 없는 경로로 요청을 보내 404/405로 깨진다.
+        headers = SHEET_HEADERS["exam_sets"]
+        valid_row = ["set-1", "정상 시험", "T1", "[]", "[]", "", "", "70", "active", "", "exam-1"] + [""] * (len(headers) - 11)
+        blank_row = [""] * len(headers)
+
+        repo = SheetsExamSetRepository.__new__(SheetsExamSetRepository)
+        repo._maybe_ensure_tab = MagicMock()
+        repo._read_all_rows = MagicMock(return_value=[valid_row, blank_row])
+
+        result = repo.list_exam_sets()
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["exam_id"], "exam-1")
+
+    def test_local_list_exam_sets_filters_out_records_with_no_exam_id(self):
+        from repositories.local_json import LocalExamSetRepository
+
+        repo = LocalExamSetRepository.__new__(LocalExamSetRepository)
+        repo._load = MagicMock(return_value={"sets": [
+            {"exam_id": "exam-1", "name": "정상 시험"},
+            {"exam_id": "", "name": ""},
+            {"name": "exam_id 필드 자체가 없는 레코드"},
+        ]})
+
+        result = repo.list_exam_sets()
+
+        self.assertEqual(len(result), 1)
+        self.assertEqual(result[0]["exam_id"], "exam-1")
+
 
 if __name__ == "__main__":
     unittest.main()

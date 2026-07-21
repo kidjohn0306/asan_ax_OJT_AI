@@ -1,34 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { logout as apiLogout } from '../api'
-
-const MOCK_QUESTIONS = [
-  {id:"C-001",cat:"공통",diff:"하",q:"회사 내 작업 전 반드시 확인해야 하는 것은?",opts:["작업지시서","생산계획","설비상태","작업일지"],ans:0},
-  {id:"C-002",cat:"공통",diff:"중",q:"5S 활동의 목적이 아닌 것은?",opts:["생산성 향상","안전사고 예방","개인 편의","품질 향상"],ans:2},
-  {id:"C-003",cat:"공통",diff:"하",q:"품질 이상 발생 시 최초로 보고 대상은?",opts:["팀장","안전관리자","인사팀","고객사"],ans:0},
-  {id:"C-004",cat:"공통",diff:"하",q:"작업 중 아차사고 발생 시 올바른 대처는?",opts:["무시하고 계속 작업","즉시 팀장에게 보고","혼자 해결","퇴근 후 보고"],ans:1},
-  {id:"C-005",cat:"공통",diff:"중",q:"설비 이상 발견 시 절차로 옳은 것은?",opts:["설비 강제 가동","설비 정지 후 담당자 연락","개인 판단으로 수리","로그 작성 없이 재가동"],ans:1},
-  {id:"T1-001",cat:"팀별",diff:"중",q:"생산라인 작업 시 가장 먼저 확인해야 하는 것은?",opts:["작업지시서","생산계획","설비상태","작업일지"],ans:2},
-  {id:"T1-002",cat:"팀별",diff:"상",q:"주간 작업 시 안전 점검 주기는?",opts:["월 1회","주 1회","작업 전 매일","연 1회"],ans:2},
-  {id:"T1-003",cat:"팀별",diff:"중",q:"설비 예방 보전 기록의 목적은?",opts:["개인 기록","설비 수명 연장 및 사고 예방","팀장 보고용","관계없음"],ans:1},
-  {id:"T1-004",cat:"팀별",diff:"하",q:"작업 지시서 없이 작업을 진행해야 할 때는?",opts:["바로 진행","팀장 승인 후 진행","옆 동료에게 확인","임의 판단"],ans:1},
-  {id:"T1-005",cat:"팀별",diff:"중",q:"품질 불량 발생 시 즉시 취해야 할 조치는?",opts:["라인 계속 가동","불량 격리 후 팀장 보고","불량품 폐기","다음 교대자에게 인계"],ans:1},
-  {id:"T1-006",cat:"팀별",diff:"상",q:"설비 가동 중 이상 소음 발생 시 조치는?",opts:["계속 가동","설비 정지 후 점검","소음 차단 후 가동","다음 교대까지 대기"],ans:1},
-  {id:"T1-007",cat:"팀별",diff:"중",q:"작업 환경 개선 제안은 누구에게 하는가?",opts:["동료","팀장","인사팀","고객사"],ans:1},
-  {id:"T1-008",cat:"팀별",diff:"하",q:"작업 전 안전 교육의 목적은?",opts:["의무 이수","사고 예방","시간 채우기","규정 준수만"],ans:1},
-  {id:"T1-009",cat:"팀별",diff:"상",q:"반도체 설비 클린룸 내 이물질 유입 방지 방법은?",opts:["마스크만 착용","전신 방진복 착용 후 에어샤워","장갑만 착용","빠른 속도로 입장"],ans:1},
-  {id:"T1-010",cat:"팀별",diff:"중",q:"작업 후 정리정돈의 기준은?",opts:["개인 판단","5S 기준","팀장 지시 시에만","퇴근 전 5분"],ans:1},
-  {id:"S-001",cat:"환경안전",diff:"하",q:"화학물질 취급 시 반드시 착용해야 하는 보호구는?",opts:["안전모만","보안경과 내화학성 장갑","일반 면장갑","없음"],ans:1},
-  {id:"S-002",cat:"환경안전",diff:"중",q:"화재 발생 시 최우선 조치는?",opts:["소화기 사용","인명 대피","원인 파악","팀장 보고"],ans:1},
-  {id:"S-003",cat:"환경안전",diff:"상",q:"MSDS(물질안전보건자료)를 확인해야 하는 시점은?",opts:["사고 후","화학물질 취급 전","교대 인수인계 시","월 1회"],ans:1},
-  {id:"S-004",cat:"환경안전",diff:"중",q:"산업폐기물 처리 규정을 위반하면?",opts:["경고","법적 처벌 및 회사 제재","벌금만","관계없음"],ans:1},
-  {id:"S-005",cat:"환경안전",diff:"중",q:"안전보호구 착용 의무를 지키지 않았을 때 책임은?",opts:["회사만","개인과 회사 공동","팀장만","없음"],ans:1},
-  {id:"G-001",cat:"일반상식",diff:"중",q:"반도체 공정에서 클린룸의 주된 목적은?",opts:["냉방","미세먼지 차단 및 오염 방지","소음 차단","조명 확보"],ans:1},
-  {id:"G-002",cat:"일반상식",diff:"하",q:"직장 내 괴롭힘 신고 창구는?",opts:["팀장","고충처리위원회 또는 인사팀","동료","SNS"],ans:1},
-  {id:"G-003",cat:"일반상식",diff:"중",q:"근로기준법상 법정 근로시간은?",opts:["주 52시간","주 40시간","주 60시간","월 200시간"],ans:1},
-  {id:"G-004",cat:"일반상식",diff:"하",q:"개인정보 보호를 위해 지켜야 할 사항은?",opts:["동료와 자유롭게 공유","업무 목적 외 사용 금지","SNS 공유 가능","관계없음"],ans:1},
-  {id:"G-005",cat:"일반상식",diff:"중",q:"사내 민감 정보 외부 유출 시 결과는?",opts:["경고만","민사·형사 책임 및 해고","벌금만","문제없음"],ans:1},
-]
+import { apiFetch, logout as apiLogout, apiErrorMessage } from '../api'
 
 const LABEL = ['A','B','C','D']
 const CAT_ORDER = ['공통','팀별','환경안전','일반상식']
@@ -45,7 +17,7 @@ function catBadgeStyle(cat) {
 }
 
 /* ── IdentityScreen ─────────────────────────────────────────── */
-function IdentityScreen({ empInfo, examName, onStart }) {
+function IdentityScreen({ empInfo, examName, durationMin, questionCount, error, onStart }) {
   const today = new Date()
   const dateStr = `${today.getFullYear()}년 ${today.getMonth()+1}월 ${today.getDate()}일`
 
@@ -67,7 +39,7 @@ function IdentityScreen({ empInfo, examName, onStart }) {
             ['사원번호', empInfo.empno, false],
             ['소속팀', empInfo.team, false],
             ['응시일', dateStr, false],
-            ['시험 시간', '60분 · 25문항', false],
+            ['시험 시간', durationMin != null ? `${durationMin}분 · ${questionCount ?? 0}문항` : '확인 중…', false],
           ].map(([label, value, isName]) => (
             <div key={label} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'8px 0', borderBottom:'1px solid var(--border)' }}>
               <span style={{ fontSize:13, color:'var(--text-muted)', fontWeight:600 }}>{label}</span>
@@ -77,11 +49,14 @@ function IdentityScreen({ empInfo, examName, onStart }) {
         </div>
 
         <p style={{ fontSize:14, color:'var(--text-muted)', textAlign:'center', marginBottom:20, lineHeight:1.6 }}>위 정보가 맞으면 시험을 시작해 주세요.</p>
+        {error && (
+          <div style={{ width:'100%', background:'var(--danger-light)', color:'var(--danger)', border:'1px solid #e7b8b8', borderRadius:10, padding:'12px 14px', marginBottom:16, fontSize:13, textAlign:'center', lineHeight:1.5 }}>{error}</div>
+        )}
         <button
           onClick={onStart}
           style={{ width:'100%', height:56, background:'var(--accent)', color:'white', border:'none', borderRadius:12, fontSize:17, fontWeight:700, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:8, fontFamily:'var(--font)' }}
         >
-          시험 시작하기
+          {error ? '다시 시도' : '시험 시작하기'}
           <svg width={18} height={18} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
         </button>
         <p style={{ marginTop:16, fontSize:12, color:'var(--text-muted)', textAlign:'center' }}>정보가 다르면 인사팀에 문의하세요.</p>
@@ -301,17 +276,34 @@ function ScoringScreen({ title, sub }) {
   )
 }
 
+/* ── SubmitErrorScreen ──────────────────────────────────────── */
+function SubmitErrorScreen({ message, onRetry }) {
+  return (
+    <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'var(--bg)', padding:24 }}>
+      <div style={{ background:'white', borderRadius:20, boxShadow:'0 8px 40px rgba(30,58,95,0.12)', padding:'48px 40px', width:'100%', maxWidth:440, textAlign:'center' }}>
+        <div style={{ fontSize:20, fontWeight:800, color:'var(--danger)', marginBottom:12 }}>제출에 실패했습니다</div>
+        <p style={{ fontSize:14, color:'var(--text-muted)', marginBottom:28, lineHeight:1.6 }}>{message || '알 수 없는 오류가 발생했습니다.'}<br/>답안은 그대로 보존되어 있으니 다시 제출해 주세요.</p>
+        <button
+          onClick={onRetry}
+          style={{ width:'100%', height:56, background:'var(--accent)', color:'white', border:'none', borderRadius:12, fontSize:17, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)' }}
+        >
+          다시 제출하기
+        </button>
+      </div>
+    </div>
+  )
+}
+
 /* ── ResultScreen ───────────────────────────────────────────── */
-function ResultScreen({ empInfo, examName, questions, answers, score, pass, submitResults, onFinish }) {
+function ResultScreen({ empInfo, examName, score, pass, submitResults, onFinish }) {
   const [accordionOpen, setAccordionOpen] = useState(false)
   const [expandedRow, setExpandedRow] = useState(null)
-  // 서버가 pass를 안 준 경우(오프라인 mock 폴백)에만 기본 70점 기준으로 클라이언트에서 계산한다.
+  // 서버가 pass를 안 준 경우에만 기본 70점 기준으로 클라이언트에서 계산한다.
   // 정상 흐름에서는 회차별 합격 커트라인이 다를 수 있어 서버 판정을 그대로 써야 한다.
   if (pass === null || pass === undefined) pass = score >= 70
 
-  // 서버 채점 결과(문제 텍스트·정답·내 답·해설 포함)가 있으면 이걸 기준으로 렌더링한다.
-  // 시험 출제 시점 응답에는 부정행위 방지를 위해 정답이 빠져있어 로컬 questions/answers만으로는
-  // 채점 결과를 표시할 수 없다 — 그래서 이 화면은 반드시 submitResults를 써야 한다.
+  // 이 화면은 제출이 실제로 성공했을 때만 렌더링된다(handleSubmit이 실패 시 submit-error
+  // 화면으로 보냄) — 서버 채점 결과(문제 텍스트·정답·내 답·해설 포함)를 기준으로 표시한다.
   const hasServerResults = Array.isArray(submitResults) && submitResults.length > 0
 
   const catResults = { 공통:{c:0,t:0}, 팀별:{c:0,t:0}, 환경안전:{c:0,t:0}, 일반상식:{c:0,t:0} }
@@ -321,9 +313,6 @@ function ResultScreen({ empInfo, examName, questions, answers, score, pass, subm
       catResults[r.category].t++
       if (r.correct) catResults[r.category].c++
     })
-  } else {
-    Object.assign(catResults, { 공통:{c:0,t:5}, 팀별:{c:0,t:10}, 환경안전:{c:0,t:5}, 일반상식:{c:0,t:5} })
-    questions.forEach((q, i) => { if (answers[i] === q.ans) catResults[q.cat].c++ })
   }
 
   return (
@@ -411,27 +400,9 @@ function ResultScreen({ empInfo, examName, questions, answers, score, pass, subm
                     )}
                   </div>
                 )
-              }) : questions.map((q, i) => {
-                const unknownAnswer = q.ans === -1
-                const isCorrect = !unknownAnswer && answers[i] === q.ans
-                return (
-                  <div key={i} style={{ padding:'12px 24px', borderTop:'1px solid var(--border)' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                      <span style={{ fontSize:12, fontWeight:800, color:'var(--text-muted)', width:24, flexShrink:0 }}>{i+1}</span>
-                      <span style={{ flex:1, fontSize:13, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{q.q}</span>
-                      <span style={{ width:28, height:28, borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', fontSize:14, fontWeight:800, flexShrink:0, background: unknownAnswer ? '#f1f5f9' : isCorrect ? 'var(--success-light)' : 'var(--danger-light)', color: unknownAnswer ? 'var(--text-muted)' : isCorrect ? 'var(--success)' : 'var(--danger)' }}>{unknownAnswer ? '−' : isCorrect ? 'O' : 'X'}</span>
-                    </div>
-                    <div style={{ display:'flex', flexDirection:'column', alignItems:'flex-end', gap:2, marginTop:6, paddingLeft:36 }}>
-                      {!unknownAnswer && !isCorrect && myLabel != null && (
-                        <span style={{ fontSize:11, color:'var(--danger)' }}>내 답: {myLabel}. {q.opts[myIdx]}</span>
-                      )}
-                      <span style={{ fontSize:11, color:'var(--text-muted)' }}>
-                        정답: {unknownAnswer ? '(서버 채점)' : `${correctLabel}. ${q.opts[correctIdx]}`}
-                      </span>
-                    </div>
-                  </div>
-                )
-              })}
+              }) : (
+                <div style={{ padding:'24px', textAlign:'center', color:'var(--text-muted)', fontSize:13 }}>문항별 채점 결과를 불러오지 못했습니다.</div>
+              )}
             </div>
           )}
         </div>
@@ -465,20 +436,29 @@ export default function Exam() {
     const token = sessionStorage.getItem('token')
     fetch('/api/exam/assigned-name', { headers: token ? { Authorization: `Bearer ${token}` } : {} })
       .then(res => res.ok ? res.json() : null)
-      .then(data => { if (data?.name) setExamName(data.name) })
+      .then(data => {
+        if (!data) return
+        if (data.name) setExamName(data.name)
+        if (data.duration_min != null) setAssignedDurationMin(data.duration_min)
+        if (data.question_count != null) setAssignedQuestionCount(data.question_count)
+      })
       .catch(() => {})
   }, [])
 
   const [screen, setScreen] = useState('identity')
   const [showAdminNotice, setShowAdminNotice] = useState(sessionStorage.getItem('role') === 'admin')
   const [showExitConfirm, setShowExitConfirm] = useState(false)
-  const [questions, setQuestions] = useState([...MOCK_QUESTIONS])
-  const [answers, setAnswers] = useState(new Array(25).fill(null))
-  const [bookmarks, setBookmarks] = useState(new Array(25).fill(false))
+  const [questions, setQuestions] = useState([])
+  const [answers, setAnswers] = useState([])
+  const [bookmarks, setBookmarks] = useState([])
   const [currentQ, setCurrentQ] = useState(0)
   const [timerSeconds, setTimerSeconds] = useState(3600)
   const [resultId, setResultId] = useState(null)
   const [examName, setExamName] = useState('OJT 기초고사')
+  const [assignedDurationMin, setAssignedDurationMin] = useState(null)
+  const [assignedQuestionCount, setAssignedQuestionCount] = useState(null)
+  const [startError, setStartError] = useState('')
+  const [submitError, setSubmitError] = useState('')
   const [score, setScore] = useState(null)
   const [pass, setPass] = useState(null)
   const [submitResults, setSubmitResults] = useState(null)
@@ -508,7 +488,13 @@ export default function Exam() {
   useEffect(() => {
     if (screen !== 'exam' && screen !== 'confirm') return
 
-    const forceLogout = () => {
+    const reportExit = (reason) => {
+      if (!sessionStorage.getItem('token')) return
+      apiFetch('POST', '/api/exam/exit-event', { reason, result_id: resultId || '' }).catch(() => {})
+    }
+
+    const forceLogout = (reason) => {
+      reportExit(reason)
       stopTimer()
       apiLogout(navigate)
     }
@@ -535,19 +521,19 @@ export default function Exam() {
     // PrintScreen은 OS가 브라우저보다 먼저 가로채는 경우가 많아 keydown이 아닌
     // keyup에서만 감지되는 환경이 있음(그마저도 100% 보장되지 않음)
     const handleKeyUp = (e) => {
-      if (e.key === 'PrintScreen') forceLogout()
+      if (e.key === 'PrintScreen') forceLogout('print_screen')
     }
 
     const handleContextMenu = (e) => e.preventDefault()
 
     // 탭 전환, 홈키(화면 최소화) 등으로 페이지가 가려지면 즉시 로그아웃
     const handleVisibilityChange = () => {
-      if (document.hidden) forceLogout()
+      if (document.hidden) forceLogout('tab_switch')
     }
 
     // 뒤로가기 감지: 더미 history 항목을 쌓아 popstate로만 감지되게 하고 즉시 로그아웃
     // exam <-> confirm 전환마다 effect가 재실행되므로, 더미 항목은 세션당 한 번만 push해 history 스택 누적을 방지
-    const handlePopState = () => forceLogout()
+    const handlePopState = () => forceLogout('back_navigation')
     if (!historyGuardPushedRef.current) {
       window.history.pushState(null, '', window.location.href)
       historyGuardPushedRef.current = true
@@ -567,10 +553,11 @@ export default function Exam() {
       document.removeEventListener('visibilitychange', handleVisibilityChange)
       window.removeEventListener('popstate', handlePopState)
     }
-  }, [screen])
+  }, [screen, resultId])
 
   async function handleStart() {
     setScreen('loading')
+    setStartError('')
     // empInfo.team은 로그인 응답에서 그대로 저장된 실제 team_code(T1/T2/T3)이므로
     // 별도 변환 없이 그대로 사용한다 (과거에는 '2'/'3' 접두사로 재추정했는데,
     // 팀 코드가 'T1'/'T2'/'T3' 형태라 항상 T1로 오판정되는 버그가 있었음)
@@ -582,22 +569,31 @@ export default function Exam() {
         headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ team_code: teamCode, employee_id: empInfo.empno }),
       })
-      if (res.ok) {
-        const data = await res.json()
-        setResultId(data.result_id)
-        if (data.name) setExamName(data.name)
-        if (data.duration_min) setTimerSeconds(data.duration_min * 60)
-        const qs = data.questions.map(q => ({
-          id: q.id, cat: q.category, diff: q.difficulty || '중',
-          q: q.question, opts: [q.options.A, q.options.B, q.options.C, q.options.D], ans: -1,
-        }))
-        setQuestions(qs)
-        setAnswers(new Array(qs.length).fill(null))
-        setBookmarks(new Array(qs.length).fill(false))
+      if (!res.ok) {
+        // 과거에는 이 실패를 무음으로 삼키고 하드코딩된 25문항 모의시험으로 조용히 진행시켰다 —
+        // 응시자가 실제로는 시험을 못 받았는데도 정상 진행되는 것처럼 보이는 문제가 있었다.
+        const err = await res.json().catch(() => null)
+        setStartError(apiErrorMessage(err, res.status))
+        setScreen('identity')
+        return
       }
-    } catch { /* mock fallback */ }
-    setScreen('exam')
-    startTimer()
+      const data = await res.json()
+      setResultId(data.result_id)
+      if (data.name) setExamName(data.name)
+      if (data.duration_min) setTimerSeconds(data.duration_min * 60)
+      const qs = data.questions.map(q => ({
+        id: q.id, cat: q.category, diff: q.difficulty || '중',
+        q: q.question, opts: [q.options.A, q.options.B, q.options.C, q.options.D], ans: -1,
+      }))
+      setQuestions(qs)
+      setAnswers(new Array(qs.length).fill(null))
+      setBookmarks(new Array(qs.length).fill(false))
+      setScreen('exam')
+      startTimer()
+    } catch {
+      setStartError('네트워크 오류로 시험을 시작하지 못했습니다. 인터넷 연결을 확인한 후 다시 시도해주세요.')
+      setScreen('identity')
+    }
   }
 
   function handleSelectAnswer(qIdx, optIdx, navOnly = false) {
@@ -611,39 +607,40 @@ export default function Exam() {
     setBookmarks(prev => { const next = [...prev]; next[qIdx] = !next[qIdx]; return next })
   }
 
-  function calculateScore(qs, ans) {
-    let correct = 0
-    qs.forEach((q, i) => { if (ans[i] === q.ans) correct++ })
-    return Math.round((correct / qs.length) * 100)
-  }
-
   async function handleSubmit() {
     stopTimer()
     setScreen('scoring')
-    if (resultId) {
-      try {
-        const LMAP = ['A','B','C','D']
-        const answersDict = {}
-        const timesDict = {}
-        questions.forEach((q, i) => { answersDict[q.id] = answers[i] !== null ? LMAP[answers[i]] : ''; timesDict[q.id] = 30 })
-        const token = sessionStorage.getItem('token')
-        const res = await fetch('/api/exam/submit', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-          body: JSON.stringify({ result_id: resultId, answers: answersDict, response_times: timesDict, employee_id: empInfo.empno, name: empInfo.name }),
-        })
-        if (res.ok) {
-          const data = await res.json()
-          setScore(data.score)
-          setPass(typeof data.pass === 'boolean' ? data.pass : null)
-          setSubmitResults(data.results || null)
-          setTimeout(() => setScreen('result'), 2000)
-          return
-        }
-      } catch { /* fallback */ }
+    setSubmitError('')
+    const LMAP = ['A','B','C','D']
+    const answersDict = {}
+    const timesDict = {}
+    questions.forEach((q, i) => { answersDict[q.id] = answers[i] !== null ? LMAP[answers[i]] : ''; timesDict[q.id] = 30 })
+    const token = sessionStorage.getItem('token')
+    try {
+      const res = await fetch('/api/exam/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        // result_id를 그대로 재사용하는 재시도는 백엔드에서 같은 결과를 반환하므로(멱등),
+        // 이 함수를 재호출(재제출)해도 중복 채점·중복 저장이 발생하지 않는다.
+        body: JSON.stringify({ result_id: resultId, answers: answersDict, response_times: timesDict, employee_id: empInfo.empno, name: empInfo.name }),
+      })
+      if (!res.ok) {
+        // 과거에는 이 실패를 무음으로 삼키고 서버가 정답을 숨긴 문항으로 로컬 채점(항상 0점)한 뒤
+        // 화면 하단에 "결과가 저장되었습니다"라고 거짓 안내하는 심각한 버그가 있었다.
+        const err = await res.json().catch(() => null)
+        setSubmitError(apiErrorMessage(err, res.status))
+        setScreen('submit-error')
+        return
+      }
+      const data = await res.json()
+      setScore(data.score)
+      setPass(typeof data.pass === 'boolean' ? data.pass : null)
+      setSubmitResults(data.results || null)
+      setTimeout(() => setScreen('result'), 2000)
+    } catch {
+      setSubmitError('네트워크 오류로 제출하지 못했습니다. 인터넷 연결을 확인한 후 다시 시도해주세요.')
+      setScreen('submit-error')
     }
-    setScore(calculateScore(questions, answers))
-    setTimeout(() => setScreen('result'), 2000)
   }
 
   handleSubmitRef.current = handleSubmit
@@ -654,7 +651,7 @@ export default function Exam() {
 
   return (
     <>
-      {screen === 'identity' && <IdentityScreen empInfo={empInfo} examName={examName} onStart={handleStart} />}
+      {screen === 'identity' && <IdentityScreen empInfo={empInfo} examName={examName} durationMin={assignedDurationMin} questionCount={assignedQuestionCount} error={startError} onStart={handleStart} />}
       {(screen === 'exam' || screen === 'confirm') && (
         <ExamScreen
           questions={questions}
@@ -675,6 +672,7 @@ export default function Exam() {
       )}
       {screen === 'loading' && <ScoringScreen title="로그인 중입니다..." sub="잠시만 기다려주세요" />}
       {screen === 'scoring' && <ScoringScreen title="채점 중입니다..." sub="잠시만 기다려주세요" />}
+      {screen === 'submit-error' && <SubmitErrorScreen message={submitError} onRetry={handleSubmit} />}
       {showAdminNotice && (
         <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:100 }}>
           <div style={{ background:'white', borderRadius:20, padding:'40px 36px', width:'90%', maxWidth:380, boxShadow:'0 20px 60px rgba(0,0,0,0.25)', textAlign:'center' }}>
@@ -694,7 +692,7 @@ export default function Exam() {
         />
       )}
       {screen === 'result' && score !== null && (
-        <ResultScreen empInfo={empInfo} examName={examName} questions={questions} answers={answers} score={score} pass={pass} submitResults={submitResults} onFinish={handleFinish} />
+        <ResultScreen empInfo={empInfo} examName={examName} score={score} pass={pass} submitResults={submitResults} onFinish={handleFinish} />
       )}
     </>
   )

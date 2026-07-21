@@ -2687,8 +2687,13 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
   const [questionsModalLoading, setQuestionsModalLoading] = useState(false)
   const assigneeRequestSequence = useRef(0)
 
+  // 방어적 필터: 백엔드가 exam_id 없는 레코드를 걸러내더라도, 혹시 남아있으면
+  // 문제 목록 보기/삭제 버튼이 빈 경로(/api/admin/exam-sets//questions, /api/admin/exam-sets/)로
+  // 요청을 보내 SPA 폴백(JSON 파싱 에러)이나 405로 깨지는 일이 없도록 목록에서 아예 제외한다.
+  const validSets = list => (list || []).filter(s => s?.exam_id)
+
   function loadSets() {
-    return apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(d.sets || [])).catch(() => {})
+    return apiFetch('GET', '/api/admin/exam-sets').then(d => setSets(validSets(d.sets))).catch(() => {})
   }
 
   useEffect(() => {
@@ -2758,7 +2763,7 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
         apiFetch('GET', '/api/admin/exam-sets'),
         loadAssignees(viewedSetId),
       ])
-      setSets(setsData.sets || [])
+      setSets(validSets(setsData.sets))
     } catch (e) { setAssignError(e.message) }
     finally { setAssigning(false) }
   }
@@ -2771,7 +2776,7 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
         apiFetch('GET', '/api/admin/exam-sets'),
         loadAssignees(viewedSetId),
       ])
-      setSets(setsData.sets || [])
+      setSets(validSets(setsData.sets))
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
   }
 
@@ -2783,7 +2788,7 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
       toast('시험세트가 삭제됐습니다.')
       if (viewedSetId === setId) onSelectExam(null)
       const setsData = await apiFetch('GET', '/api/admin/exam-sets')
-      setSets(setsData.sets || [])
+      setSets(validSets(setsData.sets))
     } catch (e) { toast(`오류: ${e.message}`, 'error') }
   }
 

@@ -60,11 +60,72 @@ def _pick_by_difficulty(pool: list, dist: dict) -> list:
     return result
 
 
-def get_assigned_exam_name(employee_id: str) -> str:
+def _assigned_question_count(assigned_set: dict) -> int:
+    """확정(frozen) 시험이면 exam_set_items 스냅샷 문항 수를, 아니면 legacy question_ids 길이를 쓴다.
+    응시 시작(_start_frozen_exam_session) 없이 개수만 조회하므로 attempt를 만들지 않는다."""
+    from services.exams.dual_write import get_exam_write_policy
+
+    policy = get_exam_write_policy()
+    if policy.frozen_exams:
+        from repositories import exam_v2_repo
+
+        if exam_v2_repo is not None:
+            try:
+                exam_set_id = assigned_set.get("exam_set_id", "")
+                version = exam_v2_repo.find_current_version(exam_set_id)
+                if version is not None:
+                    items = exam_v2_repo.list_version_items(
+                        exam_set_id, _positive_int(version.get("version_no"), 0)
+                    )
+                    if items:
+                        return len(items)
+            except Exception:
+                logging.exception("frozen exam question count lookup failed")
+    return len(assigned_set.get("question_ids", []) or [])
+
+
+_EXIT_REASON_LABELS = {
+    "tab_switch": "탭 전환/화면 이탈",
+    "back_navigation": "뒤로가기 시도",
+    "print_screen": "화면 캡처 시도",
+}
+
+
+def record_exam_exit_event(employee_id: str, name: str, reason: str, result_id: str = "") -> None:
+    """응시 중 이탈(탭 전환·뒤로가기·화면 캡처·새로고침) 감지 시 감사 로그에 기록한다.
+    관리자 액션 감사(admin_service._record_audit)와 동일한 audit_repo를 쓰되, 실제 작업(로그아웃)을
+    막지 않도록 최선 노력으로만 기록한다."""
+    from repositories import audit_repo
+
+    if audit_repo is None:
+        return
+    try:
+        audit_repo.record(
+            actor_id=f"{name}({employee_id})" if name else employee_id,
+            actor_role="candidate",
+            action_type="EXAM_EXIT",
+            target_type="exam_result",
+            target_id=result_id or "",
+            reason=_EXIT_REASON_LABELS.get(reason, reason),
+        )
+    except Exception:
+        logging.exception("exam exit event audit write failed for %s", employee_id)
+
+
+def get_assigned_exam_preview(employee_id: str) -> dict:
+    """로그인 직후~응시 시작 전 화면에 보여줄 시험명·시험시간·문항수 (시험 생성/응시 세션 시작 없이 조회만)."""
     assigned_set = _find_assigned_exam_set(employee_id)
     if not assigned_set:
-        return DEFAULT_EXAM_NAME
-    return assigned_set.get("name") or DEFAULT_EXAM_NAME
+        return {
+            "name": DEFAULT_EXAM_NAME,
+            "duration_min": DEFAULT_DURATION_MIN,
+            "question_count": 0,
+        }
+    return {
+        "name": assigned_set.get("name") or DEFAULT_EXAM_NAME,
+        "duration_min": _resolve_duration_min(assigned_set),
+        "question_count": _assigned_question_count(assigned_set),
+    }
 
 
 def _filter_by_exam_count(pool: list, max_exam_count: int | None) -> list:
@@ -93,6 +154,18 @@ def _positive_int(value, default: int) -> int:
     except (TypeError, ValueError):
         return default
     return parsed if parsed >= 0 else default
+
+
+def _resolve_duration_min(assigned_set: dict | None) -> int:
+    """배정된 exam_set에서 시험 시간(분)을 읽는다. duration_min(legacy 필드) 우선,
+    없으면 duration_minutes(canonical 필드), 둘 다 없거나 0 이하면 기본값."""
+    if not assigned_set:
+        return DEFAULT_DURATION_MIN
+    duration_min = _positive_int(
+        assigned_set.get("duration_min", assigned_set.get("duration_minutes", DEFAULT_DURATION_MIN)),
+        DEFAULT_DURATION_MIN,
+    )
+    return duration_min if duration_min >= 1 else DEFAULT_DURATION_MIN
 
 
 def _frozen_question(item: dict) -> dict:
@@ -281,19 +354,7 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
     if frozen_session is None:
         result_id = str(uuid.uuid4())
         session_meta = {}
-    duration_min = (
-        _positive_int(
-            assigned_set.get(
-                "duration_min",
-                assigned_set.get("duration_minutes", DEFAULT_DURATION_MIN),
-            ),
-            DEFAULT_DURATION_MIN,
-        )
-        if assigned_set
-        else DEFAULT_DURATION_MIN
-    )
-    if duration_min < 1:
-        duration_min = DEFAULT_DURATION_MIN
+    duration_min = _resolve_duration_min(assigned_set)
 
     if not preview:
         # 스냅샷 저장 (approved 문제 정보 + 정답 고정)
@@ -390,6 +451,14 @@ def _legacy_score_and_save(
     r_repo,
 ) -> dict:
     """기존 동적 시험의 채점 계약을 변경하지 않고 유지한다."""
+    if not skip_save:
+        existing = r_repo.get_result(result_id)
+        if existing is not None:
+            # 같은 result_id 재제출(응답 유실 후 재시도 등)은 다시 채점하지 않고 기존 결과를
+            # 그대로 반환한다 — 매번 새 submitted_at으로 다시 채점해 append_result에 넘기면
+            # 불변 결과 저장소(Sheets/Local 둘 다)가 재시도 시 이전 저장값과 달라 immutable
+            # conflict(500)를 던지고, 재시도할수록 결과 화면에 영원히 도달하지 못하는 문제가 있었다.
+            return existing
     meta = snapshot.get("_meta", {})
     results = []
     score = 0

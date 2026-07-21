@@ -213,4 +213,19 @@ describe('routed latest-main exam management', () => {
     await userEvent.click(within(row).getByTitle('삭제'))
     await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent(/^\/admin\/exams$/))
   })
+
+  it('never renders or requests a Sheets row with a blank exam_id (orphaned "ghost" exam)', async () => {
+    const setsWithGhost = [
+      ...sets,
+      { exam_id: '', exam_set_id: '', name: '', team_code: '', exam_datetime: '', duration_min: 60, pass_score: 70, evaluation_type: 'official', assigned_users: [] },
+    ]
+    vi.mocked(apiFetch).mockImplementation((method, path, body) => {
+      if (method === 'GET' && path === '/api/admin/exam-sets') return Promise.resolve({ sets: setsWithGhost })
+      return mockBase(method, path, body)
+    })
+    renderAdmin()
+    await screen.findByText('관리 시험 1')
+
+    expect(apiFetch.mock.calls.some(([, path]) => path.includes('//') || path === '/api/admin/exam-sets/')).toBe(false)
+  })
 })
