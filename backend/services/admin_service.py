@@ -1677,6 +1677,7 @@ def bulk_upload_users(csv_text: str) -> dict:
 
     from repositories import user_repo
     from repositories.local_json import load_local_admins
+    from datetime import datetime
 
     all_ids = {u["employee_id"] for u in user_repo.list_users()} | {a["employee_id"] for a in load_local_admins()}
     success, skipped, errors = 0, 0, 0
@@ -1685,7 +1686,6 @@ def bulk_upload_users(csv_text: str) -> dict:
             eid = (row.get("employee_id") or "").strip()
             name = (row.get("name") or "").strip()
             team = (row.get("team_code") or "").strip()
-            exam_date = (row.get("exam_date") or "").strip()
             if not eid or not name:
                 errors += 1
                 continue
@@ -1698,7 +1698,7 @@ def bulk_upload_users(csv_text: str) -> dict:
                 "name": name,
                 "team": team,
                 "role": "examinee",
-                "exam_date": exam_date,
+                "approved_date": datetime.now().isoformat(),
                 "approved": True,
             })
             all_ids.add(eid)
