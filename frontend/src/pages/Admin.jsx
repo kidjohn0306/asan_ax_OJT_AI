@@ -665,7 +665,8 @@ function UpcomingExamsCalendar({ examSets }) {
   return (
     <Card
       title="시험 일정"
-      style={{ marginBottom:0, width:'100%' }}
+      style={{ marginBottom:0, width:'100%', height:'100%', display:'flex', flexDirection:'column' }}
+      bodyStyle={{ flex:1 }}
       action={
         <div style={{ display:'flex', alignItems:'center', gap:10, fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>
           <div style={{ display:'flex', alignItems:'center', gap:4 }}>
