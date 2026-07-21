@@ -366,7 +366,7 @@ function UpcomingExamsCalendar({ examSets }) {
   return (
     <Card
       title="시험 일정"
-      style={{ marginBottom:16, maxWidth:'50%' }}
+      style={{ marginBottom:0, width:'100%' }}
       action={
         <div style={{ display:'flex', alignItems:'center', gap:10, fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>
           <div style={{ display:'flex', alignItems:'center', gap:4 }}>
@@ -656,18 +656,23 @@ function Dashboard({ onNavigate }) {
         )}
       </Card>
 
-      <Card title="빠른 실행">
-        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-          {quickActions.map(([icon, label, view]) => (
-            <button key={view} onClick={() => onNavigate(view)}
-              style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1px solid var(--border)', borderRadius:8, background:'white', fontFamily:'var(--font)', fontSize:13, fontWeight:600, color:'var(--text)', cursor:'pointer' }}>
-              <Icon name={icon} size={14} style={{ opacity:0.55 }} />{label}
-            </button>
-          ))}
+      <div style={{ display:'flex', gap:16, alignItems:'flex-start' }}>
+        <div style={{ flex:'0 0 40%', minWidth:0 }}>
+          <Card title="빠른 실행">
+            <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+              {quickActions.map(([icon, label, view]) => (
+                <button key={view} onClick={() => onNavigate(view)}
+                  style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1px solid var(--border)', borderRadius:8, background:'white', fontFamily:'var(--font)', fontSize:13, fontWeight:600, color:'var(--text)', cursor:'pointer' }}>
+                  <Icon name={icon} size={14} style={{ opacity:0.55 }} />{label}
+                </button>
+              ))}
+            </div>
+          </Card>
         </div>
-      </Card>
-
-      <UpcomingExamsCalendar examSets={examSets} />
+        <div style={{ flex:'0 0 60%', minWidth:0 }}>
+          <UpcomingExamsCalendar examSets={examSets} />
+        </div>
+      </div>
 
       {modal && (
         <Modal
