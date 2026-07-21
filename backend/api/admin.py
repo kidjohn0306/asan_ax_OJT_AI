@@ -79,6 +79,7 @@ class CreateExamSetRequest(BaseModel):
     question_ids: list[str]
     question_scores: Optional[dict[str, int]] = None
     evaluation_type: Literal["official", "practice"] = "official"
+    exam_category: Literal["exam_study", "exam_test"] = "exam_study"
     idempotency_key: str = ""
 
 
@@ -307,6 +308,7 @@ def create_exam_set(body: CreateExamSetRequest, actor: dict = Depends(require_ad
         created_by=actor.get("sub", ""),
         question_scores=body.question_scores,
         evaluation_type=body.evaluation_type,
+        exam_category=body.exam_category,
         idempotency_key=body.idempotency_key,
         created_by_name=actor.get("name", ""),
     )

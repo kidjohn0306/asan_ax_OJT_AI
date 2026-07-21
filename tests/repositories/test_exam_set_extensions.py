@@ -34,12 +34,14 @@ class ExamSetExtensionTests(unittest.TestCase):
             "current_exam_version_id": "ver-2",
             "idempotency_key": "request-1",
             "duration_minutes": "90",
+            "exam_category": "exam_test",
         }
         row = [values.get(header, "") for header in headers]
 
         parsed = SheetsExamSetRepository._row_to_dict(row)
 
         self.assertEqual(parsed["evaluation_type"], "practice")
+        self.assertEqual(parsed["exam_category"], "exam_test")
         self.assertEqual(parsed["blueprint_json"], {"scores": {"Q1": 100}})
         self.assertEqual(parsed["frozen_by"], "admin-1")
         self.assertEqual(parsed["paper_version"], 2)
@@ -61,7 +63,7 @@ class ExamSetExtensionTests(unittest.TestCase):
 
         self.assertEqual(
             values.get.call_args.kwargs["range"],
-            "exam_sets!A:AH",
+            "exam_sets!A:AI",
         )
 
     def test_extended_columns_use_canonical_column_letters(self):
@@ -76,6 +78,7 @@ class ExamSetExtensionTests(unittest.TestCase):
         self.assertEqual(_COLUMNS["current_exam_version_id"], "AG")
         self.assertEqual(_COLUMNS["idempotency_key"], "AH")
         self.assertEqual(_COLUMNS["duration_min"], "X")
+        self.assertEqual(_COLUMNS["exam_category"], "AI")
 
     def test_update_serializes_extended_json_and_writes_exact_columns(self):
         repo = SheetsExamSetRepository.__new__(SheetsExamSetRepository)

@@ -132,7 +132,10 @@ class ExamCreationDualWriteTests(unittest.TestCase):
             result = admin_service.create_exam_set(
                 "시험", "T1", ["Q1"], created_by="admin-1"
             )
-        self.assertEqual(self.events, ["legacy"])
+        # exam_category는 Phase4 dual-write 플래그와 무관하게 항상 기록되므로
+        # legacy 전용 모드에서도 legacy_metadata 갱신 1건은 발생한다(v2는 여전히 호출되지 않음).
+        self.assertEqual(self.events, ["legacy", "legacy_metadata"])
+        self.assertEqual(result["exam_category"], "exam_study")
         self.assertEqual(result["question_ids"], ["Q1"])
         self.assertEqual(result["evaluation_type"], "official")
         self.assertEqual(result["total_score"], 100)

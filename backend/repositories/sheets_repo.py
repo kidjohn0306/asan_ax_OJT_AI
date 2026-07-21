@@ -316,7 +316,7 @@ class SheetsExamSetRepository(ExamSetRepository):
         """헤더를 제외한 데이터 행 반환 (raw list)."""
         res = self._values().get(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{SHEET_TAB}!A:AH",
+            range=f"{SHEET_TAB}!A:AI",
         ).execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -370,6 +370,7 @@ class SheetsExamSetRepository(ExamSetRepository):
             "current_exam_version_id": _field("current_exam_version_id"),
             "idempotency_key": _field("idempotency_key"),
             "duration_min": duration_min,
+            "exam_category": _field("exam_category") or "exam_study",
         }
 
     @staticmethod

@@ -53,7 +53,9 @@ class AdminExamDualWriteApiTests(unittest.TestCase):
             created_by="admin001",
             question_scores={"Q1": 60, "Q2": 40},
             evaluation_type="practice",
+            exam_category="exam_study",
             idempotency_key="request-1",
+            created_by_name="",
         )
 
     def test_create_exam_forwards_compatible_defaults(self):
@@ -78,7 +80,9 @@ class AdminExamDualWriteApiTests(unittest.TestCase):
             created_by="admin001",
             question_scores=None,
             evaluation_type="official",
+            exam_category="exam_study",
             idempotency_key="",
+            created_by_name="",
         )
 
     def test_from_paper_forwards_type_key_and_actor(self):
@@ -106,6 +110,7 @@ class AdminExamDualWriteApiTests(unittest.TestCase):
             exam_datetime=None,
             pass_score=None,
             duration_min=None,
+            created_by_name="",
         )
 
     def test_from_paper_forwards_schedule_score_and_duration(self):
@@ -133,6 +138,7 @@ class AdminExamDualWriteApiTests(unittest.TestCase):
             exam_datetime="2026-07-20T09:00",
             pass_score=80,
             duration_min=90,
+            created_by_name="",
         )
 
     def test_invalid_evaluation_type_is_422(self):
@@ -144,6 +150,19 @@ class AdminExamDualWriteApiTests(unittest.TestCase):
                 "team_code": "T1",
                 "question_ids": ["Q1"],
                 "evaluation_type": "unknown",
+            },
+        )
+        self.assertEqual(response.status_code, 422)
+
+    def test_invalid_exam_category_is_422(self):
+        response = self.client.post(
+            "/api/admin/exam-sets",
+            headers=self.headers,
+            json={
+                "name": "잘못된 시험",
+                "team_code": "T1",
+                "question_ids": ["Q1"],
+                "exam_category": "unknown",
             },
         )
         self.assertEqual(response.status_code, 422)
