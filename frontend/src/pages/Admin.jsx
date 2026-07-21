@@ -401,16 +401,20 @@ function ActivityFeedList({ items, dense }) {
 
 function ActivityFeed({ items, onViewAll }) {
   return (
-    <Card title="최근 활동" style={{ height:'100%', display:'flex', flexDirection:'column', marginBottom:0 }} bodyStyle={{ flex:1, display:'flex', flexDirection:'column', overflowY:'auto', minHeight:0 }}>
+    <Card
+      title="최근 활동"
+      style={{ height:'100%', display:'flex', flexDirection:'column', marginBottom:0 }}
+      bodyStyle={{ flex:1, overflowY:'auto', minHeight:0 }}
+      action={
+        <button onClick={onViewAll} style={{ background:'none', border:'none', color:'var(--accent)', fontSize:12.5, fontWeight:700, cursor:'pointer', padding:0, fontFamily:'var(--font)' }}>
+          전체 보기 →
+        </button>
+      }
+    >
       {items === null ? (
         <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>불러오는 중...</p>
       ) : (
-        <>
-          <ActivityFeedList items={items} />
-          <button onClick={onViewAll} style={{ marginTop:10, background:'none', border:'none', color:'var(--accent)', fontSize:12.5, fontWeight:700, cursor:'pointer', padding:'8px 0 0', textAlign:'left', fontFamily:'var(--font)' }}>
-            전체 보기 →
-          </button>
-        </>
+        <ActivityFeedList items={items} />
       )}
     </Card>
   )
@@ -440,6 +444,35 @@ function ActivityLogModal({ onClose }) {
         </>
       )}
     </Modal>
+  )
+}
+
+function QuickActionsRow({ quickActions, onNavigate }) {
+  const scrollRef = useRef(null)
+
+  function scrollByPage(dir) {
+    scrollRef.current?.scrollBy({ left: dir * 240, behavior: 'smooth' })
+  }
+
+  const navBtnStyle = { width:28, height:28, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid var(--border)', borderRadius:8, background:'white', color:'var(--text-muted)', cursor:'pointer', padding:0 }
+
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+      <button onClick={() => scrollByPage(-1)} style={navBtnStyle} aria-label="이전">
+        <Icon name="chevronLeft" size={14} />
+      </button>
+      <div ref={scrollRef} style={{ display:'flex', gap:10, overflowX:'auto', flex:1, minWidth:0, scrollbarWidth:'none' }}>
+        {quickActions.map(([icon, label, view]) => (
+          <button key={view} onClick={() => onNavigate(view)}
+            style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1px solid var(--border)', borderRadius:8, background:'white', fontFamily:'var(--font)', fontSize:13, fontWeight:600, color:'var(--text)', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
+            <Icon name={icon} size={14} style={{ opacity:0.55 }} />{label}
+          </button>
+        ))}
+      </div>
+      <button onClick={() => scrollByPage(1)} style={navBtnStyle} aria-label="다음">
+        <Icon name="chevronRight" size={14} />
+      </button>
+    </div>
   )
 }
 
@@ -778,14 +811,7 @@ function Dashboard({ onNavigate }) {
       <div style={{ display:'flex', gap:16, alignItems:'stretch' }}>
         <div style={{ flex:'0 0 40%', minWidth:0, display:'flex', flexDirection:'column', gap:16 }}>
           <Card title="빠른 실행" style={{ marginBottom:0 }}>
-            <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-              {quickActions.map(([icon, label, view]) => (
-                <button key={view} onClick={() => onNavigate(view)}
-                  style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1px solid var(--border)', borderRadius:8, background:'white', fontFamily:'var(--font)', fontSize:13, fontWeight:600, color:'var(--text)', cursor:'pointer' }}>
-                  <Icon name={icon} size={14} style={{ opacity:0.55 }} />{label}
-                </button>
-              ))}
-            </div>
+            <QuickActionsRow quickActions={quickActions} onNavigate={onNavigate} />
           </Card>
           <div style={{ flex:1, minHeight:0 }}>
             <ActivityFeed items={activityItems} onViewAll={() => setActivityModalOpen(true)} />
