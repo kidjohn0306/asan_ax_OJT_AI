@@ -87,11 +87,19 @@ describe('planned admin domain routes', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/questions/generate/setup')
   })
 
+  // 카테고리(공통/팀/환경안전/일반상식) x 난이도(하/중/상) 조합마다 별도 POST 요청을 보내므로
+  // (한 번의 실행에 여러 콜이 나갈 수 있음), 첫 호출에만 문제를 실어 보내고 이후 호출은 빈 결과로
+  // 응답해 패널에 중복 행이 쌓이지 않게 한다.
   it('shows the questions just generated in the "생성된 문제" panel', async () => {
+    let callCount = 0
     apiFetch.mockImplementation((method, path) => {
-      if (method === 'POST' && path === '/api/admin/generate-ai-questions') return Promise.resolve({
-        questions: [{ id: 'Q-NEW-1', category: '공통', question: '새로 생성된 문제', difficulty: '중', gate_errors: [] }],
-      })
+      if (method === 'POST' && path === '/api/admin/generate-ai-questions') {
+        callCount += 1
+        if (callCount > 1) return Promise.resolve({ questions: [] })
+        return Promise.resolve({
+          questions: [{ id: 'Q-NEW-1', category: '공통', question: '새로 생성된 문제', difficulty: '중', gate_errors: [] }],
+        })
+      }
       return mockApi(method, path)
     })
     renderAdmin('/admin/questions/generate/setup')
@@ -104,10 +112,15 @@ describe('planned admin domain routes', () => {
   })
 
   it('flags a generated question that failed a gate as needing review', async () => {
+    let callCount = 0
     apiFetch.mockImplementation((method, path) => {
-      if (method === 'POST' && path === '/api/admin/generate-ai-questions') return Promise.resolve({
-        questions: [{ id: 'Q-NEW-2', category: '공통', question: '게이트 실패 문제', difficulty: '상', gate_errors: ['V01'] }],
-      })
+      if (method === 'POST' && path === '/api/admin/generate-ai-questions') {
+        callCount += 1
+        if (callCount > 1) return Promise.resolve({ questions: [] })
+        return Promise.resolve({
+          questions: [{ id: 'Q-NEW-2', category: '공통', question: '게이트 실패 문제', difficulty: '상', gate_errors: ['V01'] }],
+        })
+      }
       return mockApi(method, path)
     })
     renderAdmin('/admin/questions/generate/setup')

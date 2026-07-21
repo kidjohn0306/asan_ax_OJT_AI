@@ -402,15 +402,15 @@ def _calc_diff_dist(results: list) -> dict:
 def fetch_questions(team=None, category=None, status=None) -> dict:
     q_repo, _, _ = _get_repos()
 
-    if status:
-        questions = q_repo.list_by_status(status)
+    data = q_repo.get_all_questions()
+    if team:
+        team_key = TEAM_KEY_MAP.get(team, team)
+        questions = data.get(team_key, [])
     else:
-        data = q_repo.get_all_questions()
-        if team:
-            team_key = TEAM_KEY_MAP.get(team, team)
-            questions = data.get(team_key, [])
-        else:
-            questions = [q for pool in data.values() for q in pool]
+        questions = [q for pool in data.values() for q in pool]
+
+    if status:
+        questions = [q for q in questions if q.get("status") == status]
 
     if category:
         questions = [q for q in questions if q.get("category") == category]
