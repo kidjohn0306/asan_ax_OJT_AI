@@ -454,9 +454,15 @@ function Dashboard({ onNavigate }) {
   const [modal, setModal] = useState(null)
   const [modalData, setModalData] = useState(null)
   const [modalLoading, setModalLoading] = useState(false)
+  const [users, setUsers] = useState([])
+  const [reviewingCount, setReviewingCount] = useState(null)
+  const [resultsSummary, setResultsSummary] = useState(null)
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/exam-sets').then(d => setExamSets(d.sets || [])).catch(() => {})
+    apiFetch('GET', '/api/admin/users').then(d => setUsers(d.users || [])).catch(() => {})
+    apiFetch('GET', '/api/admin/reviewing-question-count').then(d => setReviewingCount(d.count ?? 0)).catch(() => {})
+    apiFetch('GET', '/api/admin/results-analysis').then(d => setResultsSummary(d.summary || null)).catch(() => {})
   }, [])
 
   useEffect(() => { setExamPage(1) }, [examStatusFilter])
@@ -520,8 +526,56 @@ function Dashboard({ onNavigate }) {
     ['chart', '결과 분석',      'results'],
   ]
 
+  const scheduledCount = examSets.filter(s => getExamStatus(s.exam_datetime, s.duration_min) === 'scheduled').length
+
+  const weekStart = (() => {
+    const d = new Date()
+    const day = d.getDay()
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1) // 이번 주 월요일
+    d.setDate(diff)
+    d.setHours(0, 0, 0, 0)
+    return d
+  })()
+  const weeklyRegisteredCount = users.filter(u => u.approved_date && new Date(u.approved_date) >= weekStart).length
+
+  const hasResults = resultsSummary && resultsSummary.count > 0
+  const avgScoreLabel = hasResults ? `${Math.round(resultsSummary.avg_score * 10) / 10}점` : '-'
+  const passRateLabel = hasResults ? `합격률 ${Math.round((resultsSummary.pass_count / resultsSummary.count) * 100)}%` : '응시 기록 없음'
+
+  const kpiCards = [
+    { icon:'clock', label:'예정 시험수', value: `${scheduledCount}건`, sub:'예정 상태 시험', view:'exam-assign', color:'var(--accent)' },
+    { icon:'check', label:'미검수 문제 대기', value: reviewingCount === null ? '-' : `${reviewingCount}건`, sub:'검수 대기 중', view:'q-review', color:'var(--warning)' },
+    { icon:'user',  label:'이번주 등록 인원', value:`${weeklyRegisteredCount}명`, sub:'이번 주 승인', view:'users', color:'var(--success)' },
+    { icon:'chart', label:'평균 점수', value: avgScoreLabel, sub: passRateLabel, view:'results', color:'var(--primary)' },
+  ]
+
   return (
     <div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:14, marginBottom:16 }}>
+        {kpiCards.map(k => (
+          <button
+            key={k.label}
+            onClick={() => onNavigate(k.view)}
+            style={{
+              display:'flex', flexDirection:'column', gap:10, textAlign:'left', cursor:'pointer',
+              background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+              padding:'18px 20px', fontFamily:'var(--font)', transition:'border-color .15s, transform .15s, box-shadow .15s',
+            }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = k.color; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.06)' }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none' }}
+          >
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ width:28, height:28, borderRadius:8, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', color:k.color, background:`color-mix(in srgb, ${k.color} 14%, transparent)` }}>
+                <Icon name={k.icon} size={15} />
+              </div>
+              <span style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)' }}>{k.label}</span>
+            </div>
+            <div style={{ fontSize:26, fontWeight:800, color:'var(--text)', fontVariantNumeric:'tabular-nums', letterSpacing:'-0.5px' }}>{k.value}</div>
+            <div style={{ fontSize:11.5, color:'var(--text-muted)' }}>{k.sub}</div>
+          </button>
+        ))}
+      </div>
+
       <Card
         title="시험 관리"
         noPad
