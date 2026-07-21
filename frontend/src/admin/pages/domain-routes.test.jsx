@@ -50,7 +50,6 @@ function mockApi(method, path) {
   if (path === '/api/admin/system-status') return Promise.resolve({ ai_provider: 'mock' })
   if (path.startsWith('/api/admin/materials/status')) return Promise.resolve({ has_new_any: false, categories: {} })
   if (path.startsWith('/api/admin/materials/list')) return Promise.resolve({ categories: {} })
-  if (path.startsWith('/api/admin/logs')) return Promise.resolve({ logs: [] })
   if (path === '/api/admin/generation-jobs') return Promise.resolve({ jobs: [], enabled: true })
   if (path === '/api/admin/audit-logs') return Promise.resolve({ logs: [], enabled: true })
   return Promise.resolve({ sets: [] })
@@ -64,7 +63,6 @@ describe('planned admin domain routes', () => {
 
   it.each([
     ['/admin/questions/review', '검수 대기'],
-    ['/admin/results', '응시 결과'],
     ['/admin/teams', '팀 관리'],
   ])('renders the planned title for %s', async (path, title) => {
     renderAdmin(path)
@@ -73,7 +71,6 @@ describe('planned admin domain routes', () => {
 
   it.each([
     ['/admin/questions/Q-1/history', '/admin/questions/Q-1'],
-    ['/admin/results/R-1', '/admin/results'],
   ])('shows an honest unavailable state for %s', async (path, backHref) => {
     renderAdmin(path)
     expect(await screen.findByText('현재 API에서 제공되지 않는 기능입니다')).toBeInTheDocument()
@@ -215,15 +212,5 @@ describe('query string filter history', () => {
 
     expect((await screen.findAllByText('승인 문제')).length).toBeGreaterThan(0)
     expect(apiFetch).toHaveBeenLastCalledWith('GET', '/api/admin/questions?category=%EA%B3%B5%ED%86%B5&status=approved&')
-  })
-
-  it('initializes result filters and pushes search changes', async () => {
-    renderAdmin('/admin/results?team=T2&from=2026-07-01&to=2026-07-31&q=%EA%B9%80')
-    fireEvent.click(await screen.findByRole('button', { name: '조회' }))
-    expect(apiFetch).toHaveBeenCalledWith('GET', '/api/admin/logs?team=T2&date_from=2026-07-01&date_to=2026-07-31&')
-    expect(screen.getByPlaceholderText('이름 검색')).toHaveValue('김')
-
-    fireEvent.change(screen.getByPlaceholderText('이름 검색'), { target: { value: '박' } })
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('q=%EB%B0%95'))
   })
 })

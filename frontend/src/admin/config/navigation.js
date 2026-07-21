@@ -26,7 +26,6 @@ export const ADMIN_NAVIGATION = [
   {
     label: '결과 관리',
     items: [
-      { label: '응시 결과', path: '/admin/results', view: 'history' },
       { label: '결과 분석', path: '/admin/analytics', view: 'results' },
     ],
   },
@@ -65,7 +64,6 @@ const LEGACY_VIEW_PATHS = {
   'exam-sheet': '/admin/exam-papers?tab=setup',
   'exam-assign': '/admin/exams',
   'exam-status': '/admin/exams/live',
-  history: '/admin/results',
   results: '/admin/analytics',
   users: '/admin/employees',
   teams: '/admin/teams',
@@ -94,7 +92,6 @@ export function adminPathToLegacyView(pathname) {
   if (/^\/admin\/questions\/generate\/runs(?:\/[^/]+)?$/.test(normalizedPathname)) return 'q-generate'
   if (/^\/admin\/questions\/[^/]+(?:\/history)?$/.test(normalizedPathname)) return 'q-bank'
   if (/^\/admin\/exams\/[^/]+(?:\/(?:edit|assign))?$/.test(normalizedPathname)) return 'exam-assign'
-  if (/^\/admin\/results\/[^/]+$/.test(normalizedPathname)) return 'history'
 
   return 'dashboard'
 }
