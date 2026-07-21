@@ -150,7 +150,7 @@ function Badge({ type, children }) {
     gray:    { background:'#F1F5F9',              color:'var(--text-muted)' },
   }
   return (
-    <span style={{ fontSize:11, fontWeight:700, padding:'3px 8px', borderRadius:20, ...colors[type] }}>
+    <span style={{ fontSize:11, fontWeight:700, padding:'3px 8px', borderRadius:20, whiteSpace:'nowrap', ...colors[type] }}>
       {children}
     </span>
   )
