@@ -1373,7 +1373,40 @@ function Users({ toast }) {
         </Card>
 
         <Card title="CSV 대량 업로드">
-          <p style={{ fontSize:12, color:'var(--text-muted)', marginBottom:10 }}>컬럼: <code>employee_id, name, team_code</code> (첫 행 헤더)</p>
+          <p style={{ fontSize:12.5, color:'var(--text)', lineHeight:1.6, marginBottom:12 }}>
+            여러 명의 신입사원을 한 번에 승인 등록할 때 사용합니다. 엑셀 등에서 아래와 같은 표를 만들고 <strong>CSV(쉼표로 구분) 형식</strong>으로 저장한 뒤 업로드하면 됩니다.
+          </p>
+          <div style={{ border:'1px solid var(--border)', borderRadius:8, overflow:'hidden', marginBottom:10 }}>
+            <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
+              <thead>
+                <tr style={{ background:'#F8FAFC' }}>
+                  <th style={{ textAlign:'left', padding:'7px 10px', fontWeight:700, color:'var(--text-muted)', borderBottom:'1px solid var(--border)' }}>employee_id</th>
+                  <th style={{ textAlign:'left', padding:'7px 10px', fontWeight:700, color:'var(--text-muted)', borderBottom:'1px solid var(--border)' }}>name</th>
+                  <th style={{ textAlign:'left', padding:'7px 10px', fontWeight:700, color:'var(--text-muted)', borderBottom:'1px solid var(--border)' }}>team_code</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td style={{ padding:'7px 10px', color:'var(--text)', fontVariantNumeric:'tabular-nums' }}>2024001</td>
+                  <td style={{ padding:'7px 10px', color:'var(--text)' }}>홍길동</td>
+                  <td style={{ padding:'7px 10px', color:'var(--text)' }}>T1</td>
+                </tr>
+                <tr>
+                  <td style={{ padding:'7px 10px', color:'var(--text)', fontVariantNumeric:'tabular-nums', borderTop:'1px solid var(--border)' }}>2024002</td>
+                  <td style={{ padding:'7px 10px', color:'var(--text)', borderTop:'1px solid var(--border)' }}>김철수</td>
+                  <td style={{ padding:'7px 10px', color:'var(--text)', borderTop:'1px solid var(--border)' }}>T2</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <ul style={{ margin:'0 0 10px', paddingLeft:18, fontSize:11.5, color:'var(--text-muted)', lineHeight:1.85 }}>
+            <li><code>employee_id</code> — 사원번호. 로그인 시 아이디로 쓰이며 다른 사원과 중복될 수 없습니다.</li>
+            <li><code>name</code> — 이름입니다.</li>
+            <li><code>team_code</code> — 소속 팀 코드입니다(예: T1, T2, T3). 정확한 코드는 좌측 <strong>팀 관리</strong> 메뉴에서 확인할 수 있습니다.</li>
+          </ul>
+          <p style={{ fontSize:11, color:'var(--text-light)', marginBottom:14, lineHeight:1.6 }}>
+            ※ 파일의 첫 번째 줄에는 반드시 위 표처럼 <code>employee_id</code>, <code>name</code>, <code>team_code</code>라는 컬럼 이름이 그대로 들어가야 하며, 그 다음 줄부터 실제 사원 정보를 한 줄씩 입력합니다.
+          </p>
           <label style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1.5px dashed var(--border)', borderRadius:8, cursor:'pointer', fontSize:13, color:'var(--text)', background:'#FAFAFA', width:'100%', justifyContent:'center', boxSizing:'border-box' }}>
             <Icon name="up" size={14} />
             {csvLoading ? '읽는 중...' : 'CSV 파일 선택'}
