@@ -1229,6 +1229,20 @@ function Users({ toast }) {
   const [teams, setTeams] = useState([])
   const [csvResult, setCsvResult] = useState(null)
   const [csvLoading, setCsvLoading] = useState(false)
+  const [filterTeam, setFilterTeam] = useState('all')
+  const [filterApprovedDate, setFilterApprovedDate] = useState('')
+  const [filterSearch, setFilterSearch] = useState('')
+
+  const filteredUsers = users.filter(u => {
+    if (filterTeam !== 'all' && u.team !== filterTeam) return false
+    if (filterApprovedDate && (u.approved_date || '').slice(0,10) !== filterApprovedDate) return false
+    if (filterSearch) {
+      const q = filterSearch.trim().toLowerCase()
+      const matches = u.employee_id?.toLowerCase().includes(q) || u.name?.toLowerCase().includes(q)
+      if (!matches) return false
+    }
+    return true
+  })
 
   async function loadUsers() {
     try { const d = await apiFetch('GET', '/api/admin/users'); setUsers(d.users) } catch {}
@@ -1312,11 +1326,31 @@ function Users({ toast }) {
           )}
         </Card>
       </div>
-      <Card title="승인된 응시자 목록" noPad bodyStyle={{ height:700, overflowY:'auto' }} action={<BtnOutlineSm onClick={loadUsers}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
+      <Card title="승인된 응시자 목록" noPad action={<BtnOutlineSm onClick={loadUsers}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
+        <div style={{ display:'flex', gap:10, flexWrap:'wrap', padding:'14px 20px', borderBottom:'1px solid var(--border)' }}>
+          <FilterSelect value={filterTeam} onChange={setFilterTeam}>
+            <option value="all">전체 팀</option>
+            {teamOpts.map(t => <option key={t.team_code} value={t.team_code}>{t.team_name}</option>)}
+          </FilterSelect>
+          <input
+            type="date"
+            value={filterApprovedDate}
+            onChange={e => setFilterApprovedDate(e.target.value)}
+            style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}
+          />
+          <input
+            type="text"
+            value={filterSearch}
+            onChange={e => setFilterSearch(e.target.value)}
+            placeholder="사원번호 또는 이름 검색"
+            style={{ flex:1, minWidth:180, border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 12px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}
+          />
+        </div>
+        <div style={{ height:700, overflowY:'auto' }}>
         <DataTable headers={['사원번호','이름','팀','상태','승인일','관리']}>
-          {users.length === 0 ? (
-            <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>승인된 응시자가 없습니다.</td></tr>
-          ) : users.map(u => (
+          {filteredUsers.length === 0 ? (
+            <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>{users.length === 0 ? '승인된 응시자가 없습니다.' : '조건에 맞는 응시자가 없습니다.'}</td></tr>
+          ) : filteredUsers.map(u => (
             <tr key={u.employee_id}>
               <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontVariantNumeric:'tabular-nums' }}>{u.employee_id}</td>
               <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{u.name}</td>
@@ -1327,6 +1361,7 @@ function Users({ toast }) {
             </tr>
           ))}
         </DataTable>
+        </div>
       </Card>
     </div>
   )
