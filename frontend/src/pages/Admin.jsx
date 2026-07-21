@@ -175,7 +175,7 @@ function DataTable({ headers, children }) {
     <table style={{ width:'100%', borderCollapse:'collapse' }}>
       <thead>
         <tr>{headers.map(h => (
-          <th key={h} style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textAlign:'left', padding:'10px 18px', borderBottom:'1px solid var(--border)', background:'#F8FAFC', textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap' }}>{h}</th>
+          <th key={h} style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textAlign:'left', padding:'10px 18px', borderBottom:'1px solid var(--border)', background:'#F8FAFC', textTransform:'uppercase', letterSpacing:'0.05em', whiteSpace:'nowrap', position:'sticky', top:0, zIndex:1 }}>{h}</th>
         ))}</tr>
       </thead>
       <tbody>{children}</tbody>
@@ -1312,7 +1312,7 @@ function Users({ toast }) {
           )}
         </Card>
       </div>
-      <Card title="승인된 응시자 목록" noPad action={<BtnOutlineSm onClick={loadUsers}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
+      <Card title="승인된 응시자 목록" noPad bodyStyle={{ maxHeight:420, overflowY:'auto' }} action={<BtnOutlineSm onClick={loadUsers}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
         <DataTable headers={['사원번호','이름','팀','상태','승인일','관리']}>
           {users.length === 0 ? (
             <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>승인된 응시자가 없습니다.</td></tr>
