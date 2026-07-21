@@ -1685,7 +1685,7 @@ def bulk_upload_users(csv_text: str) -> dict:
         try:
             eid = (row.get("employee_id") or "").strip()
             name = (row.get("name") or "").strip()
-            team = (row.get("team_code") or "").strip()
+            team = (row.get("team_code") or row.get("team") or "").strip()
             if not eid or not name:
                 errors += 1
                 continue
