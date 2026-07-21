@@ -110,6 +110,7 @@ function Icon({ name, size = 16, style }) {
     calendar: <><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>,
     alert:    <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
     x:        <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+    menu:     <><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -309,6 +310,31 @@ function ExamPagination({ page, totalPages, onChange }) {
 const TEAM_LABELS = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }
 const TEAM_DOT_COLORS = { T1:'#3b82f6', T2:'#8b5cf6', T3:'#0d9488' }
 
+// 업무 흐름 순서대로: 문제 생성 → 검토·검증 → 시험지 생성 → 시험 생성·관리 → 사용자 승인 → 응시 현황 → 결과 분석
+const DEFAULT_QUICK_ACTIONS = [
+  ['ai',    '문제 생성',      'q-generate'],
+  ['check', '검토·검증',      'q-review'],
+  ['file',  '시험지 생성·관리', 'exam-sheet'],
+  ['users', '시험 생성·관리', 'exam-assign'],
+  ['user',  '사용자 승인',    'users'],
+  ['clock', '응시 현황',      'exam-status'],
+  ['chart', '결과 분석',      'results'],
+]
+const QUICK_ACTIONS_ORDER_KEY = 'ojt_admin_quick_actions_order'
+
+function loadQuickActionsOrder() {
+  const defaultOrder = DEFAULT_QUICK_ACTIONS.map(a => a[2])
+  try {
+    const saved = JSON.parse(localStorage.getItem(QUICK_ACTIONS_ORDER_KEY) || 'null')
+    if (Array.isArray(saved) && saved.every(v => typeof v === 'string')) {
+      const valid = saved.filter(v => defaultOrder.includes(v))
+      const missing = defaultOrder.filter(v => !valid.includes(v))
+      return [...valid, ...missing]
+    }
+  } catch {}
+  return defaultOrder
+}
+
 const DEFAULT_EXAM_DURATION_MIN = 60
 
 const EXAM_STATUS_META = {
@@ -476,6 +502,49 @@ function QuickActionsRow({ quickActions, onNavigate }) {
   )
 }
 
+function QuickActionsOrderModal({ actions, onSave, onClose }) {
+  const [order, setOrder] = useState(actions)
+
+  function move(index, dir) {
+    setOrder(prev => {
+      const target = index + dir
+      if (target < 0 || target >= prev.length) return prev
+      const next = [...prev]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
+  const moveBtnStyle = disabled => ({
+    width:26, height:26, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center',
+    border:'1px solid var(--border)', borderRadius:6, background:'white', padding:0,
+    color:'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.35 : 1,
+  })
+
+  return (
+    <Modal title="빠른 실행 순서 편집" onClose={onClose}>
+      <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:20 }}>
+        {order.map((action, i) => (
+          <div key={action[2]} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', border:'1px solid var(--border)', borderRadius:8 }}>
+            <Icon name={action[0]} size={14} style={{ opacity:0.55, flexShrink:0 }} />
+            <span style={{ flex:1, fontSize:13, fontWeight:600, color:'var(--text)' }}>{action[1]}</span>
+            <button onClick={() => move(i, -1)} disabled={i === 0} style={moveBtnStyle(i === 0)} aria-label="위로">
+              <Icon name="up" size={12} />
+            </button>
+            <button onClick={() => move(i, 1)} disabled={i === order.length - 1} style={moveBtnStyle(i === order.length - 1)} aria-label="아래로">
+              <Icon name="down" size={12} />
+            </button>
+          </div>
+        ))}
+      </div>
+      <div style={{ display:'flex', gap:10 }}>
+        <button onClick={onClose} style={{ flex:1, height:44, border:'2px solid var(--border)', background:'white', color:'var(--text)', borderRadius:8, fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)' }}>취소</button>
+        <BtnPrimary onClick={() => onSave(order)} style={{ flex:1, justifyContent:'center' }}>저장</BtnPrimary>
+      </div>
+    </Modal>
+  )
+}
+
 function UpcomingExamsCalendar({ examSets }) {
   const [displayDate, setDisplayDate] = useState(new Date())
 
@@ -604,6 +673,15 @@ function Dashboard({ onNavigate }) {
   const [resultsSummary, setResultsSummary] = useState(null)
   const [activityItems, setActivityItems] = useState(null)
   const [activityModalOpen, setActivityModalOpen] = useState(false)
+  const [quickActionsOrder, setQuickActionsOrder] = useState(() => loadQuickActionsOrder())
+  const [quickActionsModalOpen, setQuickActionsModalOpen] = useState(false)
+
+  function saveQuickActionsOrder(actionsInOrder) {
+    const viewOrder = actionsInOrder.map(a => a[2])
+    setQuickActionsOrder(viewOrder)
+    localStorage.setItem(QUICK_ACTIONS_ORDER_KEY, JSON.stringify(viewOrder))
+    setQuickActionsModalOpen(false)
+  }
 
   function loadActivityFeed() {
     apiFetch('GET', '/api/admin/activity-log?limit=3').then(d => setActivityItems(d.items || [])).catch(() => setActivityItems([]))
@@ -667,16 +745,9 @@ function Dashboard({ onNavigate }) {
     ],
   }
 
-  // 업무 흐름 순서대로: 문제 생성 → 검토·검증 → 시험지 생성 → 시험 생성·관리 → 사용자 승인 → 응시 현황 → 결과 분석
-  const quickActions = [
-    ['ai',    '문제 생성',      'q-generate'],
-    ['check', '검토·검증',      'q-review'],
-    ['file',  '시험지 생성·관리', 'exam-sheet'],
-    ['users', '시험 생성·관리', 'exam-assign'],
-    ['user',  '사용자 승인',    'users'],
-    ['clock', '응시 현황',      'exam-status'],
-    ['chart', '결과 분석',      'results'],
-  ]
+  const orderedQuickActions = quickActionsOrder
+    .map(view => DEFAULT_QUICK_ACTIONS.find(a => a[2] === view))
+    .filter(Boolean)
 
   const scheduledCount = examSets.filter(s => getExamStatus(s.exam_datetime, s.duration_min) === 'scheduled').length
 
@@ -810,8 +881,17 @@ function Dashboard({ onNavigate }) {
 
       <div style={{ display:'flex', gap:16, alignItems:'stretch' }}>
         <div style={{ flex:'0 0 40%', minWidth:0, display:'flex', flexDirection:'column', gap:16 }}>
-          <Card title="빠른 실행" style={{ marginBottom:0 }}>
-            <QuickActionsRow quickActions={quickActions} onNavigate={onNavigate} />
+          <Card
+            title="빠른 실행"
+            style={{ marginBottom:0 }}
+            action={
+              <button onClick={() => setQuickActionsModalOpen(true)} aria-label="빠른 실행 순서 편집"
+                style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex', alignItems:'center' }}>
+                <Icon name="menu" size={16} />
+              </button>
+            }
+          >
+            <QuickActionsRow quickActions={orderedQuickActions} onNavigate={onNavigate} />
           </Card>
           <div style={{ flex:1, minHeight:0 }}>
             <ActivityFeed items={activityItems} onViewAll={() => setActivityModalOpen(true)} />
@@ -823,6 +903,14 @@ function Dashboard({ onNavigate }) {
       </div>
 
       {activityModalOpen && <ActivityLogModal onClose={() => setActivityModalOpen(false)} />}
+
+      {quickActionsModalOpen && (
+        <QuickActionsOrderModal
+          actions={orderedQuickActions}
+          onSave={saveQuickActionsOrder}
+          onClose={() => setQuickActionsModalOpen(false)}
+        />
+      )}
 
       {modal && (
         <Modal
