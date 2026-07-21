@@ -12,6 +12,7 @@ import ExamLivePage from '../admin/pages/exams/ExamLivePage'
 import ExamLiveDetailPage from '../admin/pages/exams/ExamLiveDetailPage'
 import { PlannedGenerationRuns, PlannedQuestionBank, PlannedQuestionGeneration, PlannedQuestionReview } from '../admin/pages/questions/PlannedQuestionPages'
 import PlannedAuditLog from '../admin/pages/system/PlannedAuditLog'
+import { getHolidayInfo } from '../koreanHolidays'
 
 /* ── Shared constants / helpers ─────────────────────────────── */
 const DEFAULT_TEAMS = [
@@ -632,11 +633,10 @@ function FavoritesMenuModal({ favorites, onSave, onClose }) {
 
 function UpcomingExamsCalendar({ examSets }) {
   const [displayDate, setDisplayDate] = useState(new Date())
-
-  const upcomingExams = examSets
+  const [selectedDate, setSelectedDate] = useState(null)
 
   const examsByDate = {}
-  upcomingExams.forEach(exam => {
+  examSets.forEach(exam => {
     if (exam.exam_datetime) {
       const dateStr = exam.exam_datetime.split('T')[0]
       if (!examsByDate[dateStr]) examsByDate[dateStr] = []
@@ -644,29 +644,42 @@ function UpcomingExamsCalendar({ examSets }) {
     }
   })
 
-  const getWeekStart = (date) => {
-    const d = new Date(date)
-    const day = d.getDay()
-    const diff = d.getDate() - day
-    return new Date(d.setDate(diff))
-  }
-
-  const weekStart = getWeekStart(displayDate)
-  const weekDays = []
-  for (let i = 0; i < 7; i++) {
-    const d = new Date(weekStart)
-    d.setDate(d.getDate() + i)
-    weekDays.push(d)
-  }
-
   const today = new Date()
-  const dateFormat = new Intl.DateTimeFormat('ko-KR', { month:'short', day:'numeric' })
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`
+  const year = displayDate.getFullYear()
+  const month = displayDate.getMonth()
+  const monthPrefix = `${year}-${String(month + 1).padStart(2,'0')}`
+
+  const firstDayOfWeek = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const totalCells = Math.ceil((firstDayOfWeek + daysInMonth) / 7) * 7
+  const cells = []
+  for (let i = 0; i < totalCells; i++) {
+    const dayNum = i - firstDayOfWeek + 1
+    cells.push(dayNum >= 1 && dayNum <= daysInMonth ? dayNum : null)
+  }
+
+  const monthExams = examSets
+    .filter(exam => exam.exam_datetime && exam.exam_datetime.slice(0, 7) === monthPrefix)
+    .sort((a, b) => new Date(a.exam_datetime) - new Date(b.exam_datetime))
+
+  const listExams = selectedDate ? (examsByDate[selectedDate] || []) : monthExams
+
+  const statusColor = (exam) => {
+    const status = getExamStatus(exam.exam_datetime, exam.duration_min)
+    return status === 'done' ? 'var(--success)' : status === 'ongoing' ? 'var(--warning)' : 'var(--accent)'
+  }
+
+  const formatTime = (iso) => {
+    const d = new Date(iso)
+    return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`
+  }
 
   return (
     <Card
       title="시험 일정"
       style={{ marginBottom:0, width:'100%', height:'100%', display:'flex', flexDirection:'column' }}
-      bodyStyle={{ flex:1 }}
+      bodyStyle={{ flex:1, minHeight:0, display:'flex', flexDirection:'column' }}
       action={
         <div style={{ display:'flex', alignItems:'center', gap:10, fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>
           <div style={{ display:'flex', alignItems:'center', gap:4 }}>
@@ -684,63 +697,94 @@ function UpcomingExamsCalendar({ examSets }) {
         </div>
       }
     >
-      <div style={{ padding:'12px 16px' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-          <button onClick={() => setDisplayDate(new Date(displayDate.getTime() - 7*24*60*60*1000))}
-            style={{ width:20, height:20, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:4, padding:0 }}
-            onMouseOver={e => e.currentTarget.style.background='#F1F5F9'}
-            onMouseOut={e => e.currentTarget.style.background='none'}>
-            <Icon name="chevronLeft" size={12} />
-          </button>
-          <span style={{ fontSize:11, fontWeight:700, color:'var(--text)' }}>
-            {weekStart.getMonth() + 1}월 {weekStart.getDate()}일 ~ {new Date(weekStart.getTime() + 6*24*60*60*1000).getMonth() + 1}월 {new Date(weekStart.getTime() + 6*24*60*60*1000).getDate()}일
-          </span>
-          <button onClick={() => setDisplayDate(new Date(displayDate.getTime() + 7*24*60*60*1000))}
-            style={{ width:20, height:20, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:4, padding:0 }}
-            onMouseOver={e => e.currentTarget.style.background='#F1F5F9'}
-            onMouseOut={e => e.currentTarget.style.background='none'}>
-            <Icon name="chevronRight" size={12} />
-          </button>
+      <div style={{ display:'flex', flex:1, minHeight:0, padding:'8px 16px 10px', gap:12 }}>
+        <div style={{ flex:'0 0 70%', minWidth:0 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+            <button onClick={() => { setDisplayDate(new Date(year, month - 1, 1)); setSelectedDate(null) }}
+              style={{ width:18, height:18, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:4, padding:0 }}
+              onMouseOver={e => e.currentTarget.style.background='#F1F5F9'}
+              onMouseOut={e => e.currentTarget.style.background='none'}>
+              <Icon name="chevronLeft" size={12} />
+            </button>
+            <span style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>{year}년 {month + 1}월</span>
+            <button onClick={() => { setDisplayDate(new Date(year, month + 1, 1)); setSelectedDate(null) }}
+              style={{ width:18, height:18, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:4, padding:0 }}
+              onMouseOver={e => e.currentTarget.style.background='#F1F5F9'}
+              onMouseOut={e => e.currentTarget.style.background='none'}>
+              <Icon name="chevronRight" size={12} />
+            </button>
+          </div>
+
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:2, marginBottom:4 }}>
+            {['일','월','화','수','목','금','토'].map((d, i) => (
+              <div key={d} style={{
+                fontSize:9, fontWeight:700, textAlign:'center',
+                color: i === 0 ? 'var(--danger)' : i === 6 ? 'var(--accent)' : 'var(--text-muted)'
+              }}>{d}</div>
+            ))}
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:2 }}>
+            {cells.map((dayNum, i) => {
+              if (dayNum === null) return <div key={i} />
+              const dateStr = `${monthPrefix}-${String(dayNum).padStart(2,'0')}`
+              const examsOnDay = examsByDate[dateStr] || []
+              const isTodayDate = dateStr === todayStr
+              const isSelected = selectedDate === dateStr
+              const dow = new Date(year, month, dayNum).getDay()
+              const holidayInfo = getHolidayInfo(dateStr)
+              const dayColor = isTodayDate ? 'var(--warning)'
+                : (dow === 0 || holidayInfo) ? 'var(--danger)'
+                : dow === 6 ? 'var(--accent)'
+                : 'var(--text)'
+              return (
+                <div key={i}
+                  title={holidayInfo ? holidayInfo.names.join(', ') : undefined}
+                  onClick={() => examsOnDay.length > 0 && setSelectedDate(isSelected ? null : dateStr)}
+                  style={{
+                    display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
+                    padding:'3px 0', borderRadius:4, minHeight:26,
+                    cursor: examsOnDay.length ? 'pointer' : 'default',
+                    background: isSelected ? 'var(--accent-light)' : isTodayDate ? 'var(--warning-light)' : 'transparent'
+                  }}>
+                  <span style={{ fontSize:11, fontWeight:600, color: dayColor }}>{dayNum}</span>
+                  <div style={{ display:'flex', gap:2, marginTop:2, height:4 }}>
+                    {examsOnDay.slice(0, 3).map(exam => (
+                      <span key={exam.exam_id} style={{ width:4, height:4, borderRadius:'50%', background: statusColor(exam) }} />
+                    ))}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:6 }}>
-          {weekDays.map((d, i) => {
-            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
-            const examsOnDay = examsByDate[dateStr] || []
-            const isTodayDate = d.toDateString() === today.toDateString()
-            const dayName = ['일','월','화','수','목','금','토'][d.getDay()]
-
-            return (
-              <div key={i} style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
-                <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', marginBottom:4 }}>
-                  {dayName}
-                </div>
-                <div style={{
-                  fontSize:11, fontWeight:600, color: isTodayDate ? 'var(--warning)' : 'var(--text)',
-                  padding:'4px 6px', borderRadius:4,
-                  background: isTodayDate ? 'var(--warning-light)' : 'transparent',
-                  marginBottom:6, width:'100%', textAlign:'center'
-                }}>
-                  {d.getDate()}
-                </div>
-                <div style={{ width:'100%', display:'flex', flexDirection:'column', gap:4, minHeight:40 }}>
-                  {examsOnDay.map(exam => {
-                    const status = getExamStatus(exam.exam_datetime, exam.duration_min)
-                    const bgColor = status === 'done' ? 'var(--success)' : status === 'ongoing' ? 'var(--warning)' : 'var(--accent)'
-                    return (
-                      <div key={exam.exam_id} style={{
-                        fontSize:10, fontWeight:600, color:'white', background:bgColor,
-                        padding:'3px 4px', borderRadius:3, whiteSpace:'normal', overflowWrap:'break-word', wordBreak:'normal',
-                        lineHeight:1.3
-                      }}>
-                        {exam.name}
-                      </div>
-                    )
-                  })}
+        <div style={{ flex:'0 0 30%', minWidth:0, borderLeft:'1px solid var(--border)', paddingLeft:12, display:'flex', flexDirection:'column', minHeight:0 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6, flexShrink:0 }}>
+            <span style={{ fontSize:11, fontWeight:700, color:'var(--text)' }}>
+              {selectedDate ? `${Number(selectedDate.slice(5,7))}월 ${Number(selectedDate.slice(8,10))}일` : `${month + 1}월 전체`}
+            </span>
+            {selectedDate && (
+              <button onClick={() => setSelectedDate(null)}
+                style={{ background:'none', border:'none', color:'var(--accent)', fontSize:10.5, fontWeight:700, cursor:'pointer', padding:0, fontFamily:'var(--font)' }}>
+                전체보기
+              </button>
+            )}
+          </div>
+          <div style={{ flex:1, minHeight:0, overflowY:'auto', display:'flex', flexDirection:'column', gap:8 }}>
+            {listExams.length === 0 ? (
+              <p style={{ fontSize:11.5, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>일정이 없습니다</p>
+            ) : listExams.map(exam => (
+              <div key={exam.exam_id} style={{ display:'flex', alignItems:'flex-start', gap:6 }}>
+                <span style={{ width:6, height:6, borderRadius:'50%', background: statusColor(exam), marginTop:4, flexShrink:0 }} />
+                <div style={{ minWidth:0 }}>
+                  <div style={{ fontSize:11, fontWeight:600, color:'var(--text)', overflowWrap:'break-word' }}>{exam.name}</div>
+                  <div style={{ fontSize:9.5, color:'var(--text-muted)' }}>
+                    {Number(exam.exam_datetime.slice(5,7))}/{Number(exam.exam_datetime.slice(8,10))} {formatTime(exam.exam_datetime)}
+                  </div>
                 </div>
               </div>
-            )
-          })}
+            ))}
+          </div>
         </div>
       </div>
     </Card>
@@ -965,11 +1009,11 @@ function Dashboard({ onNavigate }) {
         )}
       </Card>
 
-      <div style={{ display:'flex', gap:16, alignItems:'stretch' }}>
-        <div style={{ flex:'0 0 40%', minWidth:0, display:'flex', flexDirection:'column', gap:16 }}>
+      <div style={{ display:'flex', gap:16, height:360 }}>
+        <div style={{ flex:'0 0 40%', minWidth:0, display:'flex', flexDirection:'column', gap:16, height:'100%' }}>
           <Card
             title="즐겨찾기"
-            style={{ marginBottom:0 }}
+            style={{ marginBottom:0, flexShrink:0 }}
             action={
               <button onClick={() => setFavoritesModalOpen(true)} aria-label="즐겨찾기 메뉴 관리"
                 style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex', alignItems:'center' }}>
@@ -983,7 +1027,7 @@ function Dashboard({ onNavigate }) {
             <ActivityFeed items={activityItems} onViewAll={() => setActivityModalOpen(true)} />
           </div>
         </div>
-        <div style={{ flex:'0 0 60%', minWidth:0 }}>
+        <div style={{ flex:'0 0 60%', minWidth:0, height:'100%' }}>
           <UpcomingExamsCalendar examSets={examSets} />
         </div>
       </div>
