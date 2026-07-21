@@ -19,6 +19,32 @@ function exportQuestionsExcel(questions){
   downloadBlob(new Blob([xml],{ type:'application/vnd.ms-excel' }), `문제은행_${questions.length}건.xls`)
 }
 
+// counts(카테고리별 총 문항)와 diffCounts(난이도별 총 문항)는 서로 독립된 1차원 분포라 셀 단위
+// (카테고리 x 난이도) 조합은 알 수 없다 — diffCounts의 비율로 각 카테고리 몫을 비례 배분한다.
+function splitByRatio(total, ratios) {
+  const keys = Object.keys(ratios)
+  const weights = keys.map(key => Number(ratios[key] || 0))
+  const weightTotal = weights.reduce((sum, value) => sum + value, 0)
+  const normalized = weightTotal > 0 ? weights : keys.map(() => 1)
+  const normalizedTotal = weightTotal > 0 ? weightTotal : keys.length
+  const raw = normalized.map(value => (value / normalizedTotal) * total)
+  const floors = raw.map(Math.floor)
+  let remainder = total - floors.reduce((sum, value) => sum + value, 0)
+  const fracOrder = raw.map((value, index) => [index, value - floors[index]]).sort((a, b) => b[1] - a[1])
+  const result = [...floors]
+  for (let i = 0; i < remainder; i += 1) result[fracOrder[i % fracOrder.length][0]] += 1
+  return Object.fromEntries(keys.map((key, index) => [key, result[index]]))
+}
+
+// counts의 카테고리 key -> (문제 저장 pool_key로 쓰일 team_code, 표시 라벨).
+// 'team'만 화면에서 고른 실제 팀 코드를 쓰고, 나머지는 공용 풀(common/safety/general) 고정 코드를 쓴다.
+const CATEGORY_POOL_META = [
+  ['common', '공통', () => 'common'],
+  ['team', '팀별', selectedTeam => selectedTeam],
+  ['safety', '환경안전', () => 'safety'],
+  ['general', '일반상식', () => 'general'],
+]
+
 function Header({ title, description, children }) { return <div className="qplan-head"><div><h1>{title}</h1><p>{description}</p></div><div className="qplan-actions">{children}</div></div> }
 function Card({ title, action, children }) { return <section className="qplan-card">{title && <div className="qplan-card-head"><h2>{title}</h2>{action}</div>}<div className="qplan-card-body">{children}</div></section> }
 function Badge({ children, tone='' }) { return <span className={`qplan-badge ${tone}`}>{children}</span> }
@@ -37,7 +63,45 @@ export function PlannedQuestionGeneration({ toast }) {
   useEffect(()=>{ apiFetch('GET',`/api/admin/materials/list?team_code=${encodeURIComponent(team)}`).then(data=>{ const rows=Object.entries(data.categories||{}).flatMap(([category,value])=>(value.files||[]).map(file=>({ ...file, category, categoryLabel:value.label }))); setMaterials(rows); setSelectedMaterials(rows.filter(file=>file.status==='synced').map(file=>file.id)) }).catch(()=>{setMaterials([]);setSelectedMaterials([])}) },[team])
   const teamOptions=teams.length?teams:[{team_code:'T1',team_name:'1팀'},{team_code:'T2',team_name:'2팀'},{team_code:'T3',team_name:'3팀'}]
   const updateCount=(key,value)=>setCounts(current=>({...current,[key]:value}))
-  async function generate(){ if(total<=0)return toast('총 문항 수를 확인하세요.','error'); setLoading(true); try{ const data=await apiFetch('POST','/api/admin/generate-ai-questions',{team_code:team,material_ids:selectedMaterials,count:total,category_counts:counts,difficulty_counts:diffCounts}); toast(`${data.questions?.length||0}문항을 생성해 검수 대기에 저장했습니다.`); setGeneratedQuestions(data.questions||[]) }catch(error){toast(`문제 생성 실패: ${error.message}`,'error')}finally{setLoading(false)} }
+  async function generate(){
+    if(total<=0) return toast('총 문항 수를 확인하세요.','error')
+    setLoading(true)
+    // 백엔드 /generate-ai-questions는 한 번에 카테고리 하나 + 난이도 하나만 받으므로,
+    // 화면의 "문항 구성"(카테고리별) x "난이도 구성"(난이도별) 두 분포를 조합해
+    // 조합(카테고리, 난이도)마다 별도 요청으로 나눠 보낸다.
+    const jobs = []
+    for (const [key, label, resolveTeamCode] of CATEGORY_POOL_META) {
+      const categoryCount = Number(counts[key] || 0)
+      if (categoryCount <= 0) continue
+      const split = splitByRatio(categoryCount, diffCounts)
+      for (const [difficulty, count] of Object.entries(split)) {
+        if (count > 0) jobs.push({ team_code: resolveTeamCode(team), difficulty_hint: difficulty, count, label })
+      }
+    }
+    const allQuestions = []
+    const failures = []
+    for (const job of jobs) {
+      try {
+        const data = await apiFetch('POST','/api/admin/generate-ai-questions',{
+          team_code: job.team_code,
+          material_text: '',
+          material_ids: selectedMaterials,
+          count: job.count,
+          difficulty_hint: job.difficulty_hint,
+        })
+        allQuestions.push(...(data.questions || []))
+      } catch (error) {
+        failures.push(`${job.label}/${job.difficulty_hint} ${job.count}문항: ${error.message}`)
+      }
+    }
+    setGeneratedQuestions(allQuestions)
+    if (failures.length > 0) {
+      toast(`${allQuestions.length}문항 생성 완료, ${failures.length}건 실패 — ${failures[0]}${failures.length > 1 ? ` 외 ${failures.length - 1}건` : ''}`, 'error')
+    } else {
+      toast(`${allQuestions.length}문항을 생성해 검수 대기에 저장했습니다.`)
+    }
+    setLoading(false)
+  }
   const materialStatusLabel=status=>status==='new'?'신규 반영 대기':status==='failed'?'추출 실패':'색인 완료'
   return <section className="qplan"><Header title="문제 생성" description="출제 조건과 사용할 교육자료를 한 화면에서 구성합니다."><button className="qplan-btn primary" disabled={loading} onClick={generate}>{loading?'생성 중…':'문제 생성 실행'}</button></Header><div className="qplan-grid">
     <Card><div className="qplan-subsection"><h3>출제 대상</h3><div className="qplan-toggle-block"><span className="qplan-toggle-label">대상 팀</span><div className="qplan-toggle-group">{teamOptions.map(item=><button type="button" key={item.team_code} className={`qplan-toggle${team===item.team_code?' active':''}`} onClick={()=>setTeam(item.team_code)}>{item.team_name}</button>)}</div></div></div><div className="qplan-subsection"><h3>문항 구성</h3><div className="qplan-count-grid">{[['common','공통'],['team','팀'],['safety','환경안전'],['general','일반상식']].map(([key,label])=><label key={key}>{label}<input type="number" min="0" value={counts[key]} onChange={e=>updateCount(key,e.target.value)}/></label>)}</div><div className="qplan-total"><span>총 문항 수</span><strong>{total}문항</strong></div><div className="qplan-diff-edit"><span>난이도 구성</span><div className="qplan-count-grid qplan-count-grid-3">{[['하','하'],['중','중'],['상','상']].map(([key,label])=><label key={key}>{label}<input type="number" min="0" value={diffCounts[key]} onChange={e=>updateDiffCount(key,e.target.value)}/></label>)}</div>{diffTotal!==total&&<p className="qplan-diff-warning">난이도 합계 {diffTotal}문항이 총 문항 수 {total}문항과 다릅니다.</p>}</div></div></Card>
