@@ -106,6 +106,10 @@ function Icon({ name, size = 16, style }) {
     down:     <><polyline points="6 9 12 15 18 9"/></>,
     chevronLeft:  <><polyline points="15 18 9 12 15 6"/></>,
     chevronRight: <><polyline points="9 18 15 12 9 6"/></>,
+    search:   <><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>,
+    calendar: <><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>,
+    alert:    <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
+    x:        <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -303,6 +307,7 @@ function ExamPagination({ page, totalPages, onChange }) {
 /* ── Views ──────────────────────────────────────────────────── */
 
 const TEAM_LABELS = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }
+const TEAM_DOT_COLORS = { T1:'#3b82f6', T2:'#8b5cf6', T3:'#0d9488' }
 
 const DEFAULT_EXAM_DURATION_MIN = 60
 
@@ -1385,46 +1390,74 @@ function Users({ toast }) {
         </Card>
       </div>
       <Card title="승인된 응시자 목록" noPad action={<BtnOutlineSm onClick={refreshUsers}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
-        <div style={{ display:'flex', gap:10, flexWrap:'wrap', padding:'14px 20px', borderBottom:'1px solid var(--border)' }}>
-          <FilterSelect value={filterTeam} onChange={setFilterTeam}>
-            <option value="all">전체 팀</option>
-            {teamOpts.map(t => <option key={t.team_code} value={t.team_code}>{t.team_name}</option>)}
-          </FilterSelect>
-          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-            <input
-              type="date"
-              value={filterDateFrom}
-              onChange={e => setFilterDateFrom(e.target.value)}
-              style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}
-            />
-            <span style={{ fontSize:12, color:'var(--text-muted)' }}>~</span>
-            <input
-              type="date"
-              value={filterDateTo}
-              onChange={e => setFilterDateTo(e.target.value)}
-              style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}
-            />
+        <div style={{ display:'flex', gap:20, flexWrap:'wrap', alignItems:'flex-end', padding:'16px 20px', borderBottom:'1px solid var(--border)', background:'var(--bg)' }}>
+          <div>
+            <div style={{ fontSize:10.5, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>팀</div>
+            <FilterSelect value={filterTeam} onChange={setFilterTeam}>
+              <option value="all">전체 팀</option>
+              {teamOpts.map(t => <option key={t.team_code} value={t.team_code}>{t.team_name}</option>)}
+            </FilterSelect>
           </div>
-          <input
-            type="text"
-            value={filterSearch}
-            onChange={e => setFilterSearch(e.target.value)}
-            placeholder="사원번호 또는 이름 검색"
-            style={{ width:180, border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 12px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}
-          />
+          <div>
+            <div style={{ fontSize:10.5, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>승인일 범위</div>
+            <div style={{ display:'flex', alignItems:'center', gap:6, border:'1.5px solid var(--border)', borderRadius:8, padding:'0 10px', background:'white', height:33, boxSizing:'border-box' }}>
+              <Icon name="calendar" size={13} style={{ color:'var(--text-muted)', flexShrink:0 }} />
+              <input
+                type="date"
+                value={filterDateFrom}
+                onChange={e => setFilterDateFrom(e.target.value)}
+                style={{ border:'none', outline:'none', padding:'0 2px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'transparent', width:126 }}
+              />
+              <span style={{ fontSize:12, color:'var(--text-light)' }}>–</span>
+              <input
+                type="date"
+                value={filterDateTo}
+                onChange={e => setFilterDateTo(e.target.value)}
+                style={{ border:'none', outline:'none', padding:'0 2px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'transparent', width:126 }}
+              />
+            </div>
+          </div>
+          <div>
+            <div style={{ fontSize:10.5, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:6 }}>검색</div>
+            <div style={{ position:'relative' }}>
+              <Icon name="search" size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--text-muted)', pointerEvents:'none' }} />
+              <input
+                type="text"
+                value={filterSearch}
+                onChange={e => setFilterSearch(e.target.value)}
+                placeholder="사원번호 또는 이름"
+                style={{ width:170, border:'1.5px solid var(--border)', borderRadius:8, padding:'8px 12px 8px 30px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none', boxSizing:'border-box', height:33 }}
+              />
+            </div>
+          </div>
+          {(filterTeam !== 'all' || filterDateFrom || filterDateTo || filterSearch) && (
+            <span style={{ fontSize:12, color:'var(--accent-dark)', fontWeight:600, background:'var(--accent-light)', padding:'6px 12px', borderRadius:20, marginBottom:1 }}>
+              {filteredUsers.length}명 검색됨
+            </span>
+          )}
         </div>
         <div style={{ height:700, overflowY:'auto' }}>
         <DataTable headers={['사원번호','이름','팀','상태','승인일','관리']}>
           {filteredUsers.length === 0 ? (
-            <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>{users.length === 0 ? '승인된 응시자가 없습니다.' : '조건에 맞는 응시자가 없습니다.'}</td></tr>
-          ) : filteredUsers.map(u => (
-            <tr key={u.employee_id}>
-              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontVariantNumeric:'tabular-nums' }}>{u.employee_id}</td>
-              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{u.name}</td>
-              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{u.team}</td>
-              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><Badge type="success">승인</Badge></td>
-              <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{u.approved_date ? u.approved_date.slice(0,10) : '-'}</td>
-              <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><BtnOutlineSm danger onClick={() => del(u.employee_id, u.name)}>삭제</BtnOutlineSm></td>
+            <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--text-muted)', padding:'48px 0' }}>
+              <Icon name="users" size={26} style={{ color:'var(--text-light)', marginBottom:10 }} />
+              <div style={{ fontSize:13 }}>{users.length === 0 ? '승인된 응시자가 없습니다.' : '조건에 맞는 응시자가 없습니다.'}</div>
+            </td></tr>
+          ) : filteredUsers.map((u, i) => (
+            <tr key={u.employee_id} style={{ background: i % 2 === 1 ? '#FAFBFC' : 'transparent', transition:'background .12s' }}
+              onMouseOver={e => e.currentTarget.style.background='#F1F5F9'}
+              onMouseOut={e => e.currentTarget.style.background = i % 2 === 1 ? '#FAFBFC' : 'transparent'}>
+              <td style={{ fontSize:13, padding:'12px 18px', borderBottom:'1px solid var(--border)', fontVariantNumeric:'tabular-nums', color:'var(--text-muted)' }}>{u.employee_id}</td>
+              <td style={{ fontSize:13, padding:'12px 18px', borderBottom:'1px solid var(--border)', fontWeight:600, color:'var(--text)' }}>{u.name}</td>
+              <td style={{ fontSize:13, padding:'12px 18px', borderBottom:'1px solid var(--border)' }}>
+                <span style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
+                  <span style={{ width:7, height:7, borderRadius:'50%', background: TEAM_DOT_COLORS[u.team] || 'var(--text-light)', flexShrink:0 }} />
+                  {TEAM_LABELS[u.team] || u.team || '-'}
+                </span>
+              </td>
+              <td style={{ fontSize:13, padding:'12px 18px', borderBottom:'1px solid var(--border)' }}><Badge type="success">승인</Badge></td>
+              <td style={{ fontSize:12, padding:'12px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{u.approved_date ? u.approved_date.slice(0,10) : '-'}</td>
+              <td style={{ fontSize:13, padding:'12px 18px', borderBottom:'1px solid var(--border)' }}><BtnOutlineSm danger onClick={() => del(u.employee_id, u.name)}><Icon name="trash" size={11} /> 삭제</BtnOutlineSm></td>
             </tr>
           ))}
         </DataTable>
@@ -1435,12 +1468,46 @@ function Users({ toast }) {
         const indexedRows = csvPreviewRows.map((r, idx) => ({ ...r, idx }))
         const includedRows = indexedRows.filter(r => !r.excluded)
         const excludedRows = indexedRows.filter(r => r.excluded)
+
+        const PersonRow = ({ r, excluded }) => {
+          const teamHex = TEAM_DOT_COLORS[r.team]
+          return (
+          <div style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderBottom:'1px solid var(--border)', opacity: excluded ? 0.6 : 1 }}>
+            <div style={{
+              width:30, height:30, borderRadius:'50%', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center',
+              background: excluded ? '#E2E8F0' : teamHex ? teamHex + '1f' : 'var(--accent-light)',
+              color: excluded ? 'var(--text-muted)' : teamHex || 'var(--accent-dark)',
+              fontSize:12, fontWeight:700,
+            }}>
+              {(r.name || '?').charAt(0)}
+            </div>
+            <div style={{ minWidth:0 }}>
+              <div style={{ fontSize:13, fontWeight:600, color:'var(--text)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                {r.name || <span style={{ color:'var(--danger)' }}>이름 없음</span>}
+              </div>
+              <div style={{ fontSize:11.5, color:'var(--text-muted)', fontVariantNumeric:'tabular-nums', marginTop:1 }}>
+                {r.employee_id || <span style={{ color:'var(--danger)' }}>사원번호 없음</span>} · {TEAM_LABELS[r.team] || r.team || '팀 미지정'}
+              </div>
+            </div>
+            <span style={{ marginLeft:'auto', flexShrink:0 }}>
+              {excluded ? (
+                <BtnOutlineSm onClick={() => toggleExcludeCsvRow(r.idx)}><Icon name="plus" size={11} /> 포함</BtnOutlineSm>
+              ) : (
+                <BtnOutlineSm danger onClick={() => toggleExcludeCsvRow(r.idx)}><Icon name="x" size={11} /> 제외</BtnOutlineSm>
+              )}
+            </span>
+          </div>
+          )
+        }
+
         return (
           <Modal title="CSV 업로드 확인" wide onClose={() => setShowCsvCancelConfirm(true)}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:16, flexWrap:'wrap' }}>
-              <span style={{ fontSize:13, color:'var(--text-muted)' }}>
-                총 {csvPreviewRows.length}명 · 승인 예정 <strong style={{ color:'var(--text)' }}>{includedRows.length}명</strong> · 제외 {excludedRows.length}명
-              </span>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12, marginBottom:18, flexWrap:'wrap', background:'var(--bg)', border:'1px solid var(--border)', borderRadius:10, padding:'12px 16px' }}>
+              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                <span style={{ fontSize:12, fontWeight:700, color:'var(--text)', background:'white', border:'1px solid var(--border)', borderRadius:20, padding:'4px 12px' }}>총 {csvPreviewRows.length}명</span>
+                <span style={{ fontSize:12, fontWeight:700, color:'var(--success)', background:'var(--success-light)', borderRadius:20, padding:'4px 12px' }}>승인 예정 {includedRows.length}명</span>
+                <span style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)', background:'#F1F5F9', borderRadius:20, padding:'4px 12px' }}>제외 {excludedRows.length}명</span>
+              </div>
               <div style={{ display:'flex', gap:8 }}>
                 <BtnPrimary onClick={approveCsvUpload} disabled={csvApproving}>
                   <Icon name="check" size={14} style={{ color:'white' }} /> {csvApproving ? '승인 중...' : '승인'}
@@ -1449,32 +1516,23 @@ function Users({ toast }) {
               </div>
             </div>
 
-            <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>업로드된 사원 목록</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:0, maxHeight:280, overflowY:'auto', border:'1px solid var(--border)', borderRadius:8, marginBottom:20 }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+              <span style={{ fontSize:12, fontWeight:700, color:'var(--text)' }}>업로드된 사원 목록</span>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', maxHeight:280, overflowY:'auto', border:'1px solid var(--border)', borderRadius:10, marginBottom:22 }}>
               {includedRows.length === 0 ? (
-                <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>승인 예정 인원이 없습니다.</p>
-              ) : includedRows.map(r => (
-                <div key={r.idx} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderBottom:'1px solid var(--border)' }}>
-                  <span style={{ width:100, fontSize:13, fontVariantNumeric:'tabular-nums' }}>{r.employee_id || '-'}</span>
-                  <span style={{ width:100, fontSize:13 }}>{r.name || '-'}</span>
-                  <span style={{ width:60, fontSize:13, color:'var(--text-muted)' }}>{r.team || '-'}</span>
-                  <span style={{ marginLeft:'auto' }}><BtnOutlineSm danger onClick={() => toggleExcludeCsvRow(r.idx)}>제외</BtnOutlineSm></span>
-                </div>
-              ))}
+                <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'20px 0' }}>승인 예정 인원이 없습니다.</p>
+              ) : includedRows.map(r => <PersonRow key={r.idx} r={r} excluded={false} />)}
             </div>
 
-            <div style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)', marginBottom:8 }}>제외된 사원 목록 ({excludedRows.length})</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:0, maxHeight:200, overflowY:'auto', border:'1px solid var(--border)', borderRadius:8, background:'#FAFAFA' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+              <span style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)' }}>제외된 사원 목록</span>
+              <span style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', background:'#F1F5F9', borderRadius:20, padding:'1px 8px' }}>{excludedRows.length}</span>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', maxHeight:200, overflowY:'auto', border:'1px dashed var(--border)', borderRadius:10, background:'#FAFBFC' }}>
               {excludedRows.length === 0 ? (
-                <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>제외된 인원이 없습니다.</p>
-              ) : excludedRows.map(r => (
-                <div key={r.idx} style={{ display:'flex', alignItems:'center', gap:12, padding:'10px 14px', borderBottom:'1px solid var(--border)', opacity:0.65 }}>
-                  <span style={{ width:100, fontSize:13, fontVariantNumeric:'tabular-nums' }}>{r.employee_id || '-'}</span>
-                  <span style={{ width:100, fontSize:13 }}>{r.name || '-'}</span>
-                  <span style={{ width:60, fontSize:13, color:'var(--text-muted)' }}>{r.team || '-'}</span>
-                  <span style={{ marginLeft:'auto' }}><BtnOutlineSm onClick={() => toggleExcludeCsvRow(r.idx)}>포함</BtnOutlineSm></span>
-                </div>
-              ))}
+                <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'20px 0' }}>제외된 인원이 없습니다.</p>
+              ) : excludedRows.map(r => <PersonRow key={r.idx} r={r} excluded={true} />)}
             </div>
           </Modal>
         )
@@ -1482,8 +1540,11 @@ function Users({ toast }) {
 
       {showCsvCancelConfirm && (
         <div style={{ position:'fixed', inset:0, display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(15,23,42,0.6)', backdropFilter:'blur(4px)', zIndex:300 }}>
-          <div style={{ background:'white', borderRadius:20, padding:'36px 32px', width:'90%', maxWidth:400, boxShadow:'0 20px 60px rgba(0,0,0,0.25)' }}>
-            <h2 style={{ fontSize:17, fontWeight:800, color:'var(--text)', marginBottom:12, letterSpacing:'-0.4px' }}>승인 작업 취소</h2>
+          <div style={{ background:'white', borderRadius:20, padding:'36px 32px', width:'90%', maxWidth:400, boxShadow:'0 20px 60px rgba(0,0,0,0.25)', textAlign:'center' }}>
+            <div style={{ width:52, height:52, borderRadius:'50%', background:'var(--danger-light)', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 18px' }}>
+              <Icon name="alert" size={24} style={{ color:'var(--danger)' }} />
+            </div>
+            <h2 style={{ fontSize:17, fontWeight:800, color:'var(--text)', marginBottom:10, letterSpacing:'-0.4px' }}>승인 작업 취소</h2>
             <p style={{ fontSize:14, color:'var(--text-muted)', marginBottom:26, lineHeight:1.6 }}>지금 진행중인 승인 작업을 정말 취소하시겠습니까?</p>
             <div style={{ display:'flex', gap:12 }}>
               <button onClick={() => setShowCsvCancelConfirm(false)} style={{ flex:1, height:48, fontSize:15, fontWeight:700, cursor:'pointer', border:'2px solid var(--border)', background:'white', color:'var(--text)', borderRadius:10, fontFamily:'var(--font)' }}>아니오</button>
