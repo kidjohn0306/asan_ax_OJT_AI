@@ -279,4 +279,19 @@ describe('routed exam live detail', () => {
     renderAt('/admin/exams/EX%ZZ/live')
     expect(await screen.findByText('시험을 찾을 수 없습니다.')).toBeInTheDocument()
   })
+
+  it('provides a back link to the exam status list instead of trapping the admin in the detail view', async () => {
+    renderAt('/admin/exams/EX%201/live')
+    expect(await screen.findByText('상세 시험')).toBeInTheDocument()
+    const backLink = screen.getByRole('link', { name:/응시 현황 목록으로/ })
+    expect(backLink).toHaveAttribute('href', '/admin/exams/live')
+    fireEvent.click(backLink)
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('/admin/exams/live'))
+  })
+
+  it('shows the back link even when the exam cannot be found', async () => {
+    renderAt('/admin/exams/MISSING/live')
+    expect(await screen.findByText('시험을 찾을 수 없습니다.')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name:/응시 현황 목록으로/ })).toHaveAttribute('href', '/admin/exams/live')
+  })
 })
