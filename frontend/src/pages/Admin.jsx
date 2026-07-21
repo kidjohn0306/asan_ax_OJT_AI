@@ -1230,12 +1230,15 @@ function Users({ toast }) {
   const [csvResult, setCsvResult] = useState(null)
   const [csvLoading, setCsvLoading] = useState(false)
   const [filterTeam, setFilterTeam] = useState('all')
-  const [filterApprovedDate, setFilterApprovedDate] = useState('')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo, setFilterDateTo] = useState('')
   const [filterSearch, setFilterSearch] = useState('')
 
   const filteredUsers = users.filter(u => {
     if (filterTeam !== 'all' && u.team !== filterTeam) return false
-    if (filterApprovedDate && (u.approved_date || '').slice(0,10) !== filterApprovedDate) return false
+    const approvedDate = (u.approved_date || '').slice(0,10)
+    if (filterDateFrom && (!approvedDate || approvedDate < filterDateFrom)) return false
+    if (filterDateTo && (!approvedDate || approvedDate > filterDateTo)) return false
     if (filterSearch) {
       const q = filterSearch.trim().toLowerCase()
       const matches = u.employee_id?.toLowerCase().includes(q) || u.name?.toLowerCase().includes(q)
@@ -1332,18 +1335,27 @@ function Users({ toast }) {
             <option value="all">전체 팀</option>
             {teamOpts.map(t => <option key={t.team_code} value={t.team_code}>{t.team_name}</option>)}
           </FilterSelect>
-          <input
-            type="date"
-            value={filterApprovedDate}
-            onChange={e => setFilterApprovedDate(e.target.value)}
-            style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}
-          />
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <input
+              type="date"
+              value={filterDateFrom}
+              onChange={e => setFilterDateFrom(e.target.value)}
+              style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}
+            />
+            <span style={{ fontSize:12, color:'var(--text-muted)' }}>~</span>
+            <input
+              type="date"
+              value={filterDateTo}
+              onChange={e => setFilterDateTo(e.target.value)}
+              style={{ border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 10px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}
+            />
+          </div>
           <input
             type="text"
             value={filterSearch}
             onChange={e => setFilterSearch(e.target.value)}
             placeholder="사원번호 또는 이름 검색"
-            style={{ flex:1, minWidth:180, border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 12px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}
+            style={{ width:180, border:'1.5px solid var(--border)', borderRadius:6, padding:'7px 12px', fontFamily:'var(--font)', fontSize:13, color:'var(--text)', background:'white', outline:'none' }}
           />
         </div>
         <div style={{ height:700, overflowY:'auto' }}>
