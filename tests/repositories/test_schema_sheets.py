@@ -97,7 +97,7 @@ class SchemaSheetsInspectorTests(unittest.TestCase):
         values = service.spreadsheets.return_value.values.return_value
         self.assertEqual(values.batchGet.call_args.kwargs["ranges"], [
             "'results'!A2:Z",
-            "'exam_sets'!A2:AH",
+            "'exam_sets'!A2:AI",
             "'question_bank'!A2:AQ",
         ])
 

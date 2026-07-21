@@ -11,7 +11,6 @@ export const ADMIN_NAVIGATION = [
     label: '문제 관리',
     items: [
       { label: '문제 생성', path: '/admin/questions/generate/setup', view: 'q-generate' },
-      { label: '생성 작업', path: '/admin/questions/generate/runs', view: 'q-generate' },
       { label: '검수 대기', path: '/admin/questions/review', view: 'q-review' },
       { label: '문제은행', path: '/admin/questions/bank', view: 'q-bank' },
     ],
@@ -90,7 +89,7 @@ export function adminPathToLegacyView(pathname) {
   if (staticRoute) return staticRoute.view
 
   if (/^\/admin\/exams\/[^/]+\/live$/.test(normalizedPathname)) return 'exam-status'
-  if (/^\/admin\/questions\/generate\/runs\/[^/]+$/.test(normalizedPathname)) return 'q-generate'
+  if (/^\/admin\/questions\/generate\/runs(?:\/[^/]+)?$/.test(normalizedPathname)) return 'q-generate'
   if (/^\/admin\/questions\/[^/]+(?:\/history)?$/.test(normalizedPathname)) return 'q-bank'
   if (/^\/admin\/exams\/[^/]+(?:\/(?:edit|assign))?$/.test(normalizedPathname)) return 'exam-assign'
 

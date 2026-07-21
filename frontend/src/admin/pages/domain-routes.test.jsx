@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -70,7 +70,6 @@ describe('planned admin domain routes', () => {
   })
 
   it.each([
-    ['/admin/questions/generate/runs/RUN-1', '/admin/questions/generate/runs'],
     ['/admin/questions/Q-1/history', '/admin/questions/Q-1'],
   ])('shows an honest unavailable state for %s', async (path, backHref) => {
     renderAdmin(path)
@@ -79,23 +78,44 @@ describe('planned admin domain routes', () => {
     expect(apiFetch).not.toHaveBeenCalled()
   })
 
-  it('renders real generation job history from the API', async () => {
+  it.each([
+    '/admin/questions/generate/runs',
+    '/admin/questions/generate/runs/RUN-1',
+  ])('redirects the retired 생성 작업 route %s to the generation setup page', async (path) => {
+    renderAdmin(path)
+    expect(await screen.findByText('출제 대상')).toBeInTheDocument()
+    expect(screen.getByTestId('location')).toHaveTextContent('/admin/questions/generate/setup')
+  })
+
+  it('shows the questions just generated in the "생성된 문제" panel', async () => {
     apiFetch.mockImplementation((method, path) => {
-      if (path === '/api/admin/generation-jobs') return Promise.resolve({
-        jobs: [{ generation_job_id: 'gen-1', requested_by: 'admin001', status: 'COMPLETED', requested_count: 10, completed_count: 10, failed_count: 0, started_at: '2026-07-16T00:00:00+00:00' }],
-        enabled: true,
+      if (method === 'POST' && path === '/api/admin/generate-ai-questions') return Promise.resolve({
+        questions: [{ id: 'Q-NEW-1', category: '공통', question: '새로 생성된 문제', difficulty: '중', gate_errors: [] }],
       })
       return mockApi(method, path)
     })
-    renderAdmin('/admin/questions/generate/runs')
-    expect(await screen.findByText('gen-1')).toBeInTheDocument()
-    expect(screen.getByText('admin001')).toBeInTheDocument()
-    expect(apiFetch).toHaveBeenCalledWith('GET', '/api/admin/generation-jobs')
+    renderAdmin('/admin/questions/generate/setup')
+    expect(await screen.findByText('아직 생성된 문제가 없습니다.')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '문제 생성 실행' }))
+
+    const row = (await screen.findByText('새로 생성된 문제')).closest('tr')
+    expect(within(row).getByText('검수 대기')).toBeInTheDocument()
   })
 
-  it('shows an honest empty state when there are no generation jobs yet', async () => {
-    renderAdmin('/admin/questions/generate/runs')
-    expect(await screen.findByText('아직 생성 작업이 없습니다.')).toBeInTheDocument()
+  it('flags a generated question that failed a gate as needing review', async () => {
+    apiFetch.mockImplementation((method, path) => {
+      if (method === 'POST' && path === '/api/admin/generate-ai-questions') return Promise.resolve({
+        questions: [{ id: 'Q-NEW-2', category: '공통', question: '게이트 실패 문제', difficulty: '상', gate_errors: ['V01'] }],
+      })
+      return mockApi(method, path)
+    })
+    renderAdmin('/admin/questions/generate/setup')
+
+    fireEvent.click(screen.getByRole('button', { name: '문제 생성 실행' }))
+
+    expect(await screen.findByText('게이트 실패 문제')).toBeInTheDocument()
+    expect(screen.getByText('검토 필요 (1)')).toBeInTheDocument()
   })
 
   it('renders real audit log entries from the API', async () => {

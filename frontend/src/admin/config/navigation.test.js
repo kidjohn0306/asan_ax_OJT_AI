@@ -22,7 +22,6 @@ describe('ADMIN_NAVIGATION', () => {
     expect(ADMIN_NAVIGATION.flatMap(group => group.items).map(item => item.path)).toEqual([
       '/admin/dashboard',
       '/admin/questions/generate/setup',
-      '/admin/questions/generate/runs',
       '/admin/questions/review',
       '/admin/questions/bank',
       '/admin/exam-papers?tab=setup',

@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 
 import { apiFetch } from '../../../api'
 
+const EXAM_CATEGORY_LABELS = { exam_study: '기초고사', exam_test: '업무능력평가' }
+
 export default function ExamPaperDetail({ examId, onCreateCopy }) {
   const [detail, setDetail] = useState(null)
   const [loading, setLoading] = useState(Boolean(examId))
@@ -41,6 +43,7 @@ export default function ExamPaperDetail({ examId, onCreateCopy }) {
           <div>
             <h2 style={{ margin:0, fontSize:16, color:'var(--text)' }}>{exam.name || examId}</h2>
             <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:9 }}>
+              <span style={badgeStyle}>{EXAM_CATEGORY_LABELS[exam.exam_category] || '기초고사'}</span>
               <span style={badgeStyle}>시험지 v{exam.paper_version || 0}</span>
               <span style={badgeStyle}>총점 {totalScore}점</span>
               <span style={badgeStyle}>{exam.immutable ? '확정 시험지' : '편집 가능'}</span>

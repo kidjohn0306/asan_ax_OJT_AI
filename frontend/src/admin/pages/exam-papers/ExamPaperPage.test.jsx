@@ -222,6 +222,7 @@ describe('ExamSheet copy-on-write integration', () => {
       name:'안전교육 시험지 수정본',
       team_code:'T2',
       question_ids:['Q1', 'Q2'],
+      exam_category:'exam_study',
       question_scores:{ Q1:60, Q2:40 },
     })
     expect(post[2]).not.toHaveProperty('exam_id')
@@ -338,7 +339,7 @@ describe('ExamSheet copy-on-write integration', () => {
     await userEvent.click(screen.getByRole('button', { name:'시험지 저장' }))
 
     const post = apiFetch.mock.calls.find(([method, path]) => method === 'POST' && path === '/api/admin/exam-sets')
-    expect(post[2]).toEqual({ name:'일반 시험지', team_code:'T1', question_ids:['Q1', 'Q2'] })
+    expect(post[2]).toEqual({ name:'일반 시험지', team_code:'T1', question_ids:['Q1', 'Q2'], exam_category:'exam_study' })
 
     await userEvent.click(screen.getAllByRole('button', { name:'OFF' })[1])
     const spinboxes = screen.getAllByRole('spinbutton')

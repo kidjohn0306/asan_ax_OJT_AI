@@ -1,4 +1,4 @@
-import { useLocation, useSearchParams } from 'react-router-dom'
+import { Navigate, useLocation, useSearchParams } from 'react-router-dom'
 
 function Unavailable({ backHref }) {
   return (
@@ -21,7 +21,6 @@ export default function QuestionRoutePage({
   GenerateComponent,
   ReviewComponent,
   BankComponent,
-  RunsComponent,
   toast,
   onNavigate,
 }) {
@@ -29,11 +28,9 @@ export default function QuestionRoutePage({
   const [searchParams, setSearchParams] = useSearchParams()
   const path = location.pathname
 
-  if (path === '/admin/questions/generate/runs') {
-    return RunsComponent ? <RunsComponent toast={toast} /> : <Unavailable backHref="/admin/questions/generate/setup" />
-  }
-  if (/^\/admin\/questions\/generate\/runs\/[^/]+$/.test(path)) {
-    return <Unavailable backHref="/admin/questions/generate/runs" />
+  // "생성 작업" 탭은 폐지되어 문제 생성 화면의 이력 패널로 통합됐다.
+  if (path === '/admin/questions/generate/runs' || /^\/admin\/questions\/generate\/runs\/[^/]+$/.test(path)) {
+    return <Navigate to="/admin/questions/generate/setup" replace />
   }
   const historyMatch = path.match(/^\/admin\/questions\/([^/]+)\/history$/)
   if (historyMatch) {
