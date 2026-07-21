@@ -50,6 +50,8 @@ function currentNavigationItem(navigation, pathname) {
 }
 
 export default function AdminSidebar({ navigation, pathname, onNavigate, onLogout }) {
+  const adminName = sessionStorage.getItem('name') || '관리자'
+
   function handleNavigation(event, path) {
     if (!onNavigate || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
     event.preventDefault()
@@ -93,9 +95,9 @@ export default function AdminSidebar({ navigation, pathname, onNavigate, onLogou
       </div>
       <div style={{ borderTop:'1px solid rgba(255,255,255,.07)', padding:'14px 16px' }}>
         <div style={{ display:'flex', alignItems:'center', gap:12, padding:'8px 4px 14px' }}>
-          <div style={{ width:40, height:40, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:16, fontWeight:700, flexShrink:0 }}>김</div>
+          <div style={{ width:40, height:40, background:'var(--accent)', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', color:'white', fontSize:16, fontWeight:700, flexShrink:0 }}>{adminName[0]}</div>
           <div style={{ overflow:'hidden' }}>
-            <div style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,.88)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>김흥길 과장</div>
+            <div style={{ fontSize:15, fontWeight:700, color:'rgba(255,255,255,.88)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{adminName}</div>
             <div style={{ fontSize:11, color:'rgba(255,255,255,.35)', marginTop:2 }}>관리자</div>
           </div>
         </div>

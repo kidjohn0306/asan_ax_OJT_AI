@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import Admin from '../../pages/Admin'
 import { ADMIN_NAVIGATION } from '../config/navigation'
@@ -25,14 +25,30 @@ function renderAt(pathname, ui) {
 }
 
 describe('administrator shell', () => {
+  afterEach(() => sessionStorage.clear())
+
   it('keeps the latest-main header identity and renders the supplied title', () => {
     render(<AdminHeader title="시험 생성·관리" />)
 
     expect(screen.getByText('(주)엑스티')).toBeInTheDocument()
     expect(screen.getByText('OJT 평가 시스템')).toBeInTheDocument()
     expect(screen.getByText('시험 생성·관리')).toBeInTheDocument()
-    expect(screen.getByText('김흥길 과장')).toBeInTheDocument()
-    expect(screen.getByText('인사팀 · 관리자')).toBeInTheDocument()
+  })
+
+  it('shows the actual logged-in admin name instead of a hardcoded placeholder', () => {
+    sessionStorage.setItem('name', '박지민')
+    render(<AdminHeader title="시험 생성·관리" />)
+
+    expect(screen.getByText('박지민')).toBeInTheDocument()
+    expect(screen.getByText('박')).toBeInTheDocument()
+    expect(screen.queryByText('김흥길 과장')).not.toBeInTheDocument()
+  })
+
+  it('falls back to a neutral label when no admin name is stored', () => {
+    render(<AdminHeader title="시험 생성·관리" />)
+
+    expect(screen.getAllByText('관리자').length).toBeGreaterThan(0)
+    expect(screen.queryByText('김흥길 과장')).not.toBeInTheDocument()
   })
 
   it('uses planned hrefs, marks the current URL, and delegates navigation', () => {

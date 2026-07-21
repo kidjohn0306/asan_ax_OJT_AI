@@ -433,6 +433,7 @@ def generate_ai_questions(
     requested_by: str = "",
     idempotency_key: str = "",
     material_ids: list | None = None,
+    pool_key_override: str | None = None,
 ) -> dict:
     from ai_engine.router import generate_questions_from_material
     from services.generation.gates import run_gates
@@ -447,7 +448,9 @@ def generate_ai_questions(
 
     from repositories import question_stats_repo
 
-    category = TEAM_KEY_MAP.get(team_code, team_code)  # pool_key — 문제 저장 위치(add_question)에 사용
+    # pool_key_override — 공통/환경안전/일반상식처럼 team_code와 무관하게 특정 문제 풀을 지정해야 하는
+    # 카테고리별 분포 생성(generate_ai_questions_by_distribution)에서 사용. 없으면 기존과 동일하게 team_code로 추론한다.
+    category = pool_key_override or TEAM_KEY_MAP.get(team_code, team_code)  # pool_key — 문제 저장 위치(add_question)에 사용
     category_label = _category_label_for_pool(category)  # 공통/팀별/환경안전/일반상식 — 문제의 category 필드·게이트 검증·프론트 필터에 사용
     q_repo, _, fb_repo = _get_repos()
     policy = get_generation_write_policy()
@@ -689,6 +692,69 @@ def generate_ai_questions(
             for q in passed + failed_list
         ],
         **({"generation_job_id": generation_job_id} if generation_job_id else {}),
+    }
+
+
+# 프론트 "문제 생성" 화면의 category_counts 키(common/team/safety/general) -> 실제 문제 풀 키.
+# "team"만 team_code에 따라 동적으로 결정되고(team1/team2/team3), 나머지는 team_code와 무관하게 고정.
+_CATEGORY_KEY_TO_FIXED_POOL = {"common": "common", "safety": "safety", "general": "general"}
+
+
+def generate_ai_questions_by_distribution(
+    team_code: str,
+    material_text: str,
+    category_counts: dict[str, int],
+    difficulty_counts: dict[str, int] | None = None,
+    requested_by: str = "",
+    idempotency_key: str = "",
+    material_ids: list | None = None,
+) -> dict:
+    """카테고리별(공통/팀/환경안전/일반상식) 문항 수 분포를 실제로 반영해 생성한다.
+    이전에는 이 분포가 material_text 안에 문자열로만 끼워 넣어져 AI/게이트 어디서도 파싱되지 않았고,
+    실제로는 team_code 하나로만 정해지는 category(대부분 "팀별")로 전 문항이 생성되는 버그가 있었다.
+    난이도(difficulty_counts)는 AI 생성기가 개별 문항 단위로 정확히 강제할 수 있는 계약이 아니므로,
+    가장 비중이 큰 난이도를 프롬프트 힌트로 전달해 항상 고정값 '중'을 보내던 것보다는 실제 요청을
+    반영하도록 개선한다(문항 단위 정확한 난이도 배분은 카테고리 분포와 별개의 더 큰 개선 과제로 남긴다)."""
+    dominant_difficulty = "중"
+    if difficulty_counts:
+        positive = {k: int(v or 0) for k, v in difficulty_counts.items() if int(v or 0) > 0}
+        if positive:
+            dominant_difficulty = max(positive, key=positive.get)
+
+    aggregated_questions: list = []
+    total_failed = 0
+    generation_job_ids: list[str] = []
+    for category_key, raw_count in (category_counts or {}).items():
+        count = int(raw_count or 0)
+        if count <= 0:
+            continue
+        if category_key == "team":
+            pool_key = TEAM_KEY_MAP.get(team_code, team_code)
+        elif category_key in _CATEGORY_KEY_TO_FIXED_POOL:
+            pool_key = _CATEGORY_KEY_TO_FIXED_POOL[category_key]
+        else:
+            continue  # 알 수 없는 카테고리 키는 조용히 지어내지 않고 건너뛴다
+        result = generate_ai_questions(
+            team_code,
+            material_text,
+            count,
+            dominant_difficulty,
+            requested_by=requested_by,
+            idempotency_key=f"{idempotency_key}:{category_key}" if idempotency_key else "",
+            material_ids=material_ids,
+            pool_key_override=pool_key,
+        )
+        aggregated_questions.extend(result.get("questions", []))
+        total_failed += result.get("failed_count", 0)
+        if result.get("generation_job_id"):
+            generation_job_ids.append(result["generation_job_id"])
+
+    return {
+        "team_code": team_code,
+        "count": len(aggregated_questions),
+        "failed_count": total_failed,
+        "questions": aggregated_questions,
+        **({"generation_job_ids": generation_job_ids} if generation_job_ids else {}),
     }
 
 

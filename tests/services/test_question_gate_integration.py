@@ -247,6 +247,64 @@ class GenerateAIQuestionsIntegrationTests(unittest.TestCase):
         self.assertIn("draft", statuses)  # 두 번째는 첫 번째와 완전 중복이라 V06 HARD_FAIL
 
 
+class GenerateAIQuestionsByDistributionTests(unittest.TestCase):
+    """이전에는 문제 생성 화면의 카테고리/난이도 분포가 material_text 문자열에만 끼워 넣어져
+    실제로는 team_code 하나로 정해지는 카테고리(대부분 '팀별')로만 전 문항이 생성되고,
+    difficulty_hint도 항상 '중' 고정값으로 보내지던 버그를 검증한다."""
+
+    def setUp(self):
+        self.fake_repo = FakeQuestionRepository()
+        self.fake_stats = FakeQuestionStatsRepo()
+        patchers = [
+            patch("repositories.question_repo", self.fake_repo),
+            patch("repositories.question_stats_repo", self.fake_stats),
+            patch("services.material_service.get_material_text_for_team", return_value=""),
+        ]
+        for p in patchers:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def test_splits_generation_across_categories_and_tags_correct_pool(self):
+        def fake_generate(material_text, category_label, count, difficulty_hint, *args, **kwargs):
+            return [_generated_question(category=category_label, admin_override="하") for _ in range(count)]
+
+        with _gate_mode("legacy"), patch("ai_engine.router.generate_questions_from_material", side_effect=fake_generate):
+            result = admin_service.generate_ai_questions_by_distribution(
+                "T2", "", {"common": 2, "team": 1, "safety": 0}, {"하": 5, "중": 1},
+            )
+
+        self.assertEqual(result["count"], 3)
+        pools = {pool_key for pool_key, _ in self.fake_repo._questions.values()}
+        # "team"은 team_code(T2)에 따라 team2 풀로, "safety"는 count=0이라 전혀 호출되지 않는다.
+        self.assertEqual(pools, {"common", "team2"})
+
+    def test_uses_dominant_difficulty_as_hint_instead_of_hardcoded_default(self):
+        calls = []
+
+        def fake_generate(material_text, category_label, count, difficulty_hint, *args, **kwargs):
+            calls.append(difficulty_hint)
+            return [_generated_question(category=category_label, admin_override="하")]
+
+        with _gate_mode("legacy"), patch("ai_engine.router.generate_questions_from_material", side_effect=fake_generate):
+            admin_service.generate_ai_questions_by_distribution(
+                "T1", "", {"common": 1, "safety": 1}, {"하": 1, "중": 1, "상": 8},
+            )
+
+        self.assertEqual(calls, ["상", "상"])
+
+    def test_skips_zero_and_unknown_category_keys_without_fabricating_a_call(self):
+        def fake_generate(material_text, category_label, count, difficulty_hint, *args, **kwargs):
+            return [_generated_question(category=category_label, admin_override="하")]
+
+        with _gate_mode("legacy"), patch("ai_engine.router.generate_questions_from_material", side_effect=fake_generate) as mocked:
+            result = admin_service.generate_ai_questions_by_distribution(
+                "T3", "", {"common": 0, "unknown_key": 5, "general": 1}, {},
+            )
+
+        self.assertEqual(mocked.call_count, 1)
+        self.assertEqual(result["count"], 1)
+
+
 class ApproveQuestionGuardTests(unittest.TestCase):
     """approve_question()의 strict 승인 Guard와 legacy security_hold 공통 차단을 검증한다."""
 

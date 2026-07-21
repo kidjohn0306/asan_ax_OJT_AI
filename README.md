@@ -138,7 +138,7 @@ npm run dev   # http://localhost:5173
 | 문제 생성·검토·문제은행 | `/admin/questions/*` | ✅ | AI 생성 → 7-gate 검증 → 검토·승인, 문제은행 클릭 시 우측 패널 즉시 표시 |
 | 결과 분석 | `/admin/results` | ✅ | 시험별 점수 분포(평균·중앙값·박스플롯)·정오표, CSV/Excel/PDF 내보내기 |
 | 사용자 승인·팀 관리·설정 | `/admin/system/*` | ✅ | 신입사원 승인·CSV 업로드, 팀 CRUD, 운영 모드·연동 상태 실시간 표시 |
-| 감사 로그 | `/admin/system` 내 예정 항목 | ⏳ 준비 중 | API·화면 미도입 — 가짜 데이터 없이 "준비 중" 표시 |
+| 감사 로그 | `/admin/system` 내 `PlannedAuditLog` | ✅ | 응시 중 이탈(탭 전환·뒤로가기·화면 캡처) 이벤트를 `EXAM_EXIT` 액션으로 기록·표시 |
 
 실 API가 없는 정보(입장·이탈 시각, 잔여시간, 불명확한 일정)는 각각 "정보 없음"·"집계 준비 중"·"일정 미정"으로
 정직하게 표시하며, 강제 종료·시간 연장 등 미구현 기능은 만들지 않습니다. 자세한 계약은 `CLAUDE.md`의
@@ -180,9 +180,11 @@ npm run dev   # http://localhost:5173
 |---|---|---|---|
 | POST | `/api/auth/login` | 없음 | 로그인 → JWT 반환 |
 | POST | `/api/auth/logout` | Bearer | 세션 무효화 (클라이언트 측만 처리) |
-| POST | `/api/exam/generate` | 없음 | 팀코드 → 25문항 출제 |
-| POST | `/api/exam/submit` | 없음 | 답안 채점 + 결과 저장 |
-| GET  | `/api/exam/result/{id}` | 없음 | 결과 조회 |
+| GET  | `/api/exam/assigned-name` | Bearer | 배정된 시험명·시험시간(`duration_min`)·문항수 조회 (응시 시작 전 화면용) |
+| POST | `/api/exam/generate` | Bearer | 배정된 시험 출제 (body/query의 employee_id 무시, JWT `sub` 사용) |
+| POST | `/api/exam/submit` | Bearer | 답안 채점 + 결과 저장 (JWT `sub` 사용) |
+| GET  | `/api/exam/result/{id}` | Bearer | 결과 조회 (본인 또는 admin만 허용, 아니면 403) |
+| POST | `/api/exam/exit-event` | Bearer | 응시 중 이탈(탭 전환·뒤로가기·화면 캡처) 감지 시 감사 로그 기록 |
 | GET  | `/api/admin/logs` | Admin JWT | 응시 이력 (팀·날짜 필터) — 현재 더미 반환 |
 | GET  | `/api/admin/questions` | Admin JWT | 문제 목록 (team·카테고리 필터) |
 | PATCH| `/api/admin/difficulty` | Admin JWT | 난이도 재조정 (시험 출제에도 즉시 반영) |
@@ -199,7 +201,6 @@ npm run dev   # http://localhost:5173
 | GET  | `/api/admin/question-stats` | Admin JWT | 전체 문제 출제 횟수 조회 |
 | GET  | `/api/admin/question-stats/flagged` | Admin JWT | 자주 출제 문제 목록 (exam_count≥5) |
 | GET  | `/api/admin/system-status` | Admin JWT | 실제 운영 모드(AI_PROVIDER 등)·API 키 설정 여부 조회 |
-| GET  | `/api/admin/materials/status` | Admin JWT | 교육자료 폴더의 신규/변경 파일 감지 (team_code 쿼리) |
 | POST | `/api/admin/materials/scan` | Admin JWT | 감지된 신규 파일 다운로드·텍스트추출·캐싱 실행 |
 | GET  | `/api/admin/exam-sets/papers` | Admin JWT | 시험지 목록 (검색·팀·사용현황 필터, 시험지 생성관리 화면) |
 | POST | `/api/admin/exam-sets/from-paper` | Admin JWT | 확정 시험지를 원본으로 Copy-on-Write 수정본 저장 |
@@ -252,8 +253,8 @@ npm run dev   # http://localhost:5173
 `DRIVE_EDUCATION_MATERIALS_FOLDER_ID`를 설정하면 그 하위 `common`/`team1`/`team2`/`team3` 폴더의 PDF/PPTX를
 스캔해 텍스트를 추출하고, AI 문제 생성 시 자동으로 포함합니다.
 
-- 관리자가 "시험 생성" 화면에서 팀을 선택하면 새/변경된 자료가 있는지 자동 확인하고, 있으면 알림 배너를 띄웁니다.
-- 배너의 "지금 스캔하기"를 눌러야만 실제로 다운로드·텍스트추출·캐시 갱신이 일어납니다 (자동 스캔 없음).
+- `GET /api/admin/materials/list`가 새/변경된 파일을 `status: "new"`로 표시해 응답에 그대로 포함합니다(별도 배너 API 없음).
+- `POST /api/admin/materials/scan`을 호출해야만 실제로 다운로드·텍스트추출·캐시 갱신이 일어납니다 (자동 스캔 없음).
 - 변경 없는 파일은 캐시된 텍스트를 그대로 재사용해 Drive 호출·추출 비용을 아낍니다.
 - 관리자가 "교육자료 추가 입력" textarea에 직접 붙여넣은 텍스트는 캐시된 텍스트 뒤에 보충 내용으로 덧붙습니다.
 
@@ -281,7 +282,6 @@ npm run dev   # http://localhost:5173
 | Vercel 스냅샷 휘발 | `STORAGE_BACKEND=local` 시 스냅샷이 `/tmp`에 저장되어 신규 인스턴스에서 손실 가능 → HTTP 410. `sheets` 모드에서는 영구 저장 |
 | `questions.json` 읽기 전용 | Vercel 파일시스템은 읽기 전용. AI 생성 문제 저장 시 `STORAGE_BACKEND=local`이면 런타임 오류 발생 |
 | 응시 이력 | 실 결과 없으면 `fetch_logs()`가 더미 5건 반환 |
-| 감사 로그 화면 | `/admin/system`의 `PlannedAuditLog`는 API·화면 미도입 상태로 "준비 중" 표시만 함 |
 
 ### 미구현 항목
 
@@ -295,7 +295,7 @@ npm run dev   # http://localhost:5173
 | ~~비밀번호 초기화~~ | ~~`api/admin.py`~~ | ✅ 구현 완료 — 관리자가 임시 비밀번호 발급 |
 | ~~난이도 AI 자동 확정 피드백 루프~~ | ~~`difficulty.py`~~ | ✅ 구현 완료 — 3회 연속 override 시 자동 확정 + Sheets 영구 저장 |
 | ~~관리자 UI Phase 6A 전환~~ | ~~`frontend/src/admin/`~~ | ✅ 구현 완료 — `/admin/*` 업무 URL, Copy-on-Write 시험지 수정, 응시 현황 폴링 |
-| 감사 로그 화면 | `frontend/src/admin/pages/system/PlannedAuditLog.jsx` | ⏳ API·화면 미도입, "준비 중" 상태만 표시 |
+| ~~감사 로그 화면~~ | ~~`frontend/src/admin/pages/system/PlannedAuditLog.jsx`~~ | ✅ 구현 완료 — 응시 중 이탈(`EXAM_EXIT`) 이벤트를 응시자명·사유와 함께 기록 |
 | Sheets v2 정규화 저장·V2 Read 전환 | `repositories/*_v2.py`, `OJT_SHEETS_SCHEMA_MODE` | ⏳ Phase 3~5 구현 완료·기본 비활성, 운영 전환은 별도 Canary 승인 필요 (`CLAUDE.md` 참고) |
 
 ### 난이도 auto_confirmed 로직
@@ -331,7 +331,7 @@ npm run dev   # http://localhost:5173
 - [x] 관리자 UI Phase 6A 전환 — `/admin/*` 업무 URL, 시험지 Copy-on-Write 수정, 응시 현황 10초 폴링
 - [x] Sheets v2 슬림 스키마 + Phase 1~5 Dual-Write 기반 (기본 Legacy-only, 명시적 플래그로만 활성화)
 - [x] XT 신규 브랜딩 아이콘 세트 적용 (favicon·앱 아이콘·로그인/응시 화면)
-- [ ] 감사 로그 화면 (API·화면 미도입, 현재 "준비 중" 표시)
+- [x] 감사 로그 화면 — 응시 중 이탈(탭 전환·뒤로가기·화면 캡처) 이벤트 기록
 - [ ] Sheets v2 정규화 데이터 기반 V2 Read/UI 전환 (별도 Canary 승인 필요)
 
 ---

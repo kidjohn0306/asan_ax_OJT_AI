@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Literal, Optional
 
 from api.deps import require_auth
 
@@ -14,6 +14,11 @@ TeamCode = str
 class GenerateRequest(BaseModel):
     team_code: TeamCode
     employee_id: Optional[str] = ""
+
+
+class ExitEventRequest(BaseModel):
+    reason: Literal["tab_switch", "back_navigation", "print_screen"]
+    result_id: Optional[str] = ""
 
 
 class SubmitRequest(BaseModel):
@@ -37,11 +42,21 @@ def _require_claim_match(auth: dict, claimed_employee_id: str = "") -> str:
 @router.get("/assigned-name")
 def assigned_exam_name(employee_id: str = "", auth: dict = Depends(require_auth)):
     """
-    로그인 직후 응시자에게 배정된 시험명 조회 (시험 생성 없이 이름만 확인)
+    로그인 직후 응시자에게 배정된 시험명·시험시간·문항수 조회 (시험 생성·응시 세션 시작 없이 확인만)
     """
-    from services.exam_service import get_assigned_exam_name
+    from services.exam_service import get_assigned_exam_preview
     requester_id = _require_claim_match(auth, employee_id)
-    return {"name": get_assigned_exam_name(requester_id)}
+    return get_assigned_exam_preview(requester_id)
+
+
+@router.post("/exit-event")
+def report_exit_event(body: ExitEventRequest, auth: dict = Depends(require_auth)):
+    """응시 중 이탈(탭 전환·뒤로가기·화면 캡처·새로고침 시도) 감지 시 감사 로그에 기록한다.
+    실패해도 클라이언트의 강제 로그아웃 흐름을 막지 않도록 항상 200을 반환한다."""
+    from services.exam_service import record_exam_exit_event
+    requester_id = _require_claim_match(auth)
+    record_exam_exit_event(requester_id, auth.get("name", ""), body.reason, body.result_id or "")
+    return {"success": True}
 
 
 @router.post("/generate")

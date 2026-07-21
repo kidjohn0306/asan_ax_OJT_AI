@@ -295,7 +295,7 @@ class LocalExamSetRepository(ExamSetRepository):
                 json.dump(data, f, ensure_ascii=False, indent=2)
 
     def list_exam_sets(self) -> list:
-        return self._load().get("sets", [])
+        return [s for s in self._load().get("sets", []) if s.get("exam_id")]
 
     def get_exam(self, exam_id: str) -> dict | None:
         for s in self.list_exam_sets():
