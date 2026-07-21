@@ -48,7 +48,6 @@ function mockApi(method, path) {
   if (path === '/api/admin/teams/headcount') return Promise.resolve({ headcounts: { T1: 1 } })
   if (path === '/api/drive/status') return Promise.resolve({ connected: true })
   if (path === '/api/admin/system-status') return Promise.resolve({ ai_provider: 'mock' })
-  if (path.startsWith('/api/admin/materials/status')) return Promise.resolve({ has_new_any: false, categories: {} })
   if (path.startsWith('/api/admin/materials/list')) return Promise.resolve({ categories: {} })
   if (path === '/api/admin/generation-jobs') return Promise.resolve({ jobs: [], enabled: true })
   if (path === '/api/admin/audit-logs') return Promise.resolve({ logs: [], enabled: true })

@@ -33,6 +33,10 @@ class GenerateAIRequest(BaseModel):
     difficulty_hint: str = "중"
     idempotency_key: str = ""
     material_ids: Optional[list[str]] = None
+    # 지정하면 카테고리(공통/team/환경안전/일반상식)·난이도(하/중/상) 분포를 실제로 반영해 생성한다.
+    # 생략하면 기존과 동일하게 team_code 하나로 정해지는 카테고리에 count개를 생성한다(하위 호환).
+    category_counts: Optional[dict[str, int]] = None
+    difficulty_counts: Optional[dict[str, int]] = None
 
 
 class ApproveUserRequest(BaseModel):
@@ -274,6 +278,17 @@ def preview_exam(body: PreviewExamRequest, _: dict = Depends(require_admin)):
 
 @router.post("/generate-ai-questions")
 def generate_ai_questions(body: GenerateAIRequest, actor: dict = Depends(require_admin)):
+    if body.category_counts:
+        from services.admin_service import generate_ai_questions_by_distribution as _generate_dist
+        return _generate_dist(
+            body.team_code,
+            body.material_text,
+            body.category_counts,
+            difficulty_counts=body.difficulty_counts,
+            requested_by=actor.get("sub", ""),
+            idempotency_key=body.idempotency_key,
+            material_ids=body.material_ids,
+        )
     from services.admin_service import generate_ai_questions as _generate
     return _generate(
         body.team_code,
@@ -481,13 +496,6 @@ def list_materials(team_code: Optional[TeamCode] = None, _: dict = Depends(requi
     if team_code:
         _material_categories_for_team(team_code)  # team_code 형식 검증
     return list_cached_materials(team_code)
-
-
-@router.get("/materials/status")
-def get_materials_status(team_code: TeamCode, _: dict = Depends(require_admin)):
-    from services.material_service import check_new_materials
-    categories = {cat: check_new_materials(cat) for cat in _material_categories_for_team(team_code)}
-    return {"categories": categories, "has_new_any": any(c["has_new"] for c in categories.values())}
 
 
 @router.post("/materials/scan")
