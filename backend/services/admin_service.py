@@ -1040,6 +1040,15 @@ def _validate_evaluation_type(evaluation_type: str) -> str:
     return evaluation_type
 
 
+def _validate_exam_category(exam_category: str) -> str:
+    if exam_category not in {"exam_study", "exam_test"}:
+        raise _exam_input_error(
+            "EXAM_CATEGORY_INVALID",
+            "exam_category must be exam_study or exam_test",
+        )
+    return exam_category
+
+
 def _resolve_exam_scores(question_ids, question_scores):
     from services.exams.dual_write import resolve_question_scores
 
@@ -1089,6 +1098,7 @@ def _assert_same_idempotent_exam(existing: dict, data: dict) -> None:
         "team_code",
         "question_ids",
         "evaluation_type",
+        "exam_category",
     )
     if any(existing.get(field) != data.get(field) for field in immutable_fields):
         raise HTTPException(
@@ -1139,6 +1149,7 @@ def create_exam_set(
     created_by: str = "",
     question_scores: dict[str, int] | None = None,
     evaluation_type: str = "official",
+    exam_category: str = "exam_study",
     idempotency_key: str = "",
     created_by_name: str = "",
 ) -> dict:
@@ -1151,6 +1162,7 @@ def create_exam_set(
     )
 
     evaluation_type = _validate_evaluation_type(evaluation_type)
+    exam_category = _validate_exam_category(exam_category)
     approved_questions = _load_approved_exam_questions(
         question_repo, question_ids
     )
@@ -1209,6 +1221,9 @@ def create_exam_set(
             version, scores, evaluation_type, idempotency_key
         )
 
+    # exam_category는 Phase4 dual-write 플래그와 무관하게 항상 확장 컬럼에 기록한다.
+    metadata = {"exam_category": exam_category, **(metadata or {})}
+
     data = {
         "exam_set_id": exam_set_id,
         "exam_id": exam_id,
@@ -1217,6 +1232,7 @@ def create_exam_set(
         "question_ids": valid_ids,
         "question_scores": scores,
         "evaluation_type": evaluation_type,
+        "exam_category": exam_category,
         "total_score": 100,
         "exam_version_id": (
             version["exam_version_id"] if version is not None else ""
@@ -1237,6 +1253,7 @@ def create_exam_set(
                      team_code=stored.get("team_code", ""))
     return {
         **stored,
+        "exam_category": exam_category,
         "evaluation_type": evaluation_type,
         "total_score": 100,
         "exam_version_id": (
@@ -1275,6 +1292,7 @@ def list_question_papers() -> list:
             "question_count": len(representative.get("question_ids") or []),
             "used_by_exam_count": len(rows),
             "created_at": str(representative.get("created_at") or ""),
+            "exam_category": str(representative.get("exam_category") or "exam_study"),
         }
     return sorted(papers.values(), key=lambda p: p.get("created_at") or "", reverse=True)
 
@@ -1327,6 +1345,9 @@ def create_exam_round_from_paper(
     evaluation_type = _validate_evaluation_type(
         evaluation_type or source.get("evaluation_type") or "official"
     )
+    # 시험 유형(기초고사/업무능력평가)은 시험지 생성 단계에서만 선택하며, 회차 생성은
+    # 원본 시험지의 값을 그대로 물려받고 여기서 다시 선택하지 않는다.
+    exam_category = source.get("exam_category") or "exam_study"
     policy = get_exam_write_policy()
     version = None
     scores = {}
@@ -1400,6 +1421,8 @@ def create_exam_round_from_paper(
         metadata = _frozen_exam_metadata(
             version, scores, evaluation_type, idempotency_key
         )
+    # exam_category는 Phase4 dual-write 플래그와 무관하게 항상 확장 컬럼에 기록한다.
+    metadata = {"exam_category": exam_category, **(metadata or {})}
     _, exam_id = build_exam_ids(idempotency_key)
     data = {
         "exam_set_id": exam_set_id,
@@ -1409,6 +1432,7 @@ def create_exam_round_from_paper(
         "question_ids": valid_ids,
         "question_scores": scores,
         "evaluation_type": evaluation_type,
+        "exam_category": exam_category,
         "total_score": 100,
         "exam_version_id": (
             version["exam_version_id"] if version is not None else ""
@@ -1430,7 +1454,7 @@ def create_exam_round_from_paper(
         if value is not None
     }
     if update_fields:
-        metadata = {**(metadata or {}), **update_fields}
+        metadata = {**metadata, **update_fields}
     stored = _persist_legacy_exam(
         exam_set_repo,
         data,
@@ -1444,6 +1468,7 @@ def create_exam_round_from_paper(
     return {
         **stored,
         "evaluation_type": evaluation_type,
+        "exam_category": exam_category,
         "total_score": 100,
         "exam_version_id": (
             version["exam_version_id"] if version is not None else ""
@@ -1843,6 +1868,7 @@ def get_exam_set_questions(exam_id: str) -> dict:
             "name": exam_set.get("name"),
             "team_code": exam_set.get("team_code"),
             "created_at": exam_set.get("created_at"),
+            "exam_category": exam_set.get("exam_category") or "exam_study",
             **extensions,
         }
 

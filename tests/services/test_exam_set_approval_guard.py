@@ -28,6 +28,9 @@ class FakeExamSets:
     def list_exam_sets(self):
         return self.exam_sets
 
+    def update_exam_set(self, exam_id, fields):
+        return True
+
 
 class ExamSetApprovalGuardTests(unittest.TestCase):
     def test_all_approved_questions_are_accepted(self):

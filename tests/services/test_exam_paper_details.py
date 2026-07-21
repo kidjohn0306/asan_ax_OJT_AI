@@ -301,6 +301,7 @@ class ExamPaperDetailsTests(unittest.TestCase):
             "question_count": 2,
             "used_by_exam_count": 3,
             "created_at": "2026-07-12T09:00:00+00:00",
+            "exam_category": "exam_study",
         })
 
 
