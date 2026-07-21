@@ -20,6 +20,12 @@ export async function apiFetch(method, path, body = null) {
   }
   if (body) opts.body = JSON.stringify(body)
   const res = await fetch(API + path, opts)
+  if (res.status === 401) {
+    sessionStorage.clear()
+    sessionStorage.setItem('popup_msg', '세션이 만료되었습니다.\n다시 로그인해주세요.')
+    window.location.replace('/login')
+    return
+  }
   if (res.status === 403) {
     sessionStorage.clear()
     sessionStorage.setItem('popup_msg', '관리자 권한이 없습니다.\n접근이 차단되었습니다.')
@@ -42,6 +48,12 @@ export async function apiUpload(path, formData) {
     },
     body: formData,
   })
+  if (res.status === 401) {
+    sessionStorage.clear()
+    sessionStorage.setItem('popup_msg', '세션이 만료되었습니다.\n다시 로그인해주세요.')
+    window.location.replace('/login')
+    return
+  }
   if (res.status === 403) {
     sessionStorage.clear()
     sessionStorage.setItem('popup_msg', '관리자 권한이 없습니다.\n접근이 차단되었습니다.')

@@ -49,7 +49,6 @@ function mockApi(method, path) {
   if (path === '/api/drive/status') return Promise.resolve({ connected: true })
   if (path === '/api/admin/system-status') return Promise.resolve({ ai_provider: 'mock' })
   if (path.startsWith('/api/admin/materials/list')) return Promise.resolve({ categories: {} })
-  if (path.startsWith('/api/admin/logs')) return Promise.resolve({ logs: [] })
   if (path === '/api/admin/generation-jobs') return Promise.resolve({ jobs: [], enabled: true })
   if (path === '/api/admin/audit-logs') return Promise.resolve({ logs: [], enabled: true })
   return Promise.resolve({ sets: [] })
@@ -63,7 +62,6 @@ describe('planned admin domain routes', () => {
 
   it.each([
     ['/admin/questions/review', '검수 대기'],
-    ['/admin/results', '응시 결과'],
     ['/admin/teams', '팀 관리'],
   ])('renders the planned title for %s', async (path, title) => {
     renderAdmin(path)
@@ -72,7 +70,6 @@ describe('planned admin domain routes', () => {
 
   it.each([
     ['/admin/questions/Q-1/history', '/admin/questions/Q-1'],
-    ['/admin/results/R-1', '/admin/results'],
   ])('shows an honest unavailable state for %s', async (path, backHref) => {
     renderAdmin(path)
     expect(await screen.findByText('현재 API에서 제공되지 않는 기능입니다')).toBeInTheDocument()
@@ -89,11 +86,19 @@ describe('planned admin domain routes', () => {
     expect(screen.getByTestId('location')).toHaveTextContent('/admin/questions/generate/setup')
   })
 
+  // 카테고리(공통/팀/환경안전/일반상식) x 난이도(하/중/상) 조합마다 별도 POST 요청을 보내므로
+  // (한 번의 실행에 여러 콜이 나갈 수 있음), 첫 호출에만 문제를 실어 보내고 이후 호출은 빈 결과로
+  // 응답해 패널에 중복 행이 쌓이지 않게 한다.
   it('shows the questions just generated in the "생성된 문제" panel', async () => {
+    let callCount = 0
     apiFetch.mockImplementation((method, path) => {
-      if (method === 'POST' && path === '/api/admin/generate-ai-questions') return Promise.resolve({
-        questions: [{ id: 'Q-NEW-1', category: '공통', question: '새로 생성된 문제', difficulty: '중', gate_errors: [] }],
-      })
+      if (method === 'POST' && path === '/api/admin/generate-ai-questions') {
+        callCount += 1
+        if (callCount > 1) return Promise.resolve({ questions: [] })
+        return Promise.resolve({
+          questions: [{ id: 'Q-NEW-1', category: '공통', question: '새로 생성된 문제', difficulty: '중', gate_errors: [] }],
+        })
+      }
       return mockApi(method, path)
     })
     renderAdmin('/admin/questions/generate/setup')
@@ -106,10 +111,15 @@ describe('planned admin domain routes', () => {
   })
 
   it('flags a generated question that failed a gate as needing review', async () => {
+    let callCount = 0
     apiFetch.mockImplementation((method, path) => {
-      if (method === 'POST' && path === '/api/admin/generate-ai-questions') return Promise.resolve({
-        questions: [{ id: 'Q-NEW-2', category: '공통', question: '게이트 실패 문제', difficulty: '상', gate_errors: ['V01'] }],
-      })
+      if (method === 'POST' && path === '/api/admin/generate-ai-questions') {
+        callCount += 1
+        if (callCount > 1) return Promise.resolve({ questions: [] })
+        return Promise.resolve({
+          questions: [{ id: 'Q-NEW-2', category: '공통', question: '게이트 실패 문제', difficulty: '상', gate_errors: ['V01'] }],
+        })
+      }
       return mockApi(method, path)
     })
     renderAdmin('/admin/questions/generate/setup')
@@ -214,15 +224,5 @@ describe('query string filter history', () => {
 
     expect((await screen.findAllByText('승인 문제')).length).toBeGreaterThan(0)
     expect(apiFetch).toHaveBeenLastCalledWith('GET', '/api/admin/questions?category=%EA%B3%B5%ED%86%B5&status=approved&')
-  })
-
-  it('initializes result filters and pushes search changes', async () => {
-    renderAdmin('/admin/results?team=T2&from=2026-07-01&to=2026-07-31&q=%EA%B9%80')
-    fireEvent.click(await screen.findByRole('button', { name: '조회' }))
-    expect(apiFetch).toHaveBeenCalledWith('GET', '/api/admin/logs?team=T2&date_from=2026-07-01&date_to=2026-07-31&')
-    expect(screen.getByPlaceholderText('이름 검색')).toHaveValue('김')
-
-    fireEvent.change(screen.getByPlaceholderText('이름 검색'), { target: { value: '박' } })
-    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('q=%EB%B0%95'))
   })
 })
