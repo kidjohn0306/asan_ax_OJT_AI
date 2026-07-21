@@ -27,7 +27,6 @@ describe('ADMIN_NAVIGATION', () => {
       '/admin/exam-papers?tab=setup',
       '/admin/exams',
       '/admin/exams/live',
-      '/admin/results',
       '/admin/analytics',
       '/admin/employees',
       '/admin/teams',
@@ -74,7 +73,6 @@ describe('adminPathToLegacyView', () => {
     ['/admin/questions/question-1', 'q-bank'],
     ['/admin/exams/exam-1', 'exam-assign'],
     ['/admin/exams/exam-1/live', 'exam-status'],
-    ['/admin/results/result-1', 'history'],
   ])('maps dynamic detail path %s by prefix', (pathname, view) => {
     expect(adminPathToLegacyView(pathname)).toBe(view)
   })
