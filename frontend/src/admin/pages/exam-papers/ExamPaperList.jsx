@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { apiFetch } from '../../../api'
 
 const PAGE_SIZE = 10
-const EXAM_CATEGORY_LABELS = { exam_study: '기초고사', exam_test: '업무능력평가' }
+const EXAM_CATEGORY_LABELS = { exam_study: '평가', exam_test: '연습문제' }
 
 function setQuery(searchParams, setSearchParams, patch) {
   const next = new URLSearchParams(searchParams)
@@ -96,7 +96,7 @@ export default function ExamPaperList({ searchParams, setSearchParams, onSelect 
                       <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:3 }}>{paper.exam_id}</div>
                     </td>
                     <td style={tdStyle}>{paper.team_code || '-'}</td>
-                    <td style={tdStyle}>{EXAM_CATEGORY_LABELS[paper.exam_category] || '기초고사'}</td>
+                    <td style={tdStyle}>{EXAM_CATEGORY_LABELS[paper.exam_category] || '평가'}</td>
                     <td style={tdStyle}>{paper.question_count || 0}문항</td>
                     <td style={tdStyle}>v{paper.paper_version || 0}</td>
                     <td style={tdStyle}>{Number(paper.used_by_exam_count || 0) > 0 ? `${paper.used_by_exam_count}회` : '미사용'}</td>
