@@ -327,15 +327,9 @@ const EXAM_LIST_CAP = 12
 const EXAM_MANAGE_PAGE_SIZE = 8
 
 function UpcomingExamsCalendar({ examSets }) {
-  const [displayMonth, setDisplayMonth] = useState(new Date())
+  const [displayDate, setDisplayDate] = useState(new Date())
 
-  const getDaysInMonth = (date) => new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
-  const getFirstDayOfMonth = (date) => new Date(date.getFullYear(), date.getMonth(), 1).getDay()
-
-  const upcomingExams = examSets.filter(s => {
-    const status = getExamStatus(s.exam_datetime, s.duration_min)
-    return status === 'scheduled' || status === 'ongoing'
-  })
+  const upcomingExams = examSets
 
   const examsByDate = {}
   upcomingExams.forEach(exam => {
@@ -346,91 +340,103 @@ function UpcomingExamsCalendar({ examSets }) {
     }
   })
 
-  const year = displayMonth.getFullYear()
-  const month = displayMonth.getMonth()
-  const daysInMonth = getDaysInMonth(displayMonth)
-  const firstDay = getFirstDayOfMonth(displayMonth)
-  const days = []
+  const getWeekStart = (date) => {
+    const d = new Date(date)
+    const day = d.getDay()
+    const diff = d.getDate() - day
+    return new Date(d.setDate(diff))
+  }
 
-  for (let i = 0; i < firstDay; i++) days.push(null)
-  for (let i = 1; i <= daysInMonth; i++) days.push(i)
+  const weekStart = getWeekStart(displayDate)
+  const weekDays = []
+  for (let i = 0; i < 7; i++) {
+    const d = new Date(weekStart)
+    d.setDate(d.getDate() + i)
+    weekDays.push(d)
+  }
 
-  const monthName = new Intl.DateTimeFormat('ko-KR', { month:'long' }).format(displayMonth)
   const today = new Date()
-  const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month
+  const dateFormat = new Intl.DateTimeFormat('ko-KR', { month:'short', day:'numeric' })
 
   return (
-    <Card title="다가오는 시험">
-      <div style={{ padding:'0 20px 20px' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-          <button onClick={() => setDisplayMonth(new Date(year, month - 1))}
-            style={{ width:30, height:30, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:6 }}
+    <Card
+      title="시험 일정"
+      style={{ marginBottom:16, maxWidth:'50%' }}
+      action={
+        <div style={{ display:'flex', alignItems:'center', gap:10, fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <span style={{ width:8, height:8, borderRadius:2, background:'var(--accent)' }} />
+            예정
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <span style={{ width:8, height:8, borderRadius:2, background:'var(--warning)' }} />
+            진행중
+          </div>
+          <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+            <span style={{ width:8, height:8, borderRadius:2, background:'var(--success)' }} />
+            완료
+          </div>
+        </div>
+      }
+    >
+      <div style={{ padding:'12px 16px' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+          <button onClick={() => setDisplayDate(new Date(displayDate.getTime() - 7*24*60*60*1000))}
+            style={{ width:20, height:20, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:4, padding:0 }}
             onMouseOver={e => e.currentTarget.style.background='#F1F5F9'}
             onMouseOut={e => e.currentTarget.style.background='none'}>
-            <Icon name="chevronLeft" size={16} />
+            <Icon name="chevronLeft" size={12} />
           </button>
-          <span style={{ fontSize:15, fontWeight:700, color:'var(--text)' }}>{year}년 {monthName}</span>
-          <button onClick={() => setDisplayMonth(new Date(year, month + 1))}
-            style={{ width:30, height:30, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:6 }}
+          <span style={{ fontSize:11, fontWeight:700, color:'var(--text)' }}>
+            {weekStart.getMonth() + 1}월 {weekStart.getDate()}일 ~ {new Date(weekStart.getTime() + 6*24*60*60*1000).getMonth() + 1}월 {new Date(weekStart.getTime() + 6*24*60*60*1000).getDate()}일
+          </span>
+          <button onClick={() => setDisplayDate(new Date(displayDate.getTime() + 7*24*60*60*1000))}
+            style={{ width:20, height:20, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:4, padding:0 }}
             onMouseOver={e => e.currentTarget.style.background='#F1F5F9'}
             onMouseOut={e => e.currentTarget.style.background='none'}>
-            <Icon name="chevronRight" size={16} />
+            <Icon name="chevronRight" size={12} />
           </button>
         </div>
 
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:2, marginBottom:12 }}>
-          {['일','월','화','수','목','금','토'].map(d => (
-            <div key={d} style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textAlign:'center', padding:'8px 0' }}>{d}</div>
-          ))}
-        </div>
-
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:2 }}>
-          {days.map((day, i) => {
-            const dateStr = day ? `${year}-${String(month + 1).padStart(2,'0')}-${String(day).padStart(2,'0')}` : ''
-            const examsOnDay = dateStr ? examsByDate[dateStr] || [] : []
-            const isToday = day && isCurrentMonth && day === today.getDate()
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:6 }}>
+          {weekDays.map((d, i) => {
+            const dateStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+            const examsOnDay = examsByDate[dateStr] || []
+            const isTodayDate = d.toDateString() === today.toDateString()
+            const dayName = ['일','월','화','수','목','금','토'][d.getDay()]
 
             return (
-              <div key={i} style={{
-                aspectRatio:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-                borderRadius:8, border: examsOnDay.length > 0 ? '1.5px solid var(--accent)' : isToday ? '1.5px solid var(--warning)' : '1px solid var(--border)',
-                background: examsOnDay.length > 0 ? 'var(--accent-light)' : isToday ? 'var(--warning-light)' : day ? 'white' : 'transparent',
-                cursor: examsOnDay.length > 0 ? 'pointer' : 'default', position:'relative', fontSize:12, fontWeight:600, color:'var(--text)',
-                transition:'border-color .15s, background .15s'
-              }}
-              onMouseOver={e => { if (examsOnDay.length > 0) { e.currentTarget.style.borderColor='var(--accent-dark)'; e.currentTarget.style.background='var(--accent)'; e.currentTarget.style.color='white' } }}
-              onMouseOut={e => { if (examsOnDay.length > 0) { e.currentTarget.style.borderColor='var(--accent)'; e.currentTarget.style.background='var(--accent-light)'; e.currentTarget.style.color='var(--text)' } }}>
-                {day}
-                {examsOnDay.length > 0 && (
-                  <span style={{ fontSize:10, fontWeight:700, color:'var(--accent)', marginTop:2, display:'block' }}>{examsOnDay.length}</span>
-                )}
+              <div key={i} style={{ display:'flex', flexDirection:'column', alignItems:'center' }}>
+                <div style={{ fontSize:10, fontWeight:700, color:'var(--text-muted)', marginBottom:4 }}>
+                  {dayName}
+                </div>
+                <div style={{
+                  fontSize:11, fontWeight:600, color: isTodayDate ? 'var(--warning)' : 'var(--text)',
+                  padding:'4px 6px', borderRadius:4,
+                  background: isTodayDate ? 'var(--warning-light)' : 'transparent',
+                  marginBottom:6, width:'100%', textAlign:'center'
+                }}>
+                  {d.getDate()}
+                </div>
+                <div style={{ width:'100%', display:'flex', flexDirection:'column', gap:4, minHeight:40 }}>
+                  {examsOnDay.map(exam => {
+                    const status = getExamStatus(exam.exam_datetime, exam.duration_min)
+                    const bgColor = status === 'done' ? 'var(--success)' : status === 'ongoing' ? 'var(--warning)' : 'var(--accent)'
+                    return (
+                      <div key={exam.exam_id} style={{
+                        fontSize:10, fontWeight:600, color:'white', background:bgColor,
+                        padding:'3px 4px', borderRadius:3, whiteSpace:'normal', overflowWrap:'break-word', wordBreak:'normal',
+                        lineHeight:1.3
+                      }}>
+                        {exam.name}
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
             )
           })}
         </div>
-
-        {upcomingExams.length > 0 && (
-          <div style={{ marginTop:16, paddingTop:16, borderTop:'1px solid var(--border)' }}>
-            <div style={{ fontSize:12, fontWeight:700, color:'var(--text)', marginBottom:8 }}>예정된 시험</div>
-            <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:200, overflowY:'auto' }}>
-              {upcomingExams.slice(0, 5).map(exam => {
-                const status = getExamStatus(exam.exam_datetime, exam.duration_min)
-                return (
-                  <div key={exam.exam_id} style={{ fontSize:12, color:'var(--text)', background:'var(--bg)', borderRadius:6, padding:'8px 10px', display:'flex', alignItems:'center', gap:8, justifyContent:'space-between' }}>
-                    <div style={{ flex:1, minWidth:0 }}>
-                      <div style={{ fontWeight:600, whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{exam.name}</div>
-                      <div style={{ fontSize:11, color:'var(--text-muted)', marginTop:2 }}>{exam.exam_datetime?.slice(0,16).replace('T',' ')}</div>
-                    </div>
-                    <Badge type={EXAM_STATUS_META[status].badge}>{EXAM_STATUS_META[status].label}</Badge>
-                  </div>
-                )
-              })}
-              {upcomingExams.length > 5 && (
-                <div style={{ fontSize:11, color:'var(--text-muted)', textAlign:'center', padding:'6px 0' }}>외 {upcomingExams.length - 5}개</div>
-              )}
-            </div>
-          </div>
-        )}
       </div>
     </Card>
   )
@@ -1233,11 +1239,11 @@ function Users({ toast }) {
   }, [])
 
   async function approve() {
-    if (!form.empno || !form.name || !form.date) { setResult({ msg:'모든 항목을 입력해주세요.', ok:false }); return }
+    if (!form.empno || !form.name) { setResult({ msg:'모든 항목을 입력해주세요.', ok:false }); return }
     try {
-      await apiFetch('POST', '/api/admin/approve-user', { employee_id:form.empno, name:form.name, team:form.team, exam_date:form.date })
+      await apiFetch('POST', '/api/admin/approve-user', { employee_id:form.empno, name:form.name, team:form.team })
       setResult({ msg:`${form.name} (${form.empno}) 승인 완료`, ok:true })
-      setForm({ empno:'', name:'', team: teams[0]?.team_code || 'T1', date:'' })
+      setForm({ empno:'', name:'', team: teams[0]?.team_code || 'T1' })
       loadUsers()
     } catch (e) { setResult({ msg:`오류: ${e.message}`, ok:false }) }
   }
@@ -1281,7 +1287,6 @@ function Users({ toast }) {
               {teamOpts.map(t => <option key={t.team_code} value={t.team_code}>{t.team_name}</option>)}
             </select>
           </div>
-          <FormInput label="응시 예정일" type="date" value={form.date} onChange={e => setForm(p=>({...p,date:e.target.value}))} />
           <BtnPrimary onClick={approve} style={{ width:'100%', justifyContent:'center' }}>
             <Icon name="check" size={14} style={{ color:'white' }} /> 승인 등록
           </BtnPrimary>
@@ -1291,7 +1296,7 @@ function Users({ toast }) {
         </Card>
 
         <Card title="CSV 대량 업로드">
-          <p style={{ fontSize:12, color:'var(--text-muted)', marginBottom:10 }}>컬럼: <code>employee_id, name, team_code, exam_date</code> (첫 행 헤더)</p>
+          <p style={{ fontSize:12, color:'var(--text-muted)', marginBottom:10 }}>컬럼: <code>employee_id, name, team_code</code> (첫 행 헤더)</p>
           <label style={{ display:'inline-flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1.5px dashed var(--border)', borderRadius:8, cursor:'pointer', fontSize:13, color:'var(--text)', background:'#FAFAFA', width:'100%', justifyContent:'center', boxSizing:'border-box' }}>
             <Icon name="up" size={14} />
             {csvLoading ? '업로드 중...' : 'CSV 파일 선택'}
@@ -1308,15 +1313,14 @@ function Users({ toast }) {
         </Card>
       </div>
       <Card title="승인된 응시자 목록" noPad action={<BtnOutlineSm onClick={loadUsers}><Icon name="refresh" size={11} /> 새로고침</BtnOutlineSm>}>
-        <DataTable headers={['사원번호','이름','팀','응시일','상태','관리']}>
+        <DataTable headers={['사원번호','이름','팀','상태','관리']}>
           {users.length === 0 ? (
-            <tr><td colSpan={6} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>승인된 응시자가 없습니다.</td></tr>
+            <tr><td colSpan={5} style={{ textAlign:'center', color:'var(--text-muted)', padding:20, fontSize:13 }}>승인된 응시자가 없습니다.</td></tr>
           ) : users.map(u => (
             <tr key={u.employee_id}>
               <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)', fontVariantNumeric:'tabular-nums' }}>{u.employee_id}</td>
               <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{u.name}</td>
               <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}>{u.team}</td>
-              <td style={{ fontSize:12, padding:'11px 18px', borderBottom:'1px solid var(--border)', color:'var(--text-muted)', fontVariantNumeric:'tabular-nums' }}>{u.exam_date || '-'}</td>
               <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><Badge type="success">승인</Badge></td>
               <td style={{ fontSize:13, padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><BtnOutlineSm danger onClick={() => del(u.employee_id, u.name)}>삭제</BtnOutlineSm></td>
             </tr>

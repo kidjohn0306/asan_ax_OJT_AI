@@ -106,7 +106,7 @@ MATERIAL_CACHE_TAB = "material_cache"
 MATERIAL_CACHE_HEADERS = ["category", "files_json", "scanned_at"]
 
 USERS_TAB = "users"
-USERS_HEADERS = ["employee_id", "password_hash", "name", "team", "role", "exam_date", "approved"]
+USERS_HEADERS = ["employee_id", "password_hash", "name", "team", "role", "approved", "shift_type", "process_code", "task_code", "is_active", "approved_by", "approved_date", "created_at", "updated_at", "row_version", "department", "employment_status", "last_login_at"]
 
 
 def _default_sheet_id():
@@ -616,7 +616,8 @@ class SheetsResultRepository(ResultRepository):
         if not result_id:
             raise ValueError("result_id is required")
         incoming_row = self._dict_to_row(result)
-        for row_number, row in enumerate(self._read_all_rows(), start=2):
+        existing_rows = self._read_all_rows()
+        for row_number, row in enumerate(existing_rows, start=2):
             if not row or str(row[0]) != result_id:
                 continue
             existing_row = self._dict_to_row(self._row_to_dict(row))
@@ -631,11 +632,14 @@ class SheetsResultRepository(ResultRepository):
                 body={"values": [incoming_row]},
             ).execute()
             return
-        self._values().append(
+        # .append()의 자동 테이블 인식은 A:Z 범위에 헤더보다 적은 컬럼만 채워진 행이
+        # 섞여 있으면 엉뚱한 열(예: Y열)부터 삽입하는 경우가 있어, 다음 빈 행 번호를
+        # 직접 계산해 update()로 명시적 위치에 쓴다.
+        next_row = len(existing_rows) + 2
+        self._values().update(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{RESULTS_TAB}!A:Z",
+            range=f"{RESULTS_TAB}!A{next_row}:Z{next_row}",
             valueInputOption="RAW",
-            insertDataOption="INSERT_ROWS",
             body={"values": [incoming_row]},
         ).execute()
 
@@ -1368,7 +1372,7 @@ class SheetsUserRepository:
                 spreadsheetId=self._spreadsheet_id,
                 body={"requests": [{"addSheet": {"properties": {"title": USERS_TAB}}}]},
             ).execute()
-        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A1:G1").execute()
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A1:R1").execute()
         current_header = res.get("values", [[]])[0] if res.get("values") else []
         _warn_if_header_mismatch(USERS_TAB, current_header, USERS_HEADERS)
         if not current_header:
@@ -1380,7 +1384,7 @@ class SheetsUserRepository:
             ).execute()
 
     def _read_all_rows(self) -> list:
-        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A:G").execute()
+        res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A:R").execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
 
@@ -1393,8 +1397,19 @@ class SheetsUserRepository:
             "name": _get(2),
             "team": _get(3),
             "role": _get(4) or "examinee",
-            "exam_date": _get(5),
-            "approved": _get(6) in ("TRUE", "True", True),
+            "approved": _get(5) in ("TRUE", "True", True),
+            "shift_type": _get(6),
+            "process_code": _get(7),
+            "task_code": _get(8),
+            "is_active": _get(9) in ("TRUE", "True", True),
+            "approved_by": _get(10),
+            "approved_date": _get(11),
+            "created_at": _get(12),
+            "updated_at": _get(13),
+            "row_version": _get(14),
+            "department": _get(15),
+            "employment_status": _get(16),
+            "last_login_at": _get(17),
         }
 
     @staticmethod
@@ -1405,8 +1420,19 @@ class SheetsUserRepository:
             data.get("name", ""),
             data.get("team", ""),
             data.get("role", "examinee"),
-            data.get("exam_date", ""),
             "TRUE" if data.get("approved") else "FALSE",
+            data.get("shift_type", ""),
+            data.get("process_code", ""),
+            data.get("task_code", ""),
+            "TRUE" if data.get("is_active") else "FALSE",
+            data.get("approved_by", ""),
+            data.get("approved_date", ""),
+            data.get("created_at", ""),
+            data.get("updated_at", ""),
+            data.get("row_version", ""),
+            data.get("department", ""),
+            data.get("employment_status", ""),
+            data.get("last_login_at", ""),
         ]
 
     def _find_row_index(self, employee_id: str) -> int:
@@ -1434,7 +1460,7 @@ class SheetsUserRepository:
         self._maybe_ensure_tab()
         self._values().append(
             spreadsheetId=self._spreadsheet_id,
-            range=f"{USERS_TAB}!A:G",
+            range=f"{USERS_TAB}!A:R",
             valueInputOption="RAW",
             insertDataOption="INSERT_ROWS",
             body={"values": [self._dict_to_row(user)]},

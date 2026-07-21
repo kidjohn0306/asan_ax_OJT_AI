@@ -869,26 +869,28 @@ def reject_question(question_id: str, reason: str, actor: dict = None) -> dict:
     return {"rejected": True, "question_id": question_id, "reason": reason}
 
 
-def approve_new_user(employee_id: str, name: str, team: str, exam_date: str) -> dict:
+def approve_new_user(employee_id: str, name: str, team: str) -> dict:
     from repositories import user_repo
     from repositories.local_json import load_local_admins
+    from datetime import datetime
 
     all_ids = {u["employee_id"] for u in user_repo.list_users()} | {a["employee_id"] for a in load_local_admins()}
     if employee_id in all_ids:
         raise HTTPException(status_code=409, detail="이미 등록된 사원번호입니다.")
 
+    approved_date = datetime.now().isoformat()
     new_user = {
         "employee_id": employee_id,
         "password_hash": "mock_hash",
         "name": name,
         "team": team,
         "role": "examinee",
-        "exam_date": exam_date,
         "approved": True,
+        "approved_date": approved_date,
     }
     user_repo.add_user(new_user)
 
-    return {"approved": True, "employee_id": employee_id, "name": name, "team": team, "exam_date": exam_date}
+    return {"approved": True, "employee_id": employee_id, "name": name, "team": team, "approved_date": approved_date}
 
 
 def list_exam_sets() -> list:
