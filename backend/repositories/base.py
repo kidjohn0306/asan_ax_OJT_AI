@@ -138,6 +138,17 @@ class UserRepository(ABC):
     def update_user(self, employee_id: str, fields: dict) -> bool: ...
 
 
+class ActivityLogRepository(ABC):
+    """대시보드 "최근 활동 피드"용 이벤트 로그. 감사 로그(audit_repo)와는 목적이 달라
+    분리한다 — 이쪽은 UI 표시용이며 보존·불변성 요구사항이 없다."""
+
+    @abstractmethod
+    def append_activity(self, record: dict) -> None: ...
+
+    @abstractmethod
+    def list_recent_activity(self, limit: int = 20, offset: int = 0) -> list: ...
+
+
 class MaterialRepository(ABC):
     """Drive 교육자료 스캔 결과 캐시. category(예: common/team1/team2/team3)별로
     스캔된 파일 매니페스트(id/name/modifiedTime)와 추출된 텍스트를 저장해

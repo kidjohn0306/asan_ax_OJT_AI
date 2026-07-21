@@ -4,9 +4,11 @@ import logging
 import functools
 import threading
 import time
+import uuid
 from datetime import datetime, timezone
 from config.storage import should_fallback_to_local
 from repositories.base import (
+    ActivityLogRepository,
     ExamSetRepository,
     FeedbackRepository,
     ResultConflict,
@@ -25,6 +27,7 @@ from repositories.local_json import (
     LocalQuestionRepository,
     LocalMaterialRepository,
     LocalUserRepository,
+    LocalActivityLogRepository,
 )
 
 
@@ -137,6 +140,12 @@ MATERIAL_CACHE_HEADERS = ["category", "files_json", "scanned_at"]
 
 USERS_TAB = "users"
 USERS_HEADERS = ["employee_id", "password_hash", "name", "team", "role", "approved_date", "approved"]
+
+ACTIVITY_LOG_TAB = "activity_log"
+ACTIVITY_LOG_HEADERS = [
+    "activity_id", "type", "actor_name", "target", "detail",
+    "team_code", "is_test", "created_at",
+]
 
 
 def _default_sheet_id():
@@ -833,6 +842,101 @@ class SheetsFeedbackRepository(FeedbackRepository):
             for row in rows if row
         ]
         return list(reversed(records[-limit:]))
+
+
+class SheetsActivityLogRepository(ActivityLogRepository):
+    def __init__(self):
+        self._spreadsheet_id = _default_sheet_id()
+        self._tab_ready = False
+        self._cache = _TTLRowCache(_READ_CACHE_TTL_SECONDS)
+
+    @property
+    def _svc(self):
+        return _thread_local_sheets_service()
+
+    def _values(self):
+        return self._svc.spreadsheets().values()
+
+    def _maybe_ensure_tab(self):
+        if not self._tab_ready:
+            self._ensure_tab()
+            self._tab_ready = True
+
+    def _ensure_tab(self):
+        meta = self._svc.spreadsheets().get(spreadsheetId=self._spreadsheet_id).execute()
+        existing = [s["properties"]["title"] for s in meta.get("sheets", [])]
+        if ACTIVITY_LOG_TAB not in existing:
+            self._svc.spreadsheets().batchUpdate(
+                spreadsheetId=self._spreadsheet_id,
+                body={"requests": [{"addSheet": {"properties": {"title": ACTIVITY_LOG_TAB}}}]},
+            ).execute()
+        res = self._values().get(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{ACTIVITY_LOG_TAB}!A1:H1",
+        ).execute()
+        if not res.get("values"):
+            self._values().update(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{ACTIVITY_LOG_TAB}!A1",
+                valueInputOption="RAW",
+                body={"values": [ACTIVITY_LOG_HEADERS]},
+            ).execute()
+
+    @_fallback_on_error(LocalActivityLogRepository)
+    def append_activity(self, record: dict) -> None:
+        self._maybe_ensure_tab()
+        record = dict(record)
+        record.setdefault("activity_id", f"act-{uuid.uuid4().hex}")
+        record.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        self._values().append(
+            spreadsheetId=self._spreadsheet_id,
+            range=f"{ACTIVITY_LOG_TAB}!A:H",
+            valueInputOption="RAW",
+            insertDataOption="INSERT_ROWS",
+            body={"values": [[
+                record["activity_id"],
+                record.get("type", ""),
+                record.get("actor_name", ""),
+                record.get("target", ""),
+                record.get("detail", ""),
+                record.get("team_code", ""),
+                "TRUE" if record.get("is_test") else "FALSE",
+                record["created_at"],
+            ]]},
+        ).execute()
+        self._cache.invalidate()
+
+    @_fallback_on_error(LocalActivityLogRepository)
+    def list_recent_activity(self, limit: int = 20, offset: int = 0) -> list:
+        self._maybe_ensure_tab()
+
+        def _load():
+            res = self._values().get(
+                spreadsheetId=self._spreadsheet_id,
+                range=f"{ACTIVITY_LOG_TAB}!A:H",
+            ).execute()
+            return res.get("values", [])[1:]  # 헤더 제외
+
+        rows = self._cache.get_or_load("all", _load)
+
+        def _get(row, i):
+            return row[i] if len(row) > i else ""
+
+        records = [
+            {
+                "activity_id": _get(row, 0),
+                "type": _get(row, 1),
+                "actor_name": _get(row, 2),
+                "target": _get(row, 3),
+                "detail": _get(row, 4),
+                "team_code": _get(row, 5),
+                "is_test": _get(row, 6) == "TRUE",
+                "created_at": _get(row, 7),
+            }
+            for row in rows if row
+        ]
+        records.reverse()
+        return records[offset:offset + limit]
 
 
 class SheetsTeamRepository:

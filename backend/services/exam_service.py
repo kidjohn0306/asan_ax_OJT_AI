@@ -367,6 +367,18 @@ def generate_exam_questions(team_code: str, preview: bool = False, config: dict 
     }
 
 
+def _log_exam_submit_activity(employee_id: str, name: str, meta: dict, result_data: dict) -> None:
+    from services.activity_log import record_activity
+    record_activity(
+        "exam_submit",
+        actor_name=name,
+        target=meta.get("name") or meta.get("exam_id", ""),
+        detail=f"{result_data.get('score', 0)}점, {'합격' if result_data.get('pass') else '불합격'}",
+        team_code=result_data.get("team_code", ""),
+        is_test=(employee_id or "").upper().startswith("TEMP"),
+    )
+
+
 def _legacy_score_and_save(
     result_id: str,
     answers: dict,
@@ -430,6 +442,7 @@ def _legacy_score_and_save(
     }
     if not skip_save:
         r_repo.append_result(result_data)
+        _log_exam_submit_activity(employee_id, name, meta, result_data)
     return result_data
 
 
@@ -660,6 +673,7 @@ def _score_frozen_submission(
 
         if existing_result is None:
             r_repo.append_result(result_data)
+            _log_exam_submit_activity(employee_id, name, meta, result_data)
 
         if attempt.get("status") != "submitted":
             attempt = build_attempt_record(

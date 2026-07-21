@@ -14,6 +14,7 @@ from repositories.base import (
     QuestionStatsRepository,
     MaterialRepository,
     UserRepository,
+    ActivityLogRepository,
 )
 
 MOCK_DIR = Path(__file__).parent.parent / "mock_data"
@@ -241,6 +242,34 @@ class LocalFeedbackRepository(FeedbackRepository):
         with open(target, encoding="utf-8") as f:
             records = [json.loads(line) for line in f if line.strip()]
         return list(reversed(records[-limit:]))
+
+
+class LocalActivityLogRepository(ActivityLogRepository):
+    _file = MOCK_DIR / "activity_log.jsonl"
+    _tmp_file = Path("/tmp/activity_log.jsonl")
+
+    def _active_file(self) -> Path:
+        return self._tmp_file if self._tmp_file.exists() else self._file
+
+    def append_activity(self, record: dict) -> None:
+        record = dict(record)
+        record.setdefault("activity_id", f"act-{uuid.uuid4().hex}")
+        record.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+        try:
+            with open(self._file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+        except OSError:
+            with open(self._tmp_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    def list_recent_activity(self, limit: int = 20, offset: int = 0) -> list:
+        target = self._active_file()
+        if not target.exists():
+            return []
+        with open(target, encoding="utf-8") as f:
+            records = [json.loads(line) for line in f if line.strip()]
+        records.reverse()  # append-only 파일이므로 뒤집으면 최신순
+        return records[offset:offset + limit]
 
 
 class LocalExamSetRepository(ExamSetRepository):

@@ -331,6 +331,118 @@ const EXAM_PAGE_SIZE = 4
 const EXAM_LIST_CAP = 12
 const EXAM_MANAGE_PAGE_SIZE = 8
 
+/* ── 최근 활동 피드 ─────────────────────────────────────────── */
+function formatRelativeTime(isoString) {
+  if (!isoString) return ''
+  const then = new Date(isoString)
+  if (isNaN(then.getTime())) return ''
+  const now = new Date()
+  const diffMs = now - then
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return '방금 전'
+  if (diffMin < 60) return `${diffMin}분 전`
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return `${diffHour}시간 전`
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startOfThen = new Date(then.getFullYear(), then.getMonth(), then.getDate())
+  const diffDay = Math.round((startOfToday - startOfThen) / 86400000)
+  if (diffDay === 1) return '어제'
+  if (diffDay < 7) return `${diffDay}일 전`
+  return `${String(then.getMonth() + 1).padStart(2, '0')}/${String(then.getDate()).padStart(2, '0')}`
+}
+
+const ACTIVITY_TYPE_META = {
+  exam_submit:      { icon:'check', color:'var(--success)' },
+  question_review:  { icon:'check', color:'var(--accent)' },
+  question_reject:  { icon:'x',     color:'var(--danger)' },
+  user_register:    { icon:'user',  color:'#8b5cf6' },
+  exam_create:      { icon:'file',  color:'var(--warning)' },
+}
+
+function activityMessage(item) {
+  const team = TEAM_LABELS[item.team_code] || item.team_code || ''
+  switch (item.type) {
+    case 'exam_submit':
+      return <>{item.actor_name || '응시자'}님이 「{item.target}」 응시를 완료했습니다{item.detail ? ` · ${item.detail}` : ''}</>
+    case 'question_review':
+      return <>문제 「{item.target}」이 검수 승인되었습니다</>
+    case 'question_reject':
+      return <>문제 「{item.target}」이 반려되었습니다{item.detail ? ` · ${item.detail}` : ''}</>
+    case 'user_register':
+      return <>{item.target}이 {team ? `${team}에 ` : ''}등록되었습니다</>
+    case 'exam_create':
+      return <>「{item.target}」 시험이 생성되었습니다</>
+    default:
+      return item.detail || item.target || item.type
+  }
+}
+
+function ActivityFeedList({ items, dense }) {
+  if (!items || items.length === 0) {
+    return <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>아직 활동 내역이 없습니다</p>
+  }
+  return (
+    <div style={{ display:'flex', flexDirection:'column' }}>
+      {items.map(item => {
+        const meta = ACTIVITY_TYPE_META[item.type] || { icon:'check', color:'var(--text-muted)' }
+        return (
+          <div key={item.activity_id} style={{ display:'flex', alignItems:'flex-start', gap:10, padding: dense ? '9px 0' : '10px 0', borderBottom:'1px solid var(--border)' }}>
+            <div style={{ width:22, height:22, borderRadius:'50%', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', color:meta.color, background:`color-mix(in srgb, ${meta.color} 16%, transparent)`, marginTop:1 }}>
+              <Icon name={meta.icon} size={11} />
+            </div>
+            <div style={{ flex:1, minWidth:0, fontSize:12.5, color:'var(--text)', lineHeight:1.5 }}>{activityMessage(item)}</div>
+            <span style={{ fontSize:11, color:'var(--text-muted)', flexShrink:0, whiteSpace:'nowrap', marginTop:2 }}>{formatRelativeTime(item.created_at)}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ActivityFeed({ items, onViewAll }) {
+  return (
+    <Card title="최근 활동" style={{ height:'100%', display:'flex', flexDirection:'column', marginBottom:0 }} bodyStyle={{ flex:1, display:'flex', flexDirection:'column', overflowY:'auto', minHeight:0 }}>
+      {items === null ? (
+        <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>불러오는 중...</p>
+      ) : (
+        <>
+          <ActivityFeedList items={items} />
+          <button onClick={onViewAll} style={{ marginTop:10, background:'none', border:'none', color:'var(--accent)', fontSize:12.5, fontWeight:700, cursor:'pointer', padding:'8px 0 0', textAlign:'left', fontFamily:'var(--font)' }}>
+            전체 보기 →
+          </button>
+        </>
+      )}
+    </Card>
+  )
+}
+
+function ActivityLogModal({ onClose }) {
+  const [page, setPage] = useState(1)
+  const [data, setData] = useState(null)
+
+  useEffect(() => {
+    setData(null)
+    apiFetch('GET', `/api/admin/activity-log?page=${page}&limit=20`).then(setData).catch(() => setData({ items:[], has_more:false }))
+  }, [page])
+
+  return (
+    <Modal title="전체 활동 내역" onClose={onClose} wide>
+      {data === null ? (
+        <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>불러오는 중...</p>
+      ) : (
+        <>
+          <ActivityFeedList items={data.items} />
+          <div style={{ display:'flex', justifyContent:'center', gap:16, marginTop:16 }}>
+            <BtnOutlineSm onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>이전</BtnOutlineSm>
+            <span style={{ fontSize:13, color:'var(--text-muted)', display:'flex', alignItems:'center' }}>{page}페이지</span>
+            <BtnOutlineSm onClick={() => setPage(p => p + 1)} disabled={!data.has_more}>다음</BtnOutlineSm>
+          </div>
+        </>
+      )}
+    </Modal>
+  )
+}
+
 function UpcomingExamsCalendar({ examSets }) {
   const [displayDate, setDisplayDate] = useState(new Date())
 
@@ -457,12 +569,19 @@ function Dashboard({ onNavigate }) {
   const [users, setUsers] = useState([])
   const [reviewingCount, setReviewingCount] = useState(null)
   const [resultsSummary, setResultsSummary] = useState(null)
+  const [activityItems, setActivityItems] = useState(null)
+  const [activityModalOpen, setActivityModalOpen] = useState(false)
+
+  function loadActivityFeed() {
+    apiFetch('GET', '/api/admin/activity-log?limit=8').then(d => setActivityItems(d.items || [])).catch(() => setActivityItems([]))
+  }
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/exam-sets').then(d => setExamSets(d.sets || [])).catch(() => {})
     apiFetch('GET', '/api/admin/users').then(d => setUsers(d.users || [])).catch(() => {})
     apiFetch('GET', '/api/admin/reviewing-question-count').then(d => setReviewingCount(d.count ?? 0)).catch(() => {})
     apiFetch('GET', '/api/admin/results-analysis').then(d => setResultsSummary(d.summary || null)).catch(() => {})
+    loadActivityFeed()
   }, [])
 
   useEffect(() => { setExamPage(1) }, [examStatusFilter])
@@ -656,9 +775,9 @@ function Dashboard({ onNavigate }) {
         )}
       </Card>
 
-      <div style={{ display:'flex', gap:16, alignItems:'flex-start' }}>
-        <div style={{ flex:'0 0 40%', minWidth:0 }}>
-          <Card title="빠른 실행">
+      <div style={{ display:'flex', gap:16, alignItems:'stretch' }}>
+        <div style={{ flex:'0 0 40%', minWidth:0, display:'flex', flexDirection:'column', gap:16 }}>
+          <Card title="빠른 실행" style={{ marginBottom:0 }}>
             <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
               {quickActions.map(([icon, label, view]) => (
                 <button key={view} onClick={() => onNavigate(view)}
@@ -668,11 +787,16 @@ function Dashboard({ onNavigate }) {
               ))}
             </div>
           </Card>
+          <div style={{ flex:1, minHeight:0 }}>
+            <ActivityFeed items={activityItems} onViewAll={() => setActivityModalOpen(true)} />
+          </div>
         </div>
         <div style={{ flex:'0 0 60%', minWidth:0 }}>
           <UpcomingExamsCalendar examSets={examSets} />
         </div>
       </div>
+
+      {activityModalOpen && <ActivityLogModal onClose={() => setActivityModalOpen(false)} />}
 
       {modal && (
         <Modal

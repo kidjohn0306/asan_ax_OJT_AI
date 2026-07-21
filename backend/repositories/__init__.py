@@ -12,6 +12,7 @@ from repositories.local_json import (
     LocalMaterialRepository,
     LocalUserRepository,
     LocalAuditRepository,
+    LocalActivityLogRepository,
 )
 from repositories.audit_queue import QueuedAuditRepository
 
@@ -172,3 +173,16 @@ if _use_sheets and os.getenv("OJT_USE_AUDIT_LOG", "false").strip().lower() == "t
     ) if _audit_sink else None
 else:
     audit_repo = LocalAuditRepository()
+
+# 대시보드 "최근 활동 피드" 저장소 — Sheets 우선, 실패 시 Local 폴백. 감사 로그(audit_repo)와
+# 별개로 항상 활성화되어 있다(기능 플래그로 끄지 않음).
+if _use_sheets:
+    try:
+        from repositories.sheets_repo import SheetsActivityLogRepository
+        activity_log_repo = SheetsActivityLogRepository()
+    except Exception as _e:
+        activity_log_repo = _fallback_or_raise(
+            _e, LocalActivityLogRepository, "SheetsActivityLogRepository"
+        )
+else:
+    activity_log_repo = LocalActivityLogRepository()

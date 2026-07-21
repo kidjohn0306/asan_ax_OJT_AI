@@ -182,6 +182,16 @@ def get_audit_logs(_: dict = Depends(require_admin)):
     return fetch_audit_logs()
 
 
+@router.get("/activity-log")
+def get_activity_log(
+    page: int = 1,
+    limit: int = 20,
+    _: dict = Depends(require_admin),
+):
+    from services.activity_log import fetch_activity_log
+    return fetch_activity_log(page=page, limit=limit)
+
+
 @router.get("/logs")
 def get_logs(
     team: Optional[str] = None,
@@ -276,9 +286,9 @@ def generate_ai_questions(body: GenerateAIRequest, actor: dict = Depends(require
 
 
 @router.post("/approve-user")
-def approve_user(body: ApproveUserRequest, _: dict = Depends(require_admin)):
+def approve_user(body: ApproveUserRequest, actor: dict = Depends(require_admin)):
     from services.admin_service import approve_new_user
-    return approve_new_user(body.employee_id, body.name, body.team)
+    return approve_new_user(body.employee_id, body.name, body.team, approved_by_name=actor.get("name", ""))
 
 
 @router.get("/exam-sets")
@@ -298,6 +308,7 @@ def create_exam_set(body: CreateExamSetRequest, actor: dict = Depends(require_ad
         question_scores=body.question_scores,
         evaluation_type=body.evaluation_type,
         idempotency_key=body.idempotency_key,
+        created_by_name=actor.get("name", ""),
     )
 
 
@@ -319,6 +330,7 @@ def create_exam_round_from_paper(body: FromPaperRequest, actor: dict = Depends(r
         exam_datetime=body.exam_datetime,
         pass_score=body.pass_score,
         duration_min=body.duration_min,
+        created_by_name=actor.get("name", ""),
     )
 
 
@@ -427,7 +439,7 @@ def delete_team(team_id: str, _: dict = Depends(require_admin)):
 
 
 @router.post("/upload-users")
-async def upload_users(file: UploadFile = File(...), _: dict = Depends(require_admin)):
+async def upload_users(file: UploadFile = File(...), actor: dict = Depends(require_admin)):
     from services.admin_service import bulk_upload_users
     raw = await file.read()
     # Excel/메모장 BOM 처리
@@ -435,7 +447,7 @@ async def upload_users(file: UploadFile = File(...), _: dict = Depends(require_a
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError:
         text = raw.decode("cp949", errors="replace")
-    return bulk_upload_users(text)
+    return bulk_upload_users(text, approved_by_name=actor.get("name", ""))
 
 
 @router.get("/question-stats")
