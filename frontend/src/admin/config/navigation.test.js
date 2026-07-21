@@ -17,7 +17,7 @@ describe('ADMIN_NAVIGATION', () => {
     ])
 
     expect(ADMIN_NAVIGATION.find(g => g.label === '시험 관리').items.map(i => i.label))
-      .toEqual(['시험지 생성관리', '시험 생성관리', '응시 현황'])
+      .toEqual(['시험지 생성·관리', '시험 생성·관리', '응시 현황'])
 
     expect(ADMIN_NAVIGATION.flatMap(group => group.items).map(item => item.path)).toEqual([
       '/admin/dashboard',

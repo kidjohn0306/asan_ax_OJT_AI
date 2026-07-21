@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, Fragment } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch, apiUpload, logout as apiLogout } from '../api'
 import AdminLayout from '../admin/components/AdminLayout'
-import { ADMIN_ROUTE_META } from '../admin/config/navigation'
+import { ADMIN_ROUTE_META, ADMIN_NAVIGATION } from '../admin/config/navigation'
 import ExamPaperPage from '../admin/pages/exam-papers/ExamPaperPage'
 import QuestionRoutePage from '../admin/pages/questions/QuestionRoutePage'
 import ResultRoutePage from '../admin/pages/results/ResultRoutePage'
@@ -110,6 +110,7 @@ function Icon({ name, size = 16, style }) {
     calendar: <><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></>,
     alert:    <><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></>,
     x:        <><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></>,
+    menu:     <><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></>,
   }
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none"
@@ -309,6 +310,67 @@ function ExamPagination({ page, totalPages, onChange }) {
 const TEAM_LABELS = { T1:'1팀 (주간)', T2:'2팀 (4조3교대)', T3:'3팀 (3조2교대)' }
 const TEAM_DOT_COLORS = { T1:'#3b82f6', T2:'#8b5cf6', T3:'#0d9488' }
 
+// 사이드바 전체 메뉴(대시보드 제외)를 즐겨찾기 후보 목록으로 사용한다.
+// path가 실제로 유일한 값이라 즐겨찾기 식별자로 쓴다 — view는 "생성 작업"·"문제 생성"처럼
+// 여러 메뉴가 공유할 수 있어 식별자로 부적합하다.
+const NAV_ITEM_ICONS = {
+  '/admin/questions/generate/setup': 'ai',
+  '/admin/questions/generate/runs':  'refresh',
+  '/admin/questions/review':         'check',
+  '/admin/questions/bank':           'book',
+  '/admin/exam-papers?tab=setup':    'file',
+  '/admin/exams':                    'users',
+  '/admin/exams/live':               'clock',
+  '/admin/results':                  'grid',
+  '/admin/analytics':                'chart',
+  '/admin/employees':                'user',
+  '/admin/teams':                    'users',
+  '/admin/materials':                'swap',
+  '/admin/system/status':            'settings',
+  '/admin/system/audit-logs':        'search',
+}
+
+const ALL_NAV_ITEMS = ADMIN_NAVIGATION
+  .filter(group => group.label !== '대시보드')
+  .flatMap(group => group.items.map(item => ({
+    ...item,
+    group: group.label,
+    icon: NAV_ITEM_ICONS[item.path] || 'file',
+  })))
+
+// 업무 흐름 순서대로: 문제 생성 → 검수 대기 → 시험지 생성·관리 → 시험 생성·관리 → 응시자 관리 → 응시 현황 → 결과 분석
+const DEFAULT_FAVORITE_PATHS = [
+  '/admin/questions/generate/setup',
+  '/admin/questions/review',
+  '/admin/exam-papers?tab=setup',
+  '/admin/exams',
+  '/admin/employees',
+  '/admin/exams/live',
+  '/admin/analytics',
+]
+const FAVORITES_STORAGE_KEY = 'ojt_admin_favorite_menu'
+const LEGACY_QUICK_ACTIONS_ORDER_KEY = 'ojt_admin_quick_actions_order'
+
+function loadFavoritePaths() {
+  const validPaths = new Set(ALL_NAV_ITEMS.map(i => i.path))
+  try {
+    const saved = JSON.parse(localStorage.getItem(FAVORITES_STORAGE_KEY) || 'null')
+    if (Array.isArray(saved) && saved.every(v => typeof v === 'string')) {
+      const valid = saved.filter(p => validPaths.has(p))
+      if (valid.length) return valid
+    }
+  } catch {}
+  // 이전 "빠른 실행 순서 편집" 기능에서 저장한 값이 있으면 최선노력으로 이관한다.
+  try {
+    const legacy = JSON.parse(localStorage.getItem(LEGACY_QUICK_ACTIONS_ORDER_KEY) || 'null')
+    if (Array.isArray(legacy) && legacy.every(v => typeof v === 'string')) {
+      const mapped = legacy.map(view => ALL_NAV_ITEMS.find(i => i.view === view)?.path).filter(Boolean)
+      if (mapped.length) return mapped
+    }
+  } catch {}
+  return DEFAULT_FAVORITE_PATHS
+}
+
 const DEFAULT_EXAM_DURATION_MIN = 60
 
 const EXAM_STATUS_META = {
@@ -330,6 +392,243 @@ function getExamStatus(examDatetime, durationMin = DEFAULT_EXAM_DURATION_MIN) {
 const EXAM_PAGE_SIZE = 4
 const EXAM_LIST_CAP = 12
 const EXAM_MANAGE_PAGE_SIZE = 8
+
+/* ── 최근 활동 피드 ─────────────────────────────────────────── */
+function formatRelativeTime(isoString) {
+  if (!isoString) return ''
+  const then = new Date(isoString)
+  if (isNaN(then.getTime())) return ''
+  const now = new Date()
+  const diffMs = now - then
+  const diffMin = Math.floor(diffMs / 60000)
+  if (diffMin < 1) return '방금 전'
+  if (diffMin < 60) return `${diffMin}분 전`
+  const diffHour = Math.floor(diffMin / 60)
+  if (diffHour < 24) return `${diffHour}시간 전`
+  const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const startOfThen = new Date(then.getFullYear(), then.getMonth(), then.getDate())
+  const diffDay = Math.round((startOfToday - startOfThen) / 86400000)
+  if (diffDay === 1) return '어제'
+  if (diffDay < 7) return `${diffDay}일 전`
+  return `${String(then.getMonth() + 1).padStart(2, '0')}/${String(then.getDate()).padStart(2, '0')}`
+}
+
+const ACTIVITY_TYPE_META = {
+  exam_submit:      { icon:'check', color:'var(--success)' },
+  question_review:  { icon:'check', color:'var(--accent)' },
+  question_reject:  { icon:'x',     color:'var(--danger)' },
+  user_register:    { icon:'user',  color:'#8b5cf6' },
+  exam_create:      { icon:'file',  color:'var(--warning)' },
+}
+
+function activityMessage(item) {
+  const team = TEAM_LABELS[item.team_code] || item.team_code || ''
+  switch (item.type) {
+    case 'exam_submit':
+      return <>{item.actor_name || '응시자'}님이 「{item.target}」 응시를 완료했습니다{item.detail ? ` · ${item.detail}` : ''}</>
+    case 'question_review':
+      return <>문제 「{item.target}」이 검수 승인되었습니다</>
+    case 'question_reject':
+      return <>문제 「{item.target}」이 반려되었습니다{item.detail ? ` · ${item.detail}` : ''}</>
+    case 'user_register':
+      return <>{item.target}이 {team ? `${team}에 ` : ''}등록되었습니다</>
+    case 'exam_create':
+      return <>「{item.target}」 시험이 생성되었습니다</>
+    default:
+      return item.detail || item.target || item.type
+  }
+}
+
+function ActivityFeedList({ items, dense }) {
+  if (!items || items.length === 0) {
+    return <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>아직 활동 내역이 없습니다</p>
+  }
+  return (
+    <div style={{ display:'flex', flexDirection:'column' }}>
+      {items.map(item => {
+        const meta = ACTIVITY_TYPE_META[item.type] || { icon:'check', color:'var(--text-muted)' }
+        return (
+          <div key={item.activity_id} style={{ display:'flex', alignItems:'flex-start', gap:10, padding: dense ? '9px 0' : '10px 0', borderBottom:'1px solid var(--border)' }}>
+            <div style={{ width:22, height:22, borderRadius:'50%', flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', color:meta.color, background:`color-mix(in srgb, ${meta.color} 16%, transparent)`, marginTop:1 }}>
+              <Icon name={meta.icon} size={11} />
+            </div>
+            <div style={{ flex:1, minWidth:0, fontSize:12.5, color:'var(--text)', lineHeight:1.5 }}>{activityMessage(item)}</div>
+            <span style={{ fontSize:11, color:'var(--text-muted)', flexShrink:0, whiteSpace:'nowrap', marginTop:2 }}>{formatRelativeTime(item.created_at)}</span>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+function ActivityFeed({ items, onViewAll }) {
+  return (
+    <Card
+      title="최근 활동"
+      style={{ height:'100%', display:'flex', flexDirection:'column', marginBottom:0 }}
+      bodyStyle={{ flex:1, overflowY:'auto', minHeight:0 }}
+      action={
+        <button onClick={onViewAll} style={{ background:'none', border:'none', color:'var(--accent)', fontSize:12.5, fontWeight:700, cursor:'pointer', padding:0, fontFamily:'var(--font)' }}>
+          전체 보기 →
+        </button>
+      }
+    >
+      {items === null ? (
+        <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>불러오는 중...</p>
+      ) : (
+        <ActivityFeedList items={items} />
+      )}
+    </Card>
+  )
+}
+
+function ActivityLogModal({ onClose }) {
+  const [page, setPage] = useState(1)
+  const [data, setData] = useState(null)
+
+  useEffect(() => {
+    setData(null)
+    apiFetch('GET', `/api/admin/activity-log?page=${page}&limit=20`).then(setData).catch(() => setData({ items:[], has_more:false }))
+  }, [page])
+
+  return (
+    <Modal title="전체 활동 내역" onClose={onClose} wide>
+      {data === null ? (
+        <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>불러오는 중...</p>
+      ) : (
+        <>
+          <ActivityFeedList items={data.items} />
+          <div style={{ display:'flex', justifyContent:'center', gap:16, marginTop:16 }}>
+            <BtnOutlineSm onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>이전</BtnOutlineSm>
+            <span style={{ fontSize:13, color:'var(--text-muted)', display:'flex', alignItems:'center' }}>{page}페이지</span>
+            <BtnOutlineSm onClick={() => setPage(p => p + 1)} disabled={!data.has_more}>다음</BtnOutlineSm>
+          </div>
+        </>
+      )}
+    </Modal>
+  )
+}
+
+function QuickActionsRow({ items, onNavigate }) {
+  const scrollRef = useRef(null)
+
+  function scrollByPage(dir) {
+    scrollRef.current?.scrollBy({ left: dir * 240, behavior: 'smooth' })
+  }
+
+  const navBtnStyle = { width:28, height:28, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', border:'1px solid var(--border)', borderRadius:8, background:'white', color:'var(--text-muted)', cursor:'pointer', padding:0 }
+
+  if (items.length === 0) {
+    return (
+      <p style={{ fontSize:12.5, color:'var(--text-muted)', textAlign:'center', padding:'9px 0', margin:0 }}>
+        즐겨찾기한 메뉴가 없습니다. 오른쪽 위 <Icon name="settings" size={11} style={{ verticalAlign:'-1px', margin:'0 2px' }} /> 버튼으로 추가해보세요.
+      </p>
+    )
+  }
+
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+      <button onClick={() => scrollByPage(-1)} style={navBtnStyle} aria-label="이전">
+        <Icon name="chevronLeft" size={14} />
+      </button>
+      <div ref={scrollRef} style={{ display:'flex', gap:10, overflowX:'auto', flex:1, minWidth:0, scrollbarWidth:'none' }}>
+        {items.map(item => (
+          <button key={item.path} onClick={() => onNavigate(item.view, { path: item.path })}
+            style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1px solid var(--border)', borderRadius:8, background:'white', fontFamily:'var(--font)', fontSize:13, fontWeight:600, color:'var(--text)', cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
+            <Icon name={item.icon} size={14} style={{ opacity:0.55 }} />{item.label}
+          </button>
+        ))}
+      </div>
+      <button onClick={() => scrollByPage(1)} style={navBtnStyle} aria-label="다음">
+        <Icon name="chevronRight" size={14} />
+      </button>
+    </div>
+  )
+}
+
+function FavoritesMenuModal({ favorites, onSave, onClose }) {
+  const [order, setOrder] = useState(favorites)
+
+  function move(index, dir) {
+    setOrder(prev => {
+      const target = index + dir
+      if (target < 0 || target >= prev.length) return prev
+      const next = [...prev]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
+  function remove(index) {
+    setOrder(prev => prev.filter((_, i) => i !== index))
+  }
+
+  function add(item) {
+    setOrder(prev => [...prev, item])
+  }
+
+  const moveBtnStyle = disabled => ({
+    width:26, height:26, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center',
+    border:'1px solid var(--border)', borderRadius:6, background:'white', padding:0,
+    color:'var(--text-muted)', cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.35 : 1,
+  })
+
+  const favoritePaths = new Set(order.map(i => i.path))
+  const availableByGroup = {}
+  ALL_NAV_ITEMS.forEach(item => {
+    if (favoritePaths.has(item.path)) return
+    ;(availableByGroup[item.group] ||= []).push(item)
+  })
+
+  return (
+    <Modal title="즐겨찾기 메뉴 관리" onClose={onClose} wide>
+      <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>즐겨찾기 순서</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:8, marginBottom:24 }}>
+        {order.length === 0 ? (
+          <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>즐겨찾기한 메뉴가 없습니다. 아래에서 추가해보세요.</p>
+        ) : order.map((item, i) => (
+          <div key={item.path} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', border:'1px solid var(--border)', borderRadius:8 }}>
+            <Icon name={item.icon} size={14} style={{ opacity:0.55, flexShrink:0 }} />
+            <span style={{ flex:1, fontSize:13, fontWeight:600, color:'var(--text)' }}>{item.label}</span>
+            <button onClick={() => move(i, -1)} disabled={i === 0} style={moveBtnStyle(i === 0)} aria-label="위로">
+              <Icon name="up" size={12} />
+            </button>
+            <button onClick={() => move(i, 1)} disabled={i === order.length - 1} style={moveBtnStyle(i === order.length - 1)} aria-label="아래로">
+              <Icon name="down" size={12} />
+            </button>
+            <BtnOutlineSm danger onClick={() => remove(i)}>제외</BtnOutlineSm>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ fontSize:11, fontWeight:700, color:'var(--text-muted)', textTransform:'uppercase', letterSpacing:'0.05em', marginBottom:8 }}>메뉴 추가</div>
+      <div style={{ display:'flex', flexDirection:'column', gap:14, marginBottom:20, maxHeight:260, overflowY:'auto' }}>
+        {Object.keys(availableByGroup).length === 0 ? (
+          <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'16px 0' }}>추가할 수 있는 메뉴가 없습니다.</p>
+        ) : Object.entries(availableByGroup).map(([group, groupItems]) => (
+          <div key={group}>
+            <div style={{ fontSize:11.5, fontWeight:700, color:'var(--text-muted)', marginBottom:6 }}>{group}</div>
+            <div style={{ display:'flex', flexWrap:'wrap', gap:8 }}>
+              {groupItems.map(item => (
+                <button key={item.path} onClick={() => add(item)}
+                  style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 12px', border:'1px dashed var(--border)', borderRadius:8, background:'white', fontFamily:'var(--font)', fontSize:12.5, fontWeight:600, color:'var(--text)', cursor:'pointer' }}>
+                  <Icon name="plus" size={11} style={{ opacity:0.6 }} />
+                  <Icon name={item.icon} size={13} style={{ opacity:0.55 }} />
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display:'flex', gap:10 }}>
+        <button onClick={onClose} style={{ flex:1, height:44, border:'2px solid var(--border)', background:'white', color:'var(--text)', borderRadius:8, fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)' }}>취소</button>
+        <BtnPrimary onClick={() => onSave(order)} style={{ flex:1, justifyContent:'center' }}>저장</BtnPrimary>
+      </div>
+    </Modal>
+  )
+}
 
 function UpcomingExamsCalendar({ examSets }) {
   const [displayDate, setDisplayDate] = useState(new Date())
@@ -366,7 +665,8 @@ function UpcomingExamsCalendar({ examSets }) {
   return (
     <Card
       title="시험 일정"
-      style={{ marginBottom:16, maxWidth:'50%' }}
+      style={{ marginBottom:0, width:'100%', height:'100%', display:'flex', flexDirection:'column' }}
+      bodyStyle={{ flex:1 }}
       action={
         <div style={{ display:'flex', alignItems:'center', gap:10, fontSize:11, fontWeight:600, color:'var(--text-muted)' }}>
           <div style={{ display:'flex', alignItems:'center', gap:4 }}>
@@ -454,9 +754,31 @@ function Dashboard({ onNavigate }) {
   const [modal, setModal] = useState(null)
   const [modalData, setModalData] = useState(null)
   const [modalLoading, setModalLoading] = useState(false)
+  const [users, setUsers] = useState([])
+  const [reviewingCount, setReviewingCount] = useState(null)
+  const [resultsSummary, setResultsSummary] = useState(null)
+  const [activityItems, setActivityItems] = useState(null)
+  const [activityModalOpen, setActivityModalOpen] = useState(false)
+  const [favoritePaths, setFavoritePaths] = useState(() => loadFavoritePaths())
+  const [favoritesModalOpen, setFavoritesModalOpen] = useState(false)
+
+  function saveFavorites(itemsInOrder) {
+    const paths = itemsInOrder.map(i => i.path)
+    setFavoritePaths(paths)
+    localStorage.setItem(FAVORITES_STORAGE_KEY, JSON.stringify(paths))
+    setFavoritesModalOpen(false)
+  }
+
+  function loadActivityFeed() {
+    apiFetch('GET', '/api/admin/activity-log?limit=3').then(d => setActivityItems(d.items || [])).catch(() => setActivityItems([]))
+  }
 
   useEffect(() => {
     apiFetch('GET', '/api/admin/exam-sets').then(d => setExamSets(d.sets || [])).catch(() => {})
+    apiFetch('GET', '/api/admin/users').then(d => setUsers(d.users || [])).catch(() => {})
+    apiFetch('GET', '/api/admin/reviewing-question-count').then(d => setReviewingCount(d.count ?? 0)).catch(() => {})
+    apiFetch('GET', '/api/admin/results-analysis').then(d => setResultsSummary(d.summary || null)).catch(() => {})
+    loadActivityFeed()
   }, [])
 
   useEffect(() => { setExamPage(1) }, [examStatusFilter])
@@ -509,19 +831,60 @@ function Dashboard({ onNavigate }) {
     ],
   }
 
-  // 업무 흐름 순서대로: 문제 생성 → 검토·검증 → 시험지 생성 → 시험 생성·관리 → 사용자 승인 → 응시 현황 → 결과 분석
-  const quickActions = [
-    ['ai',    '문제 생성',      'q-generate'],
-    ['check', '검토·검증',      'q-review'],
-    ['file',  '시험지 생성·관리', 'exam-sheet'],
-    ['users', '시험 생성·관리', 'exam-assign'],
-    ['user',  '사용자 승인',    'users'],
-    ['clock', '응시 현황',      'exam-status'],
-    ['chart', '결과 분석',      'results'],
+  const favoriteItems = favoritePaths
+    .map(path => ALL_NAV_ITEMS.find(i => i.path === path))
+    .filter(Boolean)
+
+  const scheduledCount = examSets.filter(s => getExamStatus(s.exam_datetime, s.duration_min) === 'scheduled').length
+
+  const weekStart = (() => {
+    const d = new Date()
+    const day = d.getDay()
+    const diff = d.getDate() - day + (day === 0 ? -6 : 1) // 이번 주 월요일
+    d.setDate(diff)
+    d.setHours(0, 0, 0, 0)
+    return d
+  })()
+  const weeklyRegisteredCount = users.filter(u => u.approved_date && new Date(u.approved_date) >= weekStart).length
+
+  const hasResults = resultsSummary && resultsSummary.count > 0
+  const avgScoreLabel = hasResults ? `${Math.round(resultsSummary.avg_score * 10) / 10}점` : '-'
+  const passRateLabel = hasResults ? `합격률 ${Math.round((resultsSummary.pass_count / resultsSummary.count) * 100)}%` : '응시 기록 없음'
+
+  const kpiCards = [
+    { icon:'clock', label:'예정 시험수', value: `${scheduledCount}건`, sub:'예정 상태 시험', view:'exam-assign', color:'var(--accent)' },
+    { icon:'check', label:'미검수 문제 대기', value: reviewingCount === null ? '-' : `${reviewingCount}건`, sub:'검수 대기 중', view:'q-review', color:'var(--warning)' },
+    { icon:'user',  label:'이번주 등록 인원', value:`${weeklyRegisteredCount}명`, sub:'이번 주 승인', view:'users', color:'var(--success)' },
+    { icon:'chart', label:'평균 점수', value: avgScoreLabel, sub: passRateLabel, view:'results', color:'var(--primary)' },
   ]
 
   return (
     <div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(200px, 1fr))', gap:14, marginBottom:16 }}>
+        {kpiCards.map(k => (
+          <button
+            key={k.label}
+            onClick={() => onNavigate(k.view)}
+            style={{
+              display:'flex', flexDirection:'column', gap:10, textAlign:'left', cursor:'pointer',
+              background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--radius)',
+              padding:'18px 20px', fontFamily:'var(--font)', transition:'border-color .15s, transform .15s, box-shadow .15s',
+            }}
+            onMouseOver={e => { e.currentTarget.style.borderColor = k.color; e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.06)' }}
+            onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'none' }}
+          >
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <div style={{ width:28, height:28, borderRadius:8, flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', color:k.color, background:`color-mix(in srgb, ${k.color} 14%, transparent)` }}>
+                <Icon name={k.icon} size={15} />
+              </div>
+              <span style={{ fontSize:12, fontWeight:700, color:'var(--text-muted)' }}>{k.label}</span>
+            </div>
+            <div style={{ fontSize:26, fontWeight:800, color:'var(--text)', fontVariantNumeric:'tabular-nums', letterSpacing:'-0.5px' }}>{k.value}</div>
+            <div style={{ fontSize:11.5, color:'var(--text-muted)' }}>{k.sub}</div>
+          </button>
+        ))}
+      </div>
+
       <Card
         title="시험 관리"
         noPad
@@ -602,18 +965,38 @@ function Dashboard({ onNavigate }) {
         )}
       </Card>
 
-      <Card title="빠른 실행">
-        <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
-          {quickActions.map(([icon, label, view]) => (
-            <button key={view} onClick={() => onNavigate(view)}
-              style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 16px', border:'1px solid var(--border)', borderRadius:8, background:'white', fontFamily:'var(--font)', fontSize:13, fontWeight:600, color:'var(--text)', cursor:'pointer' }}>
-              <Icon name={icon} size={14} style={{ opacity:0.55 }} />{label}
-            </button>
-          ))}
+      <div style={{ display:'flex', gap:16, alignItems:'stretch' }}>
+        <div style={{ flex:'0 0 40%', minWidth:0, display:'flex', flexDirection:'column', gap:16 }}>
+          <Card
+            title="즐겨찾기"
+            style={{ marginBottom:0 }}
+            action={
+              <button onClick={() => setFavoritesModalOpen(true)} aria-label="즐겨찾기 메뉴 관리"
+                style={{ background:'none', border:'none', cursor:'pointer', color:'var(--text-muted)', padding:4, display:'flex', alignItems:'center' }}>
+                <Icon name="settings" size={16} />
+              </button>
+            }
+          >
+            <QuickActionsRow items={favoriteItems} onNavigate={onNavigate} />
+          </Card>
+          <div style={{ flex:1, minHeight:0 }}>
+            <ActivityFeed items={activityItems} onViewAll={() => setActivityModalOpen(true)} />
+          </div>
         </div>
-      </Card>
+        <div style={{ flex:'0 0 60%', minWidth:0 }}>
+          <UpcomingExamsCalendar examSets={examSets} />
+        </div>
+      </div>
 
-      <UpcomingExamsCalendar examSets={examSets} />
+      {activityModalOpen && <ActivityLogModal onClose={() => setActivityModalOpen(false)} />}
+
+      {favoritesModalOpen && (
+        <FavoritesMenuModal
+          favorites={favoriteItems}
+          onSave={saveFavorites}
+          onClose={() => setFavoritesModalOpen(false)}
+        />
+      )}
 
       {modal && (
         <Modal

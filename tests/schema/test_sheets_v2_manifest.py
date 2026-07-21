@@ -8,9 +8,10 @@ from schema.sheets_v2 import (
 
 
 class SheetsV2ManifestTests(unittest.TestCase):
-    def test_manifest_has_exactly_55_unique_sheets(self):
-        self.assertEqual(len(SHEET_HEADERS), 55)
-        self.assertEqual(len(set(SHEET_HEADERS)), 55)
+    def test_manifest_has_exactly_56_unique_sheets(self):
+        # 55개 원본 매니페스트 + "최근 활동 피드"용 activity_log 탭 1개 추가.
+        self.assertEqual(len(SHEET_HEADERS), 56)
+        self.assertEqual(len(set(SHEET_HEADERS)), 56)
 
     def test_legacy_prefixes_match_current_repository_contracts(self):
         self.assertEqual(set(LEGACY_PREFIXES), {

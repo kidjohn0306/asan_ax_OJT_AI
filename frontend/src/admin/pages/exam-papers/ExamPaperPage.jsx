@@ -32,7 +32,7 @@ export default function ExamPaperPage({ renderSetup }) {
 
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:16, minHeight:0 }}>
-      <div role="tablist" aria-label="시험지 생성관리" style={{ display:'flex', gap:4, padding:4, width:'fit-content', border:'1px solid var(--border)', borderRadius:9, background:'#F8FAFC' }}>
+      <div role="tablist" aria-label="시험지 생성·관리" style={{ display:'flex', gap:4, padding:4, width:'fit-content', border:'1px solid var(--border)', borderRadius:9, background:'#F8FAFC' }}>
         <button type="button" role="tab" aria-selected={tab === 'setup'} onClick={() => switchTab('setup')} style={tabStyle(tab === 'setup')}>시험지 설정</button>
         <button type="button" role="tab" aria-selected={tab === 'list'} onClick={() => switchTab('list')} style={tabStyle(tab === 'list')}>시험지 보기</button>
       </div>

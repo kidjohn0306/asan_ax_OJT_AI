@@ -849,6 +849,9 @@ def approve_question(question_id: str, actor: dict = None, override_reason: str 
         ) from exc
     _record_audit(actor, "APPROVE_QUESTION", "question", question_id,
                   before={"status": q.get("status")}, after=updated_fields, reason=override_reason.strip())
+    from services.activity_log import record_activity
+    record_activity("question_review", actor_name=(actor or {}).get("name", ""),
+                     target=question_id, detail="승인 완료", team_code=q.get("team_code", ""))
     return {"approved": True, "question_id": question_id}
 
 
@@ -881,6 +884,9 @@ def reject_question(question_id: str, reason: str, actor: dict = None) -> dict:
         ) from exc
     _record_audit(actor, "REJECT_QUESTION", "question", question_id,
                   before={"status": q.get("status")}, after=updated_fields, reason=reason)
+    from services.activity_log import record_activity
+    record_activity("question_reject", actor_name=(actor or {}).get("name", ""),
+                     target=question_id, detail=reason, team_code=q.get("team_code", ""))
     return {"rejected": True, "question_id": question_id, "reason": reason}
 
 
@@ -955,7 +961,7 @@ def set_question_status(question_id: str, status: str, reason: str = "", actor: 
     return {"updated": True, "question_id": question_id, "status": status}
 
 
-def approve_new_user(employee_id: str, name: str, team: str) -> dict:
+def approve_new_user(employee_id: str, name: str, team: str, approved_by_name: str = "") -> dict:
     from repositories import user_repo
     from repositories.local_json import load_local_admins
     from datetime import datetime
@@ -975,6 +981,10 @@ def approve_new_user(employee_id: str, name: str, team: str) -> dict:
         "approved_date": approved_date,
     }
     user_repo.add_user(new_user)
+
+    from services.activity_log import record_activity
+    record_activity("user_register", actor_name=approved_by_name or "관리자",
+                     target=name, detail="", team_code=team)
 
     return {"approved": True, "employee_id": employee_id, "name": name, "team": team, "approved_date": approved_date}
 
@@ -1130,6 +1140,7 @@ def create_exam_set(
     question_scores: dict[str, int] | None = None,
     evaluation_type: str = "official",
     idempotency_key: str = "",
+    created_by_name: str = "",
 ) -> dict:
     from repositories import exam_set_repo, question_repo, exam_v2_repo
     from repositories.exam_v2 import ImmutableExamConflict
@@ -1220,6 +1231,10 @@ def create_exam_set(
         normalized_used=policy.frozen_exams,
         metadata=metadata,
     )
+    from services.activity_log import record_activity
+    record_activity("exam_create", actor_name=created_by_name or "관리자",
+                     target=stored.get("name", name), detail="미정" if not stored.get("exam_datetime") else "",
+                     team_code=stored.get("team_code", ""))
     return {
         **stored,
         "evaluation_type": evaluation_type,
@@ -1294,6 +1309,7 @@ def create_exam_round_from_paper(
     exam_datetime: str = None,
     pass_score: int = None,
     duration_min: int = None,
+    created_by_name: str = "",
 ) -> dict:
     """기존 시험지(exam_set_id)의 문제 구성을 재사용해 새 시험 회차를 만든다.
     배정 대상은 새로 시작(빈 배정). 일시·커트라인·시험 시간은 주어지면 생성 시점에 바로 반영하고,
@@ -1421,6 +1437,10 @@ def create_exam_round_from_paper(
         normalized_used=policy.frozen_exams,
         metadata=metadata,
     )
+    from services.activity_log import record_activity
+    record_activity("exam_create", actor_name=created_by_name or "관리자",
+                     target=stored.get("name") or name or "", detail=stored.get("exam_datetime") or "미정",
+                     team_code=stored.get("team_code", ""))
     return {
         **stored,
         "evaluation_type": evaluation_type,
@@ -1743,7 +1763,7 @@ def fetch_dashboard_stats() -> dict:
     }
 
 
-def bulk_upload_users(csv_text: str) -> dict:
+def bulk_upload_users(csv_text: str, approved_by_name: str = "") -> dict:
     import csv
     import io
 
@@ -1791,6 +1811,10 @@ def bulk_upload_users(csv_text: str) -> dict:
             success += 1
         except Exception:
             errors += 1
+    if success > 0:
+        from services.activity_log import record_activity
+        record_activity("user_register", actor_name=approved_by_name or "관리자",
+                         target=f"{success}명", detail="")
     return {"success": success, "skipped": skipped, "errors": errors, "total": success + skipped + errors}
 
 

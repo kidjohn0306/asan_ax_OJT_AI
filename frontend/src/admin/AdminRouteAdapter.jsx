@@ -8,6 +8,10 @@ export default function AdminRouteAdapter() {
   const view = adminPathToLegacyView(location.pathname)
 
   function navigateToView(nextView, state) {
+    if (state?.path) {
+      navigate(state.path)
+      return
+    }
     const path = nextView === 'exam-assign' && state?.focusExamId
       ? `/admin/exams/${encodeURIComponent(state.focusExamId)}`
       : legacyViewToAdminPath(nextView)
