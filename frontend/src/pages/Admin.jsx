@@ -653,6 +653,7 @@ function UpcomingExamsCalendar({ examSets }) {
   const firstDayOfWeek = new Date(year, month, 1).getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const totalCells = Math.ceil((firstDayOfWeek + daysInMonth) / 7) * 7
+  const numWeeks = totalCells / 7
   const cells = []
   for (let i = 0; i < totalCells; i++) {
     const dayNum = i - firstDayOfWeek + 1
@@ -698,8 +699,8 @@ function UpcomingExamsCalendar({ examSets }) {
       }
     >
       <div style={{ display:'flex', flex:1, minHeight:0, padding:'8px 16px 10px', gap:12 }}>
-        <div style={{ flex:'0 0 70%', minWidth:0 }}>
-          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6 }}>
+        <div style={{ flex:'0 0 70%', minWidth:0, display:'flex', flexDirection:'column', minHeight:0 }}>
+          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:6, flexShrink:0 }}>
             <button onClick={() => { setDisplayDate(new Date(year, month - 1, 1)); setSelectedDate(null) }}
               style={{ width:18, height:18, border:'none', background:'none', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--text-muted)', borderRadius:4, padding:0 }}
               onMouseOver={e => e.currentTarget.style.background='#F1F5F9'}
@@ -715,7 +716,7 @@ function UpcomingExamsCalendar({ examSets }) {
             </button>
           </div>
 
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:2, marginBottom:4 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:2, marginBottom:4, flexShrink:0 }}>
             {['일','월','화','수','목','금','토'].map((d, i) => (
               <div key={d} style={{
                 fontSize:9, fontWeight:700, textAlign:'center',
@@ -723,7 +724,7 @@ function UpcomingExamsCalendar({ examSets }) {
               }}>{d}</div>
             ))}
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gap:2 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(7, 1fr)', gridTemplateRows:`repeat(${numWeeks}, 1fr)`, gap:2, flex:1, minHeight:0 }}>
             {cells.map((dayNum, i) => {
               if (dayNum === null) return <div key={i} />
               const dateStr = `${monthPrefix}-${String(dayNum).padStart(2,'0')}`
@@ -742,7 +743,7 @@ function UpcomingExamsCalendar({ examSets }) {
                   onClick={() => examsOnDay.length > 0 && setSelectedDate(isSelected ? null : dateStr)}
                   style={{
                     display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center',
-                    padding:'3px 0', borderRadius:4, minHeight:26,
+                    height:'100%', borderRadius:4,
                     cursor: examsOnDay.length ? 'pointer' : 'default',
                     background: isSelected ? 'var(--accent-light)' : isTodayDate ? 'var(--warning-light)' : 'transparent'
                   }}>
