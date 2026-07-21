@@ -203,6 +203,19 @@ def fetch_generation_jobs() -> dict:
     return {"jobs": generation_v2_repo.list_jobs(), "enabled": True}
 
 
+def fetch_generation_job_detail(job_id: str) -> dict:
+    """생성 작업 하나의 상세 — 후보 문제 목록을 포함한다.
+    Candidate 탭이 비활성화됐거나 Job을 찾을 수 없으면 enabled=False를 반환한다."""
+    from repositories import generation_v2_repo
+    if generation_v2_repo is None:
+        return {"job": None, "candidates": [], "enabled": False}
+    job = next((j for j in generation_v2_repo.list_jobs() if j.get("generation_job_id") == job_id), None)
+    if not job:
+        raise HTTPException(status_code=404, detail="생성 작업을 찾을 수 없습니다.")
+    candidates = generation_v2_repo.list_candidates_by_job(job_id)
+    return {"job": job, "candidates": candidates, "enabled": True}
+
+
 def fetch_logs(team=None, date_from=None, date_to=None) -> dict:
     _, r_repo, _ = _get_repos()
     all_results = r_repo.get_all_results()
@@ -419,6 +432,7 @@ def generate_ai_questions(
     difficulty_hint: str,
     requested_by: str = "",
     idempotency_key: str = "",
+    material_ids: list | None = None,
 ) -> dict:
     from ai_engine.router import generate_questions_from_material
     from services.generation.gates import run_gates
@@ -487,8 +501,9 @@ def generate_ai_questions(
     # Drive에서 스캔해둔 교육자료(공통+팀별)를 기본 자료로 사용하고,
     # 관리자가 직접 붙여넣은 텍스트는 이번 출제에 한해 보충하는 내용으로 뒤에 덧붙인다.
     # (수동 입력으로 자동 스캔 자료가 사라지지 않도록 둘 다 살리는 방식)
+    selected_ids = set(material_ids) if material_ids is not None else None
     try:
-        drive_material = get_material_text_for_team(team_code)
+        drive_material = get_material_text_for_team(team_code, selected_ids)
     except Exception:
         drive_material = ""
     material_text = "\n\n".join(t for t in (drive_material, material_text) if t)
@@ -801,7 +816,7 @@ def approve_question(question_id: str, actor: dict = None, override_reason: str 
             raise _gate_error("GATE_WARNING_OVERRIDE_REQUIRED",
                                f"WARNING Gate 승인에는 {_MIN_OVERRIDE_REASON_LENGTH}자 이상의 사유가 필요합니다.")
     else:
-        if q.get("status") not in ("reviewing", "draft"):
+        if q.get("status") not in ("reviewing", "draft", "rejected"):
             raise HTTPException(status_code=400, detail=f"승인 불가 상태: {q.get('status')}")
 
     updated_fields = {"status": "approved"}
@@ -867,6 +882,77 @@ def reject_question(question_id: str, reason: str, actor: dict = None) -> dict:
     _record_audit(actor, "REJECT_QUESTION", "question", question_id,
                   before={"status": q.get("status")}, after=updated_fields, reason=reason)
     return {"rejected": True, "question_id": question_id, "reason": reason}
+
+
+_EDITABLE_QUESTION_FIELDS = (
+    "question", "option_a", "option_b", "option_c", "option_d",
+    "answer", "explanation",
+)
+
+
+def edit_question(question_id: str, fields: dict, actor: dict = None) -> dict:
+    """검수 대기·승인된 문제의 본문·보기·정답·해설을 수정한다.
+    확정 시험은 Snapshot을 그대로 쓰므로 이 수정은 문제은행 원본에만 반영되고
+    이미 생성된 시험지의 Snapshot에는 영향을 주지 않는다."""
+    q_repo, _, _ = _get_repos()
+    q = q_repo.get_question(question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="문제를 찾을 수 없습니다.")
+    if q.get("status") == "archived":
+        raise HTTPException(status_code=400, detail="보관된 문제는 수정할 수 없습니다.")
+    updated_fields = {key: value for key, value in fields.items() if key in _EDITABLE_QUESTION_FIELDS}
+    if not updated_fields:
+        raise HTTPException(status_code=400, detail="수정할 필드가 없습니다.")
+    before = {key: q.get(key) for key in updated_fields}
+    q_repo.update_question(question_id, updated_fields)
+    _record_audit(actor, "EDIT_QUESTION", "question", question_id, before=before, after=updated_fields)
+    return {"updated": True, "question_id": question_id, "fields": updated_fields}
+
+
+def bulk_approve_questions(question_ids: list[str], actor: dict = None) -> dict:
+    results = []
+    for question_id in question_ids:
+        try:
+            approve_question(question_id, actor=actor)
+            results.append({"question_id": question_id, "ok": True})
+        except HTTPException as exc:
+            results.append({"question_id": question_id, "ok": False, "error": exc.detail})
+    return {"results": results, "succeeded": sum(1 for r in results if r["ok"]), "failed": sum(1 for r in results if not r["ok"])}
+
+
+def bulk_reject_questions(question_ids: list[str], reason: str, actor: dict = None) -> dict:
+    results = []
+    for question_id in question_ids:
+        try:
+            reject_question(question_id, reason, actor=actor)
+            results.append({"question_id": question_id, "ok": True})
+        except HTTPException as exc:
+            results.append({"question_id": question_id, "ok": False, "error": exc.detail})
+    return {"results": results, "succeeded": sum(1 for r in results if r["ok"]), "failed": sum(1 for r in results if not r["ok"])}
+
+
+_DIRECT_SET_STATUSES = ("reviewing", "archived")
+
+
+def set_question_status(question_id: str, status: str, reason: str = "", actor: dict = None) -> dict:
+    """문제은행·검수 화면에서 상태를 직접 변경한다.
+    승인·반려는 Gate 검증·정규화 이중 기록을 그대로 타도록 approve_question/reject_question에 위임하고,
+    검수 대기·보관으로 되돌리는 것만 직접 반영한다(감사 필요성이 낮은 안전한 되돌리기이므로)."""
+    if status == "approved":
+        return approve_question(question_id, actor=actor)
+    if status == "rejected":
+        return reject_question(question_id, reason or "관리자 상태 변경", actor=actor)
+    if status not in _DIRECT_SET_STATUSES:
+        raise HTTPException(status_code=400, detail=f"지원하지 않는 상태입니다: {status!r}")
+    q_repo, _, _ = _get_repos()
+    q = q_repo.get_question(question_id)
+    if not q:
+        raise HTTPException(status_code=404, detail="문제를 찾을 수 없습니다.")
+    before_status = q.get("status")
+    q_repo.update_question(question_id, {"status": status})
+    _record_audit(actor, "SET_QUESTION_STATUS", "question", question_id,
+                  before={"status": before_status}, after={"status": status}, reason=reason)
+    return {"updated": True, "question_id": question_id, "status": status}
 
 
 def approve_new_user(employee_id: str, name: str, team: str) -> dict:

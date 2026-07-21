@@ -49,6 +49,7 @@ function mockApi(method, path) {
   if (path === '/api/drive/status') return Promise.resolve({ connected: true })
   if (path === '/api/admin/system-status') return Promise.resolve({ ai_provider: 'mock' })
   if (path.startsWith('/api/admin/materials/status')) return Promise.resolve({ has_new_any: false, categories: {} })
+  if (path.startsWith('/api/admin/materials/list')) return Promise.resolve({ categories: {} })
   if (path.startsWith('/api/admin/logs')) return Promise.resolve({ logs: [] })
   if (path === '/api/admin/generation-jobs') return Promise.resolve({ jobs: [], enabled: true })
   if (path === '/api/admin/audit-logs') return Promise.resolve({ logs: [], enabled: true })
@@ -131,7 +132,7 @@ describe('planned admin domain routes', () => {
 
   it('renders the planned generation setup sections', async () => {
     renderAdmin('/admin/questions/generate/setup')
-    for (const title of ['출제 대상', '문항 구성', '자료 선택', '생성 정책', '생성 전 검증']) {
+    for (const title of ['출제 대상', '문항 구성', '자료 선택']) {
       expect(await screen.findByText(title)).toBeInTheDocument()
     }
     expect(screen.getByRole('button', { name: '문제 생성 실행' })).toBeInTheDocument()

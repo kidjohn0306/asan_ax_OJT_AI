@@ -159,6 +159,14 @@ class SheetsGenerationV2Repository:
         self._append_new("question_reviews", [review])
         self._append_new("question_history", [history])
 
+    def list_candidates_by_job(self, job_id: str) -> list[dict]:
+        headers = SHEET_HEADERS["question_candidates"]
+        rows = [
+            {header: row[index] if len(row) > index else "" for index, header in enumerate(headers)}
+            for row in self._read_table("question_candidates")
+        ]
+        return [row for row in rows if row.get("generation_job_id") == job_id]
+
     def find_candidate_by_question_id(self, question_id: str) -> dict | None:
         headers = SHEET_HEADERS["question_candidates"]
         for row in self._read_table("question_candidates"):

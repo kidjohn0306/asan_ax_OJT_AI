@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { apiFetch } from '../../../api'
 import '../questions/PlannedQuestionPages.css'
 
-const actionLabel = action => ({ APPROVE_QUESTION:'문제 승인', REJECT_QUESTION:'문제 반려' }[action] || action || '-')
+const actionLabel = action => ({ APPROVE_QUESTION:'문제 승인', REJECT_QUESTION:'문제 반려', EDIT_QUESTION:'문제 수정', SET_QUESTION_STATUS:'상태 변경' }[action] || action || '-')
 
 function Header({ title, description }) { return <div className="qplan-head"><div><h1>{title}</h1><p>{description}</p></div></div> }
 function Card({ children }) { return <section className="qplan-card"><div className="qplan-card-body">{children}</div></section> }

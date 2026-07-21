@@ -29,9 +29,10 @@ class PreviewExamRequest(BaseModel):
 class GenerateAIRequest(BaseModel):
     team_code: TeamCode
     material_text: str = ""
-    count: int = 10
+    count: int = Field(10, ge=1, le=50)
     difficulty_hint: str = "중"
     idempotency_key: str = ""
+    material_ids: Optional[list[str]] = None
 
 
 class ApproveUserRequest(BaseModel):
@@ -42,6 +43,30 @@ class ApproveUserRequest(BaseModel):
 
 class RejectQuestionRequest(BaseModel):
     reason: str
+
+
+class BulkApproveRequest(BaseModel):
+    question_ids: list[str]
+
+
+class BulkRejectRequest(BaseModel):
+    question_ids: list[str]
+    reason: str
+
+
+class SetQuestionStatusRequest(BaseModel):
+    status: Literal["approved", "rejected", "reviewing", "archived"]
+    reason: str = ""
+
+
+class EditQuestionRequest(BaseModel):
+    question: Optional[str] = None
+    option_a: Optional[str] = None
+    option_b: Optional[str] = None
+    option_c: Optional[str] = None
+    option_d: Optional[str] = None
+    answer: Optional[str] = None
+    explanation: Optional[str] = None
 
 
 class ApproveQuestionRequest(BaseModel):
@@ -145,6 +170,12 @@ def get_generation_jobs(_: dict = Depends(require_admin)):
     return fetch_generation_jobs()
 
 
+@router.get("/generation-jobs/{job_id}")
+def get_generation_job_detail(job_id: str, _: dict = Depends(require_admin)):
+    from services.admin_service import fetch_generation_job_detail
+    return fetch_generation_job_detail(job_id)
+
+
 @router.get("/audit-logs")
 def get_audit_logs(_: dict = Depends(require_admin)):
     from services.admin_service import fetch_audit_logs
@@ -195,6 +226,31 @@ def reject_question(question_id: str, body: RejectQuestionRequest, actor: dict =
     return reject_question(question_id, body.reason, actor=actor)
 
 
+@router.patch("/questions/{question_id}")
+def patch_question(question_id: str, body: EditQuestionRequest, actor: dict = Depends(require_admin)):
+    from services.admin_service import edit_question
+    fields = {key: value for key, value in body.model_dump().items() if value is not None}
+    return edit_question(question_id, fields, actor=actor)
+
+
+@router.patch("/questions/{question_id}/status")
+def patch_question_status(question_id: str, body: SetQuestionStatusRequest, actor: dict = Depends(require_admin)):
+    from services.admin_service import set_question_status
+    return set_question_status(question_id, body.status, body.reason, actor=actor)
+
+
+@router.post("/questions/bulk-approve")
+def bulk_approve_questions_route(body: BulkApproveRequest, actor: dict = Depends(require_admin)):
+    from services.admin_service import bulk_approve_questions
+    return bulk_approve_questions(body.question_ids, actor=actor)
+
+
+@router.post("/questions/bulk-reject")
+def bulk_reject_questions_route(body: BulkRejectRequest, actor: dict = Depends(require_admin)):
+    from services.admin_service import bulk_reject_questions
+    return bulk_reject_questions(body.question_ids, body.reason, actor=actor)
+
+
 @router.post("/preview-exam")
 def preview_exam(body: PreviewExamRequest, _: dict = Depends(require_admin)):
     from services.exam_service import generate_exam_questions
@@ -215,6 +271,7 @@ def generate_ai_questions(body: GenerateAIRequest, actor: dict = Depends(require
         body.difficulty_hint,
         requested_by=actor.get("sub", ""),
         idempotency_key=body.idempotency_key,
+        material_ids=body.material_ids,
     )
 
 
@@ -404,6 +461,14 @@ def _material_categories_for_team(team_code: str) -> list[str]:
     return categories
 
 
+@router.get("/materials/list")
+def list_materials(team_code: Optional[TeamCode] = None, _: dict = Depends(require_admin)):
+    from services.material_service import list_cached_materials
+    if team_code:
+        _material_categories_for_team(team_code)  # team_code 형식 검증
+    return list_cached_materials(team_code)
+
+
 @router.get("/materials/status")
 def get_materials_status(team_code: TeamCode, _: dict = Depends(require_admin)):
     from services.material_service import check_new_materials
@@ -450,11 +515,16 @@ def debug_storage(_: dict = Depends(require_admin)):
     def _set(key: str) -> bool:
         return bool(os.getenv(key))
 
+    from config.storage import is_strict_sheets_storage
+
     return {
         # 값 자체가 동작 모드 판단에 필요한 비민감 설정 — 값 그대로 표시
         "STORAGE_BACKEND": os.getenv("STORAGE_BACKEND", "(not set)"),
         "AI_PROVIDER": os.getenv("AI_PROVIDER", "(not set)"),
         "EXAM_SET_STORAGE": os.getenv("EXAM_SET_STORAGE", "(not set)"),
+        # false(기본값)면 Sheets 쓰기 실패 시 조용히 로컬(휘발성)로 폴백해 데이터가 유실될 수 있음.
+        # 운영 환경은 반드시 true여야 함 — CLAUDE.md "저장소 폴백 정책" 참고.
+        "OJT_STRICT_SHEETS_STORAGE": is_strict_sheets_storage(),
         # ID·크리덴셜류는 설정 여부만 노출 (값·다른 인프라 환경변수 이름은 노출하지 않음)
         "GOOGLE_SHEETS_ID_SET": _set("GOOGLE_SHEETS_ID"),
         "GOOGLE_EXAM_SETS_SHEET_ID_SET": _set("GOOGLE_EXAM_SETS_SHEET_ID"),

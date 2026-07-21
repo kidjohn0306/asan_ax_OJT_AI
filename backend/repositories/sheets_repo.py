@@ -3,6 +3,7 @@ import json
 import logging
 import functools
 import threading
+import time
 from datetime import datetime, timezone
 from config.storage import should_fallback_to_local
 from repositories.base import (
@@ -50,6 +51,35 @@ def _fallback_on_error(local_cls):
                 return getattr(self._local_fallback, func.__name__)(*args, **kwargs)
         return wrapper
     return decorator
+
+
+class _TTLRowCache:
+    """Sheets 읽기 API의 분당 60회 할당량(429 RATE_LIMIT_EXCEEDED)을 완화하기 위해
+    자주 안 바뀌는 탭 전체·행 단위 조회 결과를 짧게 재사용한다. 같은 인스턴스의 쓰기
+    메서드는 반드시 invalidate()를 호출해 이 TTL이 지나기 전에도 자신의 쓰기 결과를
+    곧바로 읽을 수 있게 해야 한다."""
+
+    def __init__(self, ttl_seconds: float):
+        self._ttl = ttl_seconds
+        self._store: dict = {}
+
+    def get_or_load(self, key, loader):
+        now = time.monotonic()
+        cached = self._store.get(key)
+        if cached is not None and now - cached[0] < self._ttl:
+            return cached[1]
+        value = loader()
+        self._store[key] = (now, value)
+        return value
+
+    def invalidate(self, key=None):
+        if key is None:
+            self._store.clear()
+        else:
+            self._store.pop(key, None)
+
+
+_READ_CACHE_TTL_SECONDS = 8.0
 
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
@@ -810,6 +840,7 @@ class SheetsTeamRepository:
         self._spreadsheet_id = _default_sheet_id()
         self._tab_ready = False
         self._sheet_id = None
+        self._cache = _TTLRowCache(_READ_CACHE_TTL_SECONDS)
 
     @property
     def _svc(self):
@@ -846,6 +877,9 @@ class SheetsTeamRepository:
             ).execute()
 
     def _read_all_rows(self) -> list:
+        return self._cache.get_or_load("rows", self._read_all_rows_uncached)
+
+    def _read_all_rows_uncached(self) -> list:
         res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{TEAMS_TAB}!A:E").execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -905,6 +939,7 @@ class SheetsTeamRepository:
             insertDataOption="INSERT_ROWS",
             body={"values": [self._dict_to_row(data)]},
         ).execute()
+        self._cache.invalidate()
         return data
 
     @_fallback_on_error(LocalTeamRepository)
@@ -922,6 +957,7 @@ class SheetsTeamRepository:
             valueInputOption="RAW",
             body={"values": [self._dict_to_row(team)]},
         ).execute()
+        self._cache.invalidate()
         return team
 
     @_fallback_on_error(LocalTeamRepository)
@@ -939,6 +975,7 @@ class SheetsTeamRepository:
                 "endIndex": row_idx,
             }}}]},
         ).execute()
+        self._cache.invalidate()
         return True
 
 
@@ -1062,6 +1099,7 @@ class SheetsQuestionRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
         self._tab_ready = False
+        self._cache = _TTLRowCache(_READ_CACHE_TTL_SECONDS)
 
     @property
     def _svc(self):
@@ -1095,6 +1133,9 @@ class SheetsQuestionRepository:
             ).execute()
 
     def _read_all_rows(self) -> list:
+        return self._cache.get_or_load("rows", self._read_all_rows_uncached)
+
+    def _read_all_rows_uncached(self) -> list:
         res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{QUESTIONS_TAB}!A:R").execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -1214,6 +1255,7 @@ class SheetsQuestionRepository:
             insertDataOption="INSERT_ROWS",
             body={"values": [self._dict_to_row(pool_key, question)]},
         ).execute()
+        self._cache.invalidate()
 
     @_fallback_on_error(LocalQuestionRepository)
     def update_question(self, question_id: str, fields: dict) -> None:
@@ -1239,6 +1281,7 @@ class SheetsQuestionRepository:
             valueInputOption="RAW",
             body={"values": [self._dict_to_row(pool_key, current)]},
         ).execute()
+        self._cache.invalidate()
 
     @_fallback_on_error(LocalQuestionRepository)
     def count_by_status(self, status: str) -> int:
@@ -1249,6 +1292,7 @@ class SheetsMaterialRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
         self._tab_ready = False
+        self._cache = _TTLRowCache(_READ_CACHE_TTL_SECONDS)
 
     @property
     def _svc(self):
@@ -1312,6 +1356,9 @@ class SheetsMaterialRepository:
 
     @_fallback_on_error(LocalMaterialRepository)
     def get_manifest(self, category: str) -> dict | None:
+        return self._cache.get_or_load(category, lambda: self._get_manifest_uncached(category))
+
+    def _get_manifest_uncached(self, category: str) -> dict | None:
         self._maybe_ensure_tab()
         row_idx = self._find_row_index(category)
         if row_idx == -1:
@@ -1345,12 +1392,14 @@ class SheetsMaterialRepository:
                 valueInputOption="RAW",
                 body={"values": [row]},
             ).execute()
+        self._cache.invalidate(category)
 
 
 class SheetsUserRepository:
     def __init__(self):
         self._spreadsheet_id = _default_sheet_id()
         self._tab_ready = False
+        self._cache = _TTLRowCache(_READ_CACHE_TTL_SECONDS)
 
     @property
     def _svc(self):
@@ -1384,6 +1433,9 @@ class SheetsUserRepository:
             ).execute()
 
     def _read_all_rows(self) -> list:
+        return self._cache.get_or_load("rows", self._read_all_rows_uncached)
+
+    def _read_all_rows_uncached(self) -> list:
         res = self._values().get(spreadsheetId=self._spreadsheet_id, range=f"{USERS_TAB}!A:G").execute()
         rows = res.get("values", [])
         return rows[1:] if len(rows) > 1 else []
@@ -1443,6 +1495,7 @@ class SheetsUserRepository:
             insertDataOption="INSERT_ROWS",
             body={"values": [self._dict_to_row(user)]},
         ).execute()
+        self._cache.invalidate()
 
     @_fallback_on_error(LocalUserRepository)
     def delete_user(self, employee_id: str) -> bool:
@@ -1459,6 +1512,7 @@ class SheetsUserRepository:
                 "startIndex": row_idx - 1, "endIndex": row_idx,
             }}}]},
         ).execute()
+        self._cache.invalidate()
         return True
 
     @_fallback_on_error(LocalUserRepository)
@@ -1475,4 +1529,5 @@ class SheetsUserRepository:
             valueInputOption="RAW",
             body={"values": [self._dict_to_row(user)]},
         ).execute()
+        self._cache.invalidate()
         return True
