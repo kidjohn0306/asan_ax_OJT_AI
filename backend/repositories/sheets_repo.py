@@ -485,6 +485,7 @@ class SheetsExamSetRepository(ExamSetRepository):
             self._update_assigned_users(row_idx, assigned)
         return True
 
+    @_fallback_on_error(LocalExamSetRepository)
     def update_exam_set(self, exam_id: str, fields: dict) -> bool:
         self._maybe_ensure_tab()
         row_idx = self._find_sheet_row(exam_id)
