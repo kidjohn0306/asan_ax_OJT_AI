@@ -60,25 +60,31 @@ def _pick_by_difficulty(pool: list, dist: dict) -> list:
     return result
 
 
-def _assigned_question_count(assigned_set: dict) -> int:
-    """확정(frozen) 시험이면 exam_set_items 스냅샷 문항 수를, 아니면 legacy question_ids 길이를 쓴다.
+def _assigned_question_count(assigned_set: dict, employee_id: str) -> int:
+    """확정(frozen) 시험이면 실제 배정된 확정 버전의 문항 수를, 아니면 legacy question_ids 길이를 쓴다.
+    _start_frozen_exam_session이 실제 응시 시 확인하는 것과 같은 플래그·조회 경로(배정 → 배정에 고정된
+    버전 → 그 버전의 문항)를 그대로 써야 미리보기 문항수가 실제 응시와 어긋나지 않는다 — 예전엔 여기서
+    다른 플래그(Phase4 OJT_USE_FROZEN_EXAM)를 확인해서, Phase5 결과 이중기록만 켜진 확정 시험은 실제로는
+    문항이 있는데도 미리보기에 0문항으로 보이는 불일치가 있었다.
     응시 시작(_start_frozen_exam_session) 없이 개수만 조회하므로 attempt를 만들지 않는다."""
-    from services.exams.dual_write import get_exam_write_policy
+    from services.results.dual_write import get_result_write_policy
 
-    policy = get_exam_write_policy()
-    if policy.frozen_exams:
+    policy = get_result_write_policy()
+    if policy.result_answers:
         from repositories import exam_v2_repo
 
         if exam_v2_repo is not None:
             try:
-                exam_set_id = assigned_set.get("exam_set_id", "")
-                version = exam_v2_repo.find_current_version(exam_set_id)
-                if version is not None:
-                    items = exam_v2_repo.list_version_items(
-                        exam_set_id, _positive_int(version.get("version_no"), 0)
-                    )
-                    if items:
-                        return len(items)
+                exam_id = assigned_set.get("exam_id", "")
+                assignment = exam_v2_repo.find_assignment(exam_id, employee_id)
+                if assignment is not None:
+                    version = exam_v2_repo.find_version(assignment.get("exam_version_id", ""))
+                    if version is not None:
+                        items = exam_v2_repo.list_version_items(
+                            version.get("exam_set_id", ""), _positive_int(version.get("version_no"), 0)
+                        )
+                        if items:
+                            return len(items)
             except Exception:
                 logging.exception("frozen exam question count lookup failed")
     return len(assigned_set.get("question_ids", []) or [])
@@ -124,7 +130,7 @@ def get_assigned_exam_preview(employee_id: str) -> dict:
     return {
         "name": assigned_set.get("name") or DEFAULT_EXAM_NAME,
         "duration_min": _resolve_duration_min(assigned_set),
-        "question_count": _assigned_question_count(assigned_set),
+        "question_count": _assigned_question_count(assigned_set, employee_id),
     }
 
 

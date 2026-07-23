@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, Fragment } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { apiFetch, apiUpload, logout as apiLogout } from '../api'
 import AdminLayout from '../admin/components/AdminLayout'
+import ExamCreationDrawer from '../admin/components/ExamCreationDrawer'
+import ExamScheduleCalendar, { toExamDateKey } from '../admin/components/ExamScheduleCalendar'
 import { ADMIN_ROUTE_META, ADMIN_NAVIGATION } from '../admin/config/navigation'
 import ExamPaperPage from '../admin/pages/exam-papers/ExamPaperPage'
 import QuestionRoutePage from '../admin/pages/questions/QuestionRoutePage'
@@ -2662,6 +2664,7 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
   const [sets, setSets] = useState([])
   const [users, setUsers] = useState([])
   const [papers, setPapers] = useState([])
+  const [teams, setTeams] = useState([])
   const viewedSetId = selectedExamId || ''
   const [assignees, setAssignees] = useState([])
   const [userQuery, setUserQuery] = useState('')
@@ -2673,6 +2676,9 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
 
   const [createForm, setCreateForm] = useState({ paperId: '', name: '', datetime: '', durationMin: 60, passScore: 70 })
   const [creating, setCreating] = useState(false)
+  const [createDrawerOpen, setCreateDrawerOpen] = useState(false)
+  const [scheduleView, setScheduleView] = useState(() => selectedExamId ? 'list' : 'calendar')
+  const [selectedScheduleDate, setSelectedScheduleDate] = useState(() => toExamDateKey(new Date()))
 
   const [editingSet, setEditingSet] = useState(null)
   const [editDatetime, setEditDatetime] = useState('')
@@ -2681,6 +2687,7 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
   const [savingEdit, setSavingEdit] = useState(false)
 
   const [listStatusFilter, setListStatusFilter] = useState('all')
+  const [listTeamFilter, setListTeamFilter] = useState('all')
   const [listPage, setListPage] = useState(1)
   const [questionsModalSet, setQuestionsModalSet] = useState(null)
   const [questionsModalData, setQuestionsModalData] = useState(null)
@@ -2700,10 +2707,17 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
     loadSets()
     apiFetch('GET', '/api/admin/users').then(d => setUsers(d.users || [])).catch(() => {})
     apiFetch('GET', '/api/admin/exam-sets/papers').then(d => setPapers(d.papers || [])).catch(() => {})
+    apiFetch('GET', '/api/admin/teams').then(d => setTeams(d.teams || [])).catch(() => {})
   }, [])
 
+  // 팀 관리(TeamsManager)에 등록된 팀을 기준으로 라벨을 결정한다. 아직 팀 목록을
+  // 불러오지 못했으면 하드코딩된 TEAM_LABELS/DEFAULT_TEAMS로 폴백한다.
+  const teamNameByCode = teams.length > 0
+    ? Object.fromEntries(teams.map(t => [t.team_code, t.team_name]))
+    : TEAM_LABELS
+
   async function handleCreate() {
-    if (!createForm.paperId) { toast('시험지를 선택하세요.', 'error'); return }
+    if (!createForm.paperId) { toast('시험지를 선택하세요.', 'error'); return false }
     setCreating(true)
     try {
       const created = await apiFetch('POST', '/api/admin/exam-sets/from-paper', {
@@ -2717,7 +2731,11 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
       setCreateForm({ paperId: '', name: '', datetime: '', durationMin: 60, passScore: 70 })
       await loadSets()
       onSelectExam(created.exam_id)
-    } catch (e) { toast(`오류: ${e.message}`, 'error') }
+      return true
+    } catch (e) {
+      toast(`오류: ${e.message}`, 'error')
+      return false
+    }
     finally { setCreating(false) }
   }
 
@@ -2735,7 +2753,7 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
     }
   }
 
-  useEffect(() => { setListPage(1) }, [listStatusFilter])
+  useEffect(() => { setListPage(1) }, [listStatusFilter, listTeamFilter])
 
   function openSet(setId) {
     onSelectExam(setId)
@@ -2830,6 +2848,14 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
 
   function closeQuestionsModal() { setQuestionsModalSet(null); setQuestionsModalData(null) }
 
+  function openCreateDrawer(dateKey = '') {
+    if (dateKey) {
+      setSelectedScheduleDate(dateKey)
+      setCreateForm(previous => ({ ...previous, datetime:`${dateKey}T09:00` }))
+    }
+    setCreateDrawerOpen(true)
+  }
+
   const filteredUsers = userQuery.trim()
     ? users.filter(u =>
         u.name.includes(userQuery) ||
@@ -2858,7 +2884,6 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
   }
 
   const viewedSet = sets.find(s => s.exam_id === viewedSetId)
-  const selectedPaper = papers.find(p => p.exam_set_id === createForm.paperId)
 
   const LIST_STATUS_FILTERS = [
     { key:'all',       label:'전체' },
@@ -2867,102 +2892,111 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
     { key:'scheduled', label:'예정' },
   ]
 
-  const filteredSetList = sets.filter(s => listStatusFilter === 'all' || getExamStatus(s.exam_datetime, s.duration_min) === listStatusFilter)
+  const filteredSetList = sets.filter(s => {
+    const statusMatches = listStatusFilter === 'all' || getExamStatus(s.exam_datetime, s.duration_min) === listStatusFilter
+    const teamMatches = listTeamFilter === 'all' || s.team_code === listTeamFilter
+    return statusMatches && teamMatches
+  })
+  const scheduledSetList = filteredSetList.filter(s => toExamDateKey(s.exam_datetime))
+  const unscheduledSetList = filteredSetList.filter(s => !toExamDateKey(s.exam_datetime))
+  const selectedDateSets = scheduledSetList.filter(s => toExamDateKey(s.exam_datetime) === selectedScheduleDate)
+  // 팀 관리에 등록된 전체 팀을 필터 옵션으로 쓴다. 아직 로딩 전이면 현재 시험 일정에
+  // 실제로 등장하는 team_code로만 폴백해 최소한의 필터는 동작하게 한다.
+  const scheduleTeams = teams.length > 0
+    ? teams.map(t => t.team_code)
+    : [...new Set(sets.map(s => s.team_code).filter(Boolean))]
   const listTotalPages = Math.max(1, Math.ceil(filteredSetList.length / EXAM_MANAGE_PAGE_SIZE))
   const listPageClamped = Math.min(listPage, listTotalPages)
   const pagedSetList = filteredSetList.slice((listPageClamped - 1) * EXAM_MANAGE_PAGE_SIZE, listPageClamped * EXAM_MANAGE_PAGE_SIZE)
 
+  const scheduleFilters = (
+    <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        {LIST_STATUS_FILTERS.map(f => (
+          <label key={f.key} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, cursor:'pointer', color: listStatusFilter === f.key ? 'var(--text)' : 'var(--text-muted)', fontWeight: listStatusFilter === f.key ? 700 : 400 }}>
+            <input
+              type="radio"
+              name="listStatusFilter"
+              checked={listStatusFilter === f.key}
+              onChange={() => setListStatusFilter(f.key)}
+              style={{ accentColor:'var(--accent)', cursor:'pointer', margin:0 }}
+            />
+            {f.key !== 'all' && <span style={{ width:7, height:7, borderRadius:'50%', background:EXAM_STATUS_META[f.key].dot, display:'inline-block' }} />}
+            {f.label}
+          </label>
+        ))}
+      </div>
+      <select
+        aria-label="시험 팀"
+        value={listTeamFilter}
+        onChange={event => setListTeamFilter(event.target.value)}
+        style={{ height:32, border:'1px solid var(--border)', borderRadius:7, padding:'0 8px', background:'white', color:'var(--text-muted)', fontSize:11 }}
+      >
+        <option value="all">전체 팀</option>
+        {scheduleTeams.map(team => <option key={team} value={team}>{teamNameByCode[team] || team}</option>)}
+      </select>
+    </div>
+  )
+
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:20, height:'100%', minHeight:0 }}>
-      <Card title="시험 생성" style={{ flexShrink:0 }}>
-        <div style={{ display:'grid', gridTemplateColumns:'1.3fr 0.5fr 1.3fr 1.1fr 0.7fr 0.7fr auto', gap:12, alignItems:'end' }}>
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험지 선택</label>
-            <select value={createForm.paperId} onChange={e => setCreateForm(p => ({ ...p, paperId: e.target.value }))}
-              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white' }}>
-              <option value="">-- 시험지 선택 --</option>
-              {papers.map(p => <option key={p.exam_set_id} value={p.exam_set_id}>{p.name} ({p.team_code} · {p.question_count}문항)</option>)}
-            </select>
+    <div style={{ display:'flex', flexDirection:'column', gap:16, minHeight:0 }}>
+      <Card title="시험 일정 운영" style={{ flexShrink:0 }}>
+        <div className="exam-schedule-toolbar">
+          <div className="exam-schedule-summary">
+            <strong>일정 {sets.length}건 · 일정 미정 {sets.filter(s => !toExamDateKey(s.exam_datetime)).length}건</strong>
+            <span>날짜를 선택해 회차를 만들고, 기존 시험의 일정과 응시자를 이어서 관리합니다.</span>
           </div>
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>대상</label>
-            <div style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 10px', fontSize:13, fontFamily:'var(--font)', background:'#F1F5F9', color:'var(--text-muted)', boxSizing:'border-box', display:'flex', alignItems:'center', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
-              {selectedPaper ? (TEAM_LABELS[selectedPaper.team_code] || selectedPaper.team_code) : '-'}
+          <div className="exam-schedule-actions">
+            <div className="exam-segmented" aria-label="시험 일정 보기 방식">
+              <button type="button" className={scheduleView === 'calendar' ? 'is-active' : ''} onClick={() => setScheduleView('calendar')}>달력 보기</button>
+              <button type="button" className={scheduleView === 'list' ? 'is-active' : ''} onClick={() => setScheduleView('list')}>목록 보기</button>
             </div>
+            <button type="button" className="exam-button is-primary" onClick={() => openCreateDrawer(selectedScheduleDate)}>새 시험 만들기</button>
           </div>
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험명 (비워둘 시 시험지 이름 그대로 저장)</label>
-            <input
-              type="text"
-              value={createForm.name}
-              onChange={e => setCreateForm(p => ({ ...p, name: e.target.value }))}
-              placeholder="예: 2026년 2차 OJT 평가"
-              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험 일시</label>
-            <input
-              type="datetime-local"
-              value={createForm.datetime}
-              onChange={e => setCreateForm(p => ({ ...p, datetime: e.target.value }))}
-              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>시험 시간(분)</label>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={1}
-              max={600}
-              value={createForm.durationMin}
-              onChange={e => setCreateForm(p => ({ ...p, durationMin: e.target.value === '' ? '' : Number(e.target.value) }))}
-              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
-            />
-          </div>
-          <div>
-            <label style={{ fontSize:13, fontWeight:600, color:'var(--text-muted)', display:'block', marginBottom:6 }}>합격 커트라인</label>
-            <input
-              type="number"
-              inputMode="numeric"
-              min={0}
-              max={100}
-              value={createForm.passScore}
-              onChange={e => setCreateForm(p => ({ ...p, passScore: e.target.value === '' ? '' : Number(e.target.value) }))}
-              style={{ width:'100%', height:44, border:'1px solid var(--border)', borderRadius:8, padding:'0 12px', fontSize:14, fontFamily:'var(--font)', background:'white', boxSizing:'border-box' }}
-            />
-          </div>
-          <button onClick={handleCreate} disabled={creating}
-            style={{ height:44, padding:'0 20px', background:'var(--accent)', color:'white', border:'none', borderRadius:8, fontSize:14, fontWeight:700, cursor:'pointer', fontFamily:'var(--font)', whiteSpace:'nowrap', opacity: creating ? 0.6 : 1 }}>
-            {creating ? '생성 중...' : '생성'}
-          </button>
         </div>
       </Card>
 
-      <div style={{ display:'grid', gridTemplateColumns:'7fr 3fr', gap:16, flex:1, minHeight:0 }}>
+      <div className="exam-management-layout">
+        {scheduleView === 'calendar' ? (
+          <Card title="월간 시험 일정" action={scheduleFilters} style={{ marginBottom:0 }}>
+            <div className="exam-calendar-layout">
+              <ExamScheduleCalendar
+                exams={scheduledSetList}
+                selectedDate={selectedScheduleDate}
+                onSelectDate={setSelectedScheduleDate}
+                statusResolver={exam => getExamStatus(exam.exam_datetime, exam.duration_min)}
+              />
+              <aside className="exam-selected-date-panel">
+                <h3>{selectedScheduleDate.replaceAll('-', '.')} 일정</h3>
+                <p>{selectedDateSets.length ? `시험 ${selectedDateSets.length}건이 있습니다.` : '등록된 시험이 없습니다.'}</p>
+                <div className="exam-date-event-list">
+                  {selectedDateSets.map(s => (
+                    <button type="button" key={s.exam_id} className="exam-date-event" onClick={() => openSet(s.exam_id)}>
+                      <strong>{s.name}</strong>
+                      <span>{s.exam_datetime?.slice(11, 16) || '시간 미정'} · {teamNameByCode[s.team_code] || s.team_code} · {s.duration_min ?? 60}분</span>
+                    </button>
+                  ))}
+                  <button type="button" className="exam-button is-primary" onClick={() => openCreateDrawer(selectedScheduleDate)}>이 날짜에 시험 만들기</button>
+                </div>
+                {unscheduledSetList.length > 0 && (
+                  <>
+                    <h3 style={{ marginTop:20 }}>일정 미정</h3>
+                    <p>일정이 아직 지정되지 않은 시험입니다.</p>
+                    <div className="exam-unscheduled-list">
+                      {unscheduledSetList.map(s => <button type="button" key={s.exam_id} onClick={() => openSet(s.exam_id)}>{s.name}</button>)}
+                    </div>
+                  </>
+                )}
+              </aside>
+            </div>
+          </Card>
+        ) : (
         <Card
           title={`생성된 시험 목록 (${filteredSetList.length})`}
           noPad
-          style={{ height:'100%', display:'flex', flexDirection:'column', marginBottom:0 }}
-          bodyStyle={{ flex:1, minHeight:0, display:'flex', flexDirection:'column' }}
-          action={
-            <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-              {LIST_STATUS_FILTERS.map(f => (
-                <label key={f.key} style={{ display:'flex', alignItems:'center', gap:5, fontSize:11, cursor:'pointer', color: listStatusFilter === f.key ? 'var(--text)' : 'var(--text-muted)', fontWeight: listStatusFilter === f.key ? 700 : 400 }}>
-                  <input
-                    type="radio"
-                    name="listStatusFilter"
-                    checked={listStatusFilter === f.key}
-                    onChange={() => setListStatusFilter(f.key)}
-                    style={{ accentColor:'var(--accent)', cursor:'pointer', margin:0 }}
-                  />
-                  {f.key !== 'all' && <span style={{ width:7, height:7, borderRadius:'50%', background:EXAM_STATUS_META[f.key].dot, display:'inline-block' }} />}
-                  {f.label}
-                </label>
-              ))}
-            </div>
-          }
+          style={{ display:'flex', flexDirection:'column', marginBottom:0 }}
+          bodyStyle={{ minHeight:0, display:'flex', flexDirection:'column' }}
+          action={scheduleFilters}
         >
           {filteredSetList.length === 0 ? (
             <p style={{ fontSize:13, color:'var(--text-muted)', textAlign:'center', padding:'24px 0' }}>표시할 시험이 없습니다.</p>
@@ -2976,7 +3010,7 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
                       onClick={() => openSet(s.exam_id)}
                       style={{ cursor:'pointer', background: viewedSetId === s.exam_id ? 'var(--accent-light)' : 'white' }}>
                       <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13, fontWeight:600, color: viewedSetId === s.exam_id ? 'var(--accent-dark)' : 'var(--text)' }}>{s.name}</td>
-                      <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.team_code}</td>
+                      <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{teamNameByCode[s.team_code] || s.team_code}</td>
                       <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)' }}><Badge type={EXAM_STATUS_META[status].badge}>{EXAM_STATUS_META[status].label}</Badge></td>
                       <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:12, color:'var(--text-muted)' }}>{s.exam_datetime ? s.exam_datetime.slice(0,16).replace('T',' ') : '미정'}</td>
                       <td style={{ padding:'11px 18px', borderBottom:'1px solid var(--border)', fontSize:13 }}>{s.duration_min ?? 60}분</td>
@@ -3013,6 +3047,7 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
             </div>
           )}
         </Card>
+        )}
 
         <Card
           title={viewedSetId ? `응시자 목록 (${assignees.length}명)` : '응시자 목록'}
@@ -3096,6 +3131,17 @@ function ExamAssign({ toast, selectedExamId, onSelectExam }) {
           )}
         </Card>
       </div>
+
+      <ExamCreationDrawer
+        open={createDrawerOpen}
+        form={createForm}
+        papers={papers}
+        teamLabels={TEAM_LABELS}
+        creating={creating}
+        onChange={patch => setCreateForm(previous => ({ ...previous, ...patch }))}
+        onCreate={handleCreate}
+        onClose={() => setCreateDrawerOpen(false)}
+      />
 
       {editingSet && (
         <Modal title={`${editingSet.name} 편집`} onClose={() => setEditingSet(null)}>

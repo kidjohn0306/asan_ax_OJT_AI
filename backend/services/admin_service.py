@@ -1160,9 +1160,10 @@ def _persist_legacy_exam(
     except HTTPException:
         raise
     except Exception as exc:
-        if not normalized_used:
-            raise
-        logging.exception("legacy exam write failed after normalized persistence")
+        logging.exception(
+            "legacy exam write failed%s",
+            " after normalized persistence" if normalized_used else "",
+        )
         raise HTTPException(
             status_code=503,
             detail="기존 시험 저장에 실패했습니다.",
