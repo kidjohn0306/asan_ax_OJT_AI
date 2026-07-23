@@ -3,7 +3,7 @@ import { MemoryRouter, Route, Routes, useLocation, useNavigate } from 'react-rou
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import Admin from '../../../pages/Admin'
-import { isErroredResult, useLivePolling } from './ExamLivePage'
+import { isErroredResult, matchesLiveDateRange, useLivePolling } from './ExamLivePage'
 
 const apiFetch = vi.fn()
 
@@ -40,6 +40,11 @@ const resultsByExam = {
 describe('exam live result classification', () => {
   it('counts a failed grading status even when submission status is normal', () => {
     expect(isErroredResult({ submission_status:'SUBMITTED', grading_status:'FAILED' })).toBe(true)
+  })
+
+  it('keeps undated exams out of date ranges while retaining them in the all range', () => {
+    expect(matchesLiveDateRange({ exam_datetime:'not-a-date' }, 'today', '', BASE_TIME)).toBe(false)
+    expect(matchesLiveDateRange({ exam_datetime:'not-a-date' }, 'all', '', BASE_TIME)).toBe(true)
   })
 })
 
@@ -156,7 +161,7 @@ describe('routed exam live overview', () => {
   })
 
   it('renders honest scheduled statuses, distinct aggregates, errors, and detail links', async () => {
-    renderAt('/admin/exams/live')
+    renderAt('/admin/exams/live?range=all')
 
     expect(await screen.findByText('예정 교육')).toBeInTheDocument()
     const scheduledRow = screen.getByText('예정 교육').closest('[data-exam-id]')
@@ -199,7 +204,7 @@ describe('routed exam live overview', () => {
       if (failResults && path.endsWith('/EX-S/results')) return Promise.reject(new Error('poll failed'))
       return successfulApi(method, path)
     })
-    renderAt('/admin/exams/live')
+    renderAt('/admin/exams/live?range=all')
     await act(async () => { await Promise.resolve(); await Promise.resolve() })
     expect(screen.getByText('예정 교육')).toBeInTheDocument()
 
@@ -214,7 +219,7 @@ describe('routed exam live overview', () => {
   })
 
   it('uses URL filters and pushes changes to browser history', async () => {
-    renderAt('/admin/exams/live?status=scheduled&team=T1')
+    renderAt('/admin/exams/live?status=scheduled&team=T1&range=all')
     expect(await screen.findByText('예정 교육')).toBeInTheDocument()
     expect(screen.queryByText('진행 교육')).not.toBeInTheDocument()
 
@@ -223,6 +228,19 @@ describe('routed exam live overview', () => {
     expect(await screen.findByText('완료 교육')).toBeInTheDocument()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name:'뒤로' })) })
     await waitFor(() => expect(screen.queryByText('진행 교육')).not.toBeInTheDocument())
+  })
+
+  it('defaults to today and stores quick date range changes in the URL', async () => {
+    renderAt('/admin/exams/live')
+    expect(await screen.findByText('예정 교육')).toBeInTheDocument()
+    expect(screen.getByText('진행 교육')).toBeInTheDocument()
+    expect(screen.queryByText('완료 교육')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name:'오늘' })).toHaveClass('is-active')
+
+    fireEvent.click(screen.getByRole('button', { name:'전체' }))
+    await waitFor(() => expect(screen.getByTestId('location')).toHaveTextContent('range=all'))
+    expect(await screen.findByText('완료 교육')).toBeInTheDocument()
+    expect(screen.getByText('미정 교육')).toBeInTheDocument()
   })
 })
 
